@@ -1,0 +1,14 @@
+{
+    "name": "@alpha/meeting-desktop",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Electron shell for the Alpha meeting assistant",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "electron . --dev"
+    },
+    "devDependencies": {
+        "electron": "^30.5.1"
+    }
+}

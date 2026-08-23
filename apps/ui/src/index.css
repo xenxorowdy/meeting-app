@@ -1,0 +1,225 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 240 24% 96%;
+        --foreground: 0 0% 4%;
+
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 4%;
+
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 4%;
+
+        --primary: 211 100% 50%;
+        --primary-foreground: 0 0% 100%;
+
+        --secondary: 240 9% 92%;
+        --secondary-foreground: 0 0% 4%;
+
+        --muted: 240 20% 95%;
+        --muted-foreground: 240 2% 44%;
+
+        --accent: 240 9% 92%;
+        --accent-foreground: 0 0% 4%;
+
+        --destructive: 354 100% 42%;
+        --destructive-foreground: 0 0% 100%;
+
+        --success: 142 72% 29%;
+        --success-foreground: 0 0% 100%;
+
+        --warning: 32 100% 35%;
+        --warning-foreground: 0 0% 100%;
+
+        --border: 240 5% 86%;
+        --input: 240 5% 86%;
+        --ring: 211 100% 50%;
+
+        --elevated: 0 0% 100%;
+        --segment: 0 0% 100%;
+
+        --speaker-1: 241 45% 51%;
+        --speaker-2: 187 100% 24%;
+        --speaker-3: 32 100% 35%;
+        --speaker-4: 279 55% 51%;
+        --material: 0 0% 100%;
+        --material-opacity: 0.72;
+        --scrim: 0 0% 0%;
+        --scrim-opacity: 0.28;
+
+        --radius: 0.625rem;
+    }
+
+    .dark {
+        --background: 240 3% 11%;
+        --foreground: 0 0% 100%;
+
+        --card: 240 2% 14%;
+        --card-foreground: 0 0% 100%;
+
+        --popover: 240 2% 16%;
+        --popover-foreground: 0 0% 100%;
+
+        --primary: 210 100% 52%;
+        --primary-foreground: 0 0% 100%;
+
+        --secondary: 240 2% 23%;
+        --secondary-foreground: 0 0% 100%;
+
+        --muted: 240 2% 18%;
+        --muted-foreground: 240 2% 62%;
+
+        --accent: 240 2% 23%;
+        --accent-foreground: 0 0% 100%;
+
+        --destructive: 3 100% 61%;
+        --destructive-foreground: 0 0% 8%;
+
+        --success: 135 64% 50%;
+        --success-foreground: 0 0% 8%;
+
+        --warning: 36 100% 52%;
+        --warning-foreground: 0 0% 8%;
+
+        --border: 240 3% 25%;
+        --input: 240 3% 25%;
+        --ring: 210 100% 52%;
+
+        --elevated: 240 2% 18%;
+        --segment: 240 2% 29%;
+
+        --speaker-1: 241 100% 78%;
+        --speaker-2: 187 70% 62%;
+        --speaker-3: 36 100% 63%;
+        --speaker-4: 274 100% 78%;
+        --material: 240 2% 14%;
+        --material-opacity: 0.76;
+        --scrim: 0 0% 0%;
+        --scrim-opacity: 0.5;
+    }
+
+    @media (prefers-contrast: more) {
+        :root {
+            --muted-foreground: 240 3% 30%;
+            --border: 240 5% 70%;
+            --material-opacity: 0.95;
+        }
+
+        .dark {
+            --muted-foreground: 240 5% 84%;
+            --border: 240 4% 42%;
+            --material-opacity: 0.96;
+        }
+    }
+
+    html,
+    body,
+    #root {
+        height: 100%;
+    }
+
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        margin: 0;
+        font-family: theme('fontFamily.sans');
+        font-size: 13px;
+        line-height: 18px;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    ::selection {
+        background-color: hsl(var(--primary) / 0.28);
+    }
+
+    :focus-visible {
+        outline: 2px solid hsl(var(--ring));
+        outline-offset: 2px;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+        font: inherit;
+    }
+}
+
+@layer components {
+    .material-chrome {
+        background-color: hsl(var(--material) / var(--material-opacity));
+        backdrop-filter: blur(30px) saturate(180%);
+        -webkit-backdrop-filter: blur(30px) saturate(180%);
+    }
+
+    .material-sheet {
+        background-color: hsl(var(--elevated) / 0.94);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+    }
+
+    .hairline-bottom {
+        box-shadow: inset 0 -1px 0 0 hsl(var(--border));
+    }
+
+    .hairline-top {
+        box-shadow: inset 0 1px 0 0 hsl(var(--border));
+    }
+
+    .scroll-edge {
+        mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+    }
+
+    .drag-region {
+        -webkit-app-region: drag;
+    }
+
+    .no-drag {
+        -webkit-app-region: no-drag;
+    }
+}
+
+@layer utilities {
+    .tnum {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: 'tnum';
+    }
+}
+
+::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.45);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.75);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}
