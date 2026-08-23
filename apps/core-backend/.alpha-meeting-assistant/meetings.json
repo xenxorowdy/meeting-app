@@ -1,0 +1,1825 @@
+[
+  {
+    "id": "bb6f2d56-bafb-40d4-9407-7b3d8e6066a3",
+    "title": "probe",
+    "startedAt": 1787232456163,
+    "endedAt": 1787232497817,
+    "durationSeconds": 41,
+    "summaryMarkdown": "Meeting **probe** completed with 6 spoken turns across You.",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "task": "I will do a bully, yes."
+      }
+    ],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "69b4b928-3cd9-4734-8fec-ef54f90828b6",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 8280,
+        "endMs": 11580,
+        "text": "Gracias.",
+        "confidence": 1.0
+      },
+      {
+        "id": "4d734561-6242-48a2-a04a-e79f9cbfa39f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 15600,
+        "endMs": 19020,
+        "text": "ऐसे वाठी के उटाइम पास कर रहा लर्पाटी यह करने हैं",
+        "confidence": 1.0
+      },
+      {
+        "id": "6c3769be-4797-4d78-bea4-cb3b3e0da2fb",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 20580,
+        "endMs": 23800,
+        "text": "तुछ पर पर पता है उसके वार्टे वांचे",
+        "confidence": 1.0
+      },
+      {
+        "id": "41bdb498-e92c-477e-b1a0-552d39f18a84",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 29120,
+        "endMs": 34160,
+        "text": "Why are you looking for a girl's pain?",
+        "confidence": 1.0
+      },
+      {
+        "id": "11a57429-023f-41f1-a6ca-83ae3435a8b3",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 34920,
+        "endMs": 37540,
+        "text": "Nah, I like it, you see me.",
+        "confidence": 1.0
+      },
+      {
+        "id": "46e01300-d565-4ba6-b44b-50413a997533",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 37540,
+        "endMs": 39736,
+        "text": "I will do a bully, yes.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787232456163
+  },
+  {
+    "id": "4ec2dc4e-1aec-4fe1-b92d-8404af4237c7",
+    "title": "Meeting 20/08/2026, 23:51:14",
+    "startedAt": 1787250074787,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [],
+    "createdAt": 1787250074787
+  },
+  {
+    "id": "5eae928f-706b-4485-8285-c96787bc383f",
+    "title": "Meeting 21/08/2026, 18:53:44",
+    "startedAt": 1787318624222,
+    "endedAt": 1787318724088,
+    "durationSeconds": 99,
+    "summaryMarkdown": "Meeting **Meeting 21/08/2026, 18:53:44** completed with 13 spoken turns across You.",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "priority": "Medium",
+        "task": "I will go back to the place"
+      },
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "priority": "Medium",
+        "task": "I will put it in a bowl"
+      },
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "priority": "Medium",
+        "task": "I will take care of you."
+      }
+    ],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "9d3a820d-33be-4769-84ce-3b9854cbb31e",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 1160,
+        "endMs": 2820,
+        "text": "To go, girl.",
+        "confidence": 1.0
+      },
+      {
+        "id": "57a02009-8bdb-4618-9ef0-2a4551e87a39",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 7160,
+        "endMs": 10100,
+        "text": "Essa naí é... eu com o Jogim de Bolô.",
+        "confidence": 1.0
+      },
+      {
+        "id": "a4cb5df1-d141-48cd-be90-d6133c06c6f0",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 11920,
+        "endMs": 13520,
+        "text": "Nah, yeah.",
+        "confidence": 1.0
+      },
+      {
+        "id": "3607ebd7-607b-4584-867e-919b04821e9a",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 15240,
+        "endMs": 17620,
+        "text": "No, it's not like that.",
+        "confidence": 1.0
+      },
+      {
+        "id": "f53fb487-0a67-4ac3-be69-204a25969edd",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 23320,
+        "endMs": 25400,
+        "text": "Não, baby, não.",
+        "confidence": 1.0
+      },
+      {
+        "id": "f9111447-b682-4a15-814e-054efb1405fa",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 39080,
+        "endMs": 43520,
+        "text": "I am not loving you. I love you.",
+        "confidence": 1.0
+      },
+      {
+        "id": "1d8cb384-5828-4f16-b5d7-bc43f0fac811",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 48400,
+        "endMs": 51340,
+        "text": "How much does it cost?",
+        "confidence": 1.0
+      },
+      {
+        "id": "88f00952-c18e-4dbe-ac58-48855876c9ca",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 51720,
+        "endMs": 53600,
+        "text": "You don't love me.",
+        "confidence": 1.0
+      },
+      {
+        "id": "37f6c5fd-a225-40be-9e2b-ea040149165c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 54220,
+        "endMs": 56320,
+        "text": "You don't love me.",
+        "confidence": 1.0
+      },
+      {
+        "id": "7ba43b70-702e-4b4b-bf98-1fbcac9a1401",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 57980,
+        "endMs": 60520,
+        "text": "I will go back to the place",
+        "confidence": 1.0
+      },
+      {
+        "id": "088d004a-6804-41c8-838c-d107effe49bd",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 62740,
+        "endMs": 65020,
+        "text": "I will put it in a bowl",
+        "confidence": 1.0
+      },
+      {
+        "id": "39f3c132-81b6-4c98-afed-c4ed97f168cf",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 67700,
+        "endMs": 69640,
+        "text": "I will take care of you.",
+        "confidence": 1.0
+      },
+      {
+        "id": "8cae25e0-0f11-4836-a2f6-26766982202e",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 82320,
+        "endMs": 84180,
+        "text": "\"Sundangum\"",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787318624222
+  },
+  {
+    "id": "d0751d26-8600-4fd4-8efc-69542e99796b",
+    "title": "Meeting 22/08/2026, 01:28:31",
+    "startedAt": 1787342311546,
+    "endedAt": 1787342381657,
+    "durationSeconds": 70,
+    "summaryMarkdown": "Meeting **Meeting 22/08/2026, 01:28:31** completed with 2 spoken turns across You.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "44f36540-a9fd-4bdb-9452-caad05eb1079",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 32200,
+        "endMs": 34140,
+        "text": "Just me go.",
+        "confidence": 1.0
+      },
+      {
+        "id": "5086f461-26b3-4a65-95c7-b5514af0208f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 43720,
+        "endMs": 48280,
+        "text": "how it works? it seems like a good model",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787342311546
+  },
+  {
+    "id": "4b8227ff-4c98-438c-900a-3c96a34b896c",
+    "title": "Meeting 22/08/2026, 23:43:17",
+    "startedAt": 1787422397188,
+    "endedAt": 1787422406458,
+    "durationSeconds": 9,
+    "summaryMarkdown": "No speech recorded during this meeting.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [],
+    "createdAt": 1787422397188
+  },
+  {
+    "id": "c863dbca-f215-41b2-8ac9-bbcb707249f7",
+    "title": "Meeting 20/08/2026, 17:48:15",
+    "startedAt": 1787228295747,
+    "endedAt": 1787228709242,
+    "durationSeconds": 413,
+    "summaryMarkdown": "No speech recorded during this meeting.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [],
+    "createdAt": 1787228295747
+  },
+  {
+    "id": "46fda778-7fcb-4f03-a750-540a75220fe3",
+    "title": "Meeting on Aug 20, 05:28 PM",
+    "startedAt": 1787227083219,
+    "endedAt": 1787227137200,
+    "durationSeconds": 53,
+    "summaryMarkdown": "Meeting **Meeting on Aug 20, 05:28 PM** completed with 14 spoken turns across You, Sarah Chen (Lead PM), David Miller (Head of Eng).",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "task": "Let us confirm the launch checklist and make sure the action items are assigned with clear deadlines."
+      },
+      {
+        "deadline": "TBD",
+        "owner": "Sarah Chen (Lead PM)",
+        "task": "I will coordinate the beta onboarding documentation and sample templates by Tuesday."
+      },
+      {
+        "deadline": "TBD",
+        "owner": "David Miller (Head of Eng)",
+        "task": "I will wrap up the final WASAPI loopback device change listener and notarization steps."
+      }
+    ],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "sim-turn-1787227084742-1",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 0,
+        "endMs": 4500,
+        "text": "Welcome everyone! Thanks for joining today’s sync on the alpha release.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227088757-2",
+        "channel": "system",
+        "speaker": "Sarah Chen (Lead PM)",
+        "startMs": 4500,
+        "endMs": 9000,
+        "text": "Happy to be here! The response to the bot-free architecture has been outstanding across our initial test users.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227092773-3",
+        "channel": "system",
+        "speaker": "David Miller (Head of Eng)",
+        "startMs": 9000,
+        "endMs": 13500,
+        "text": "The native audio capture layer is operating at under 2.5% CPU overhead on both macOS and Windows builds.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227096786-4",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 13500,
+        "endMs": 18000,
+        "text": "That satisfies our performance requirement. What is the current status of on-device WhisperKit integration?",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227100800-5",
+        "channel": "system",
+        "speaker": "David Miller (Head of Eng)",
+        "startMs": 18000,
+        "endMs": 22500,
+        "text": "WhisperKit runs directly on the Apple Neural Engine. Zero cloud data transmission for speech-to-text.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227104811-6",
+        "channel": "system",
+        "speaker": "Sarah Chen (Lead PM)",
+        "startMs": 22500,
+        "endMs": 27000,
+        "text": "And for summaries, we support Claude 3.5 Sonnet out of the box, with local Ollama for air-gapped corporate deployments.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227108828-7",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 27000,
+        "endMs": 31500,
+        "text": "Let us confirm the launch checklist and make sure the action items are assigned with clear deadlines.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227112838-8",
+        "channel": "system",
+        "speaker": "Sarah Chen (Lead PM)",
+        "startMs": 31500,
+        "endMs": 36000,
+        "text": "I will coordinate the beta onboarding documentation and sample templates by Tuesday.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227116848-9",
+        "channel": "system",
+        "speaker": "David Miller (Head of Eng)",
+        "startMs": 36000,
+        "endMs": 40500,
+        "text": "I will wrap up the final WASAPI loopback device change listener and notarization steps.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227120854-10",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 40500,
+        "endMs": 45000,
+        "text": "Excellent progress everyone. Let us wrap up and get these notes distributed.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227124869-11",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 45000,
+        "endMs": 49500,
+        "text": "Welcome everyone! Thanks for joining today’s sync on the alpha release.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227128883-12",
+        "channel": "system",
+        "speaker": "Sarah Chen (Lead PM)",
+        "startMs": 49500,
+        "endMs": 54000,
+        "text": "Happy to be here! The response to the bot-free architecture has been outstanding across our initial test users.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227132894-13",
+        "channel": "system",
+        "speaker": "David Miller (Head of Eng)",
+        "startMs": 54000,
+        "endMs": 58500,
+        "text": "The native audio capture layer is operating at under 2.5% CPU overhead on both macOS and Windows builds.",
+        "confidence": 1.0
+      },
+      {
+        "id": "sim-turn-1787227136907-14",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 58500,
+        "endMs": 63000,
+        "text": "That satisfies our performance requirement. What is the current status of on-device WhisperKit integration?",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787227083219
+  },
+  {
+    "id": "a6eca559-c534-473b-ad59-b567193fcd3b",
+    "title": "Meeting 20/08/2026, 20:00:44",
+    "startedAt": 1787236244292,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "205e15ee-85df-4a42-8fb6-39cefb44d14e",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 14360,
+        "endMs": 26480,
+        "text": "Breaking news ahead of the Dutch Grand Prix, Max Verstappen has officially committed his future to Red Bull Racing until the end of the 2030 Formula One season.",
+        "confidence": 1.0
+      },
+      {
+        "id": "c75a69db-00cf-40a7-b421-51c2b15d9c38",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 26720,
+        "endMs": 32740,
+        "text": "Red Bull confirmed the news this morning ending months of speculation about Verstappen's future.",
+        "confidence": 1.0
+      },
+      {
+        "id": "10823f5a-a71f-42ca-8362-dd863271643b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 49920,
+        "endMs": 57160,
+        "text": "enjoying the holidays. Of course we also were talking in the background and we've decided to",
+        "confidence": 1.0
+      },
+      {
+        "id": "706a54c5-72c1-4d7a-b984-6841168d5218",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 57160,
+        "endMs": 61620,
+        "text": "yet to extend the contract with the team. So, of course, very pleased for that.",
+        "confidence": 1.0
+      },
+      {
+        "id": "bfbc5dce-acdc-4b1c-8767-e4f1769ecbce",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 61620,
+        "endMs": 66400,
+        "text": "Yeah, the discussions have been good, and I mean, I feel really at home here, plus...",
+        "confidence": 1.0
+      },
+      {
+        "id": "11bc3f44-eb33-4f12-a6b1-d34d3653ae00",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 66400,
+        "endMs": 78880,
+        "text": "I'm getting to work with Lorona for over a year. It's been for me, it is very straight forward and very enjoyable. So to be able to then agree on the new deal is really nice.",
+        "confidence": 1.0
+      },
+      {
+        "id": "bc1d646d-047a-4ddb-9f1a-7b6614a0e9e9",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 78880,
+        "endMs": 83080,
+        "text": "His previous contract was due to expire at the end of 2028.",
+        "confidence": 1.0
+      },
+      {
+        "id": "6838fdbd-54c7-4f2f-b5be-53ceffc5b7d5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 83080,
+        "endMs": 87000,
+        "text": "but Verstappen has now committed to four more seasons with the team.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787236244292
+  },
+  {
+    "id": "9f5f4968-1d7d-4f52-b7c2-dcf0baa1028e",
+    "title": "Meeting 20/08/2026, 18:58:27",
+    "startedAt": 1787232507648,
+    "endedAt": 1787233136694,
+    "durationSeconds": 629,
+    "summaryMarkdown": "Meeting **Meeting 20/08/2026, 18:58:27** completed with 43 spoken turns across You.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "70255ec0-bc4f-4781-b6e6-9660b73261fe",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 15040,
+        "endMs": 17100,
+        "text": "Ne, ele beni tarzı.",
+        "confidence": 1.0
+      },
+      {
+        "id": "53326386-e2db-4f2f-bf61-2a0a712f767c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 30380,
+        "endMs": 32600,
+        "text": "Cozbe gol, eu dirio",
+        "confidence": 1.0
+      },
+      {
+        "id": "93d76773-94b5-4a0b-9247-024ea4812d3c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 47880,
+        "endMs": 50480,
+        "text": "कैसी बाते गरता था वो नहीं देखा",
+        "confidence": 1.0
+      },
+      {
+        "id": "63629659-79a3-46e9-ba1a-ed4a6d7c844f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 56380,
+        "endMs": 59720,
+        "text": "A mí ya aquí, ¿eh? Tú nunca me juntas de ese.",
+        "confidence": 1.0
+      },
+      {
+        "id": "6f84e38b-f03a-4ca7-8776-1ccdf2a215f8",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 62980,
+        "endMs": 65720,
+        "text": "क्या क्या कभी घुलती हो ऐसे",
+        "confidence": 1.0
+      },
+      {
+        "id": "1b5812eb-82bd-4405-8803-a8a37b3186be",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 70800,
+        "endMs": 73420,
+        "text": "Ficou de ver o olho, meu melhor, Carvalho.",
+        "confidence": 1.0
+      },
+      {
+        "id": "46741bf6-1435-4f27-b44c-ba0a43df770f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 83620,
+        "endMs": 85220,
+        "text": "то ой да более.",
+        "confidence": 1.0
+      },
+      {
+        "id": "20c04683-7e20-4b8d-9568-000c03dae52c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 90860,
+        "endMs": 93520,
+        "text": "چھوڑو نا یہ سب باتیں",
+        "confidence": 1.0
+      },
+      {
+        "id": "e783bc7b-22cf-4602-9b34-16477816b71b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 105920,
+        "endMs": 107680,
+        "text": "منه گوشنی گولا",
+        "confidence": 1.0
+      },
+      {
+        "id": "771fcdd0-18e2-40a9-b4c7-f88a9ad7039b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 114300,
+        "endMs": 117300,
+        "text": "No, no, no, no",
+        "confidence": 1.0
+      },
+      {
+        "id": "52e5ca46-5383-4d12-b1b9-bb656fa0dcd6",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 117620,
+        "endMs": 119620,
+        "text": "Que si batte un attimo",
+        "confidence": 1.0
+      },
+      {
+        "id": "f70dc4ef-ada9-407b-a85b-806e358a53a3",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 120880,
+        "endMs": 123780,
+        "text": "तो चालो, तोज में रालो, तुमाना कभिल कर दाएंगी होता.",
+        "confidence": 1.0
+      },
+      {
+        "id": "840381b7-2715-404a-a373-1aa5e81f757b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 123780,
+        "endMs": 125660,
+        "text": "Amejado, é",
+        "confidence": 1.0
+      },
+      {
+        "id": "7c4ee146-e6a6-4c35-9596-522199f399b9",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 128660,
+        "endMs": 131760,
+        "text": "देख लेना, अमेशा में गरता हूं कमेंट",
+        "confidence": 1.0
+      },
+      {
+        "id": "86dc3c8a-ce9b-487a-99ab-2bea3d82a1f5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 135140,
+        "endMs": 140060,
+        "text": "Like and comment and subscribe",
+        "confidence": 1.0
+      },
+      {
+        "id": "92984c8e-f0ee-43ba-bc47-d70242dd1a8d",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 143580,
+        "endMs": 145980,
+        "text": "Rere kone mekonipata",
+        "confidence": 1.0
+      },
+      {
+        "id": "e43c85de-7745-40c6-9a9c-c31467364304",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 155240,
+        "endMs": 161480,
+        "text": "छोड़ो न जीलो अपन कहा से कहा पर आगे तुम्हें पता है आज आज आप बारिश गे रहे थी इतनी खतरना को आगी तो",
+        "confidence": 1.0
+      },
+      {
+        "id": "46daa41a-4e9f-430c-8581-2d30743be737",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 174080,
+        "endMs": 177800,
+        "text": "देखने की का बात आगई से मैं देखने मालक कुछ नहीं",
+        "confidence": 1.0
+      },
+      {
+        "id": "ecd6343b-2159-4522-a262-54fd84dc5b30",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 186020,
+        "endMs": 188880,
+        "text": "Mais qu'est-ce que ça va être ni gâteau?",
+        "confidence": 1.0
+      },
+      {
+        "id": "d41b4e65-8932-4e8b-a77b-0f6ed83cb851",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 198620,
+        "endMs": 200380,
+        "text": "– Quais-me vous dire? – Qu'est-ce que vous voulez?",
+        "confidence": 1.0
+      },
+      {
+        "id": "e5d6b9ef-ef2d-4df3-b09f-28a17c8993b5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 215380,
+        "endMs": 217520,
+        "text": "नहीं है सब काई से आगया है",
+        "confidence": 1.0
+      },
+      {
+        "id": "61703ee9-cb40-4070-a450-078d2f5ea10a",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 222820,
+        "endMs": 224640,
+        "text": "そのまでは考えられます",
+        "confidence": 1.0
+      },
+      {
+        "id": "cd97c815-ac52-4f54-ac90-aad0b3a7a02a",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 227660,
+        "endMs": 229940,
+        "text": "ممی کا سمب آیا کر رہا تھا",
+        "confidence": 1.0
+      },
+      {
+        "id": "4da75859-54b1-41bc-8bf1-328ff6b012fb",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 238080,
+        "endMs": 240520,
+        "text": "\"Mummy, what's the matter?\"",
+        "confidence": 1.0
+      },
+      {
+        "id": "46a6cdc9-8494-4c80-826b-1fb945a6afac",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 245380,
+        "endMs": 249360,
+        "text": "نہیں میں ایسے ملا کر رہا تھا کچھ بھی بول ہوئے",
+        "confidence": 1.0
+      },
+      {
+        "id": "a76196b1-0d88-495c-a5e4-6ef9bab7253f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 275960,
+        "endMs": 278980,
+        "text": "What's going on?",
+        "confidence": 1.0
+      },
+      {
+        "id": "b23399d1-4183-49a5-b6b5-b4d755649c35",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 308680,
+        "endMs": 311240,
+        "text": "कुछ भी नहीं है ऐसा ठीक है ना",
+        "confidence": 1.0
+      },
+      {
+        "id": "110bdde8-8835-4d31-b4de-334c750be97d",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 333300,
+        "endMs": 335380,
+        "text": "Não é esconder nenhum.",
+        "confidence": 1.0
+      },
+      {
+        "id": "d45beb44-b2f3-4196-95d4-71a1de86d0b5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 346580,
+        "endMs": 348640,
+        "text": "I'll tell my question.",
+        "confidence": 1.0
+      },
+      {
+        "id": "e9694011-93bc-4d43-b482-4001deb96d74",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 361140,
+        "endMs": 364540,
+        "text": "She don't know, she don't know. Leanne, do you think?",
+        "confidence": 1.0
+      },
+      {
+        "id": "11cc01c8-1fc7-408c-b895-05170b6210de",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 368800,
+        "endMs": 374080,
+        "text": "میں نے تمہیں کیا بولا ایسا ہے تمہیں فیسے رہنے کی چھڑنا لگ رہی ہو",
+        "confidence": 1.0
+      },
+      {
+        "id": "75493519-f6b0-43ef-aa81-b8d5ae966150",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 388000,
+        "endMs": 392040,
+        "text": "है मेरे में कम है, अपकोर्स है, हर किसे में होती है",
+        "confidence": 1.0
+      },
+      {
+        "id": "c7c804f5-ee9e-4470-b474-4a772803205f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 392420,
+        "endMs": 394320,
+        "text": "Bagoan problema huu",
+        "confidence": 1.0
+      },
+      {
+        "id": "7280b82c-f4cf-4560-b12a-e1fa4c68ae8a",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 457940,
+        "endMs": 459560,
+        "text": "Mujem viniê",
+        "confidence": 1.0
+      },
+      {
+        "id": "54287558-d9d3-4901-8561-cb204a6664c0",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 467920,
+        "endMs": 472820,
+        "text": "بابو جیلو سال برسک پہلے کی بات ہے",
+        "confidence": 1.0
+      },
+      {
+        "id": "291997d7-858f-4b9d-9af3-f0bebda7de73",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 475960,
+        "endMs": 477740,
+        "text": "Tige mir huhe, sah.",
+        "confidence": 1.0
+      },
+      {
+        "id": "28afbfe6-1485-413c-9de3-945f9c5ce584",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 477740,
+        "endMs": 479800,
+        "text": "اور اب نہیں ہونا پہلے تھا",
+        "confidence": 1.0
+      },
+      {
+        "id": "991b3f94-4a3f-478c-b808-2d6235666176",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 533900,
+        "endMs": 536080,
+        "text": "میں تو ہوں ان سے بھی اچھا ہوں",
+        "confidence": 1.0
+      },
+      {
+        "id": "099361e9-e5f2-460c-b07f-ed4441f5032a",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 548160,
+        "endMs": 551940,
+        "text": "जिलो जाकें उसमें नहीं होते होंगे चगड़े",
+        "confidence": 1.0
+      },
+      {
+        "id": "a0d5a289-4d77-4ecb-92cd-b8b22eed589c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 582240,
+        "endMs": 583840,
+        "text": "Maybe an eagle, though.",
+        "confidence": 1.0
+      },
+      {
+        "id": "f572e6c8-9941-43ab-ab51-42c3e1cffea7",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 590200,
+        "endMs": 591840,
+        "text": "बढ़िए नहीं पर दो",
+        "confidence": 1.0
+      },
+      {
+        "id": "50d9de23-d889-49bc-9e88-3bfd403c3caf",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 600620,
+        "endMs": 603460,
+        "text": "ہمیشہ آتا ہے لائک تو ہمیشہ کرتا ہوں میں",
+        "confidence": 1.0
+      },
+      {
+        "id": "4af9fec1-6a2a-4015-8e94-92d6a59c02ad",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 619920,
+        "endMs": 621780,
+        "text": "Eso pues, William.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787232507648
+  },
+  {
+    "id": "c0e89236-2af2-4ec4-8f36-005562306cd3",
+    "title": "Launch plan sync",
+    "startedAt": 1787230084302,
+    "endedAt": 1787230141343,
+    "durationSeconds": 57,
+    "summaryMarkdown": "Meeting **Launch plan sync** completed with 1 spoken turns across You.",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "task": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the notorization by Friday."
+      }
+    ],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "f4c469cb-0adf-4754-8ec1-813d814a0db4",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 220,
+        "endMs": 9000,
+        "text": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the notorization by Friday.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787230084302
+  },
+  {
+    "id": "cd423772-c86f-45fc-9b4c-7aad0206068a",
+    "title": "Meeting 21/08/2026, 18:23:03",
+    "startedAt": 1787316783916,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "b1c67185-9660-495b-b6da-24dec8ace12d",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 1500,
+        "endMs": 5360,
+        "text": "- 아프지 못한다고도 오지?",
+        "confidence": 1.0
+      },
+      {
+        "id": "044031bf-4476-4a3d-a984-a59d2bdf6583",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 10060,
+        "endMs": 25060,
+        "text": "I think it is a good idea to use model guns. I used this one for the low-pillar. There is a lot of work.",
+        "confidence": 1.0
+      },
+      {
+        "id": "f30e5b33-105c-432f-a23f-a48c28fecef6",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 25860,
+        "endMs": 33580,
+        "text": "and we'll go to the side of the notes for the final round.",
+        "confidence": 1.0
+      },
+      {
+        "id": "3a33db76-c471-41b3-b2e2-0949728f1373",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 33580,
+        "endMs": 38700,
+        "text": "I will give you a 1-1 after the day. I will give you a 1-1 after the day.",
+        "confidence": 1.0
+      },
+      {
+        "id": "7933a563-e86a-43f1-9303-2e679cc8c2ba",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 38700,
+        "endMs": 51280,
+        "text": "If you know that there is a problem, then you will be able do English. When you generate the last one, then you need to give an option here. Because your subscription is a bit too much for you to make it.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787316783916
+  },
+  {
+    "id": "8f8e2bf3-0957-4378-896b-de3490aa137c",
+    "title": "Meeting 20/08/2026, 18:22:12",
+    "startedAt": 1787230332302,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "ee822f5d-2ab9-4614-9821-da87baaffcba",
+        "channel": "system",
+        "speaker": "Others",
+        "startMs": 220,
+        "endMs": 9000,
+        "text": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the Noterization by Friday.",
+        "confidence": 1.0
+      },
+      {
+        "id": "5309dee4-5b15-43f0-b3f8-6c9b75b619f2",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 27540,
+        "endMs": 28880,
+        "text": "[BLANK_AUDIO]",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787230332302
+  },
+  {
+    "id": "cbac46a7-1e79-47e6-96f3-00c37c7fbd77",
+    "title": "Meeting 20/08/2026, 23:49:57",
+    "startedAt": 1787249997084,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [],
+    "createdAt": 1787249997084
+  },
+  {
+    "id": "cfc66470-bfd0-46dd-87f7-90c87710b6dd",
+    "title": "Meeting 22/08/2026, 01:29:45",
+    "startedAt": 1787342385073,
+    "endedAt": 1787422393918,
+    "durationSeconds": 80008,
+    "summaryMarkdown": "Meeting **Meeting 22/08/2026, 01:29:45** completed with 8 spoken turns across You.",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "priority": "Medium",
+        "task": "Now we will talk about this."
+      }
+    ],
+    "keyDecisions": [
+      "Now we will talk about this."
+    ],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "1ae40c24-533c-45ad-8689-151d96611fd5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 140,
+        "endMs": 4080,
+        "text": "I don't know if I can get a better view",
+        "confidence": 1.0
+      },
+      {
+        "id": "050aced0-e939-4f79-aa73-fe021110fc66",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 13460,
+        "endMs": 18020,
+        "text": "I just spoke like this, you don't love me.",
+        "confidence": 1.0
+      },
+      {
+        "id": "9031fd82-d364-49da-96a3-df04d73af448",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 30320,
+        "endMs": 33860,
+        "text": "Now we will talk about this.",
+        "confidence": 1.0
+      },
+      {
+        "id": "ddbd7273-bd65-4f59-916e-7822a222b989",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 41980,
+        "endMs": 44940,
+        "text": "of you now at the YouTube channel.",
+        "confidence": 1.0
+      },
+      {
+        "id": "caa0a87e-9da2-4154-b2ee-a19c7abd0243",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 52420,
+        "endMs": 54780,
+        "text": "I like to do this",
+        "confidence": 1.0
+      },
+      {
+        "id": "2a3e826e-8761-44ad-bbd9-04d936723530",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 55400,
+        "endMs": 57760,
+        "text": "He's not worth a lot of time.",
+        "confidence": 1.0
+      },
+      {
+        "id": "35b5b9bf-26b0-4832-833d-440421f738d3",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 63560,
+        "endMs": 65200,
+        "text": "Belequei!",
+        "confidence": 1.0
+      },
+      {
+        "id": "161c5280-cf13-4167-a377-2fdbde769703",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 75060,
+        "endMs": 83300,
+        "text": "Thanks for watching.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787342385073
+  },
+  {
+    "id": "8089fb4e-cf25-4bc9-b55b-44381e98fea5",
+    "title": "Hindi transcription check",
+    "startedAt": 1787232002542,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "0bf0718c-23df-4de3-9f34-7264a67fa0b6",
+        "channel": "system",
+        "speaker": "Others",
+        "startMs": 220,
+        "endMs": 7660,
+        "text": "नमस्ते सभी को, आज हम लॉंच प्लान फाइनल करेंगे, मैं शुक्रवार तक नोर्टराइजेशन पूरा कर दूँगा.",
+        "confidence": 1.0
+      },
+      {
+        "id": "d00ac487-c08e-49a1-bd63-e85ecf84d5a0",
+        "channel": "system",
+        "speaker": "Others",
+        "startMs": 8520,
+        "endMs": 14860,
+        "text": "Team, हमें deployment अगले हफ़ते तक finish करना है. I will send the summary tonight.",
+        "confidence": 1.0
+      },
+      {
+        "id": "6e38e682-3e24-4ae3-9b11-56b53672cac5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 16460,
+        "endMs": 18700,
+        "text": "Are you at the end?",
+        "confidence": 1.0
+      },
+      {
+        "id": "2cbaa84a-5ca5-4134-a226-a63517dd551a",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 19000,
+        "endMs": 25640,
+        "text": "- I'm going to get back. - I'm going to get back to the bank. - You have a credit card, you are going to get back?",
+        "confidence": 1.0
+      },
+      {
+        "id": "fd09df53-5ae5-4298-8c9e-9b4775d06a0c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 25700,
+        "endMs": 28580,
+        "text": "Obrigada.",
+        "confidence": 1.0
+      },
+      {
+        "id": "5a598ab9-286a-41ca-97db-2892785e4cf4",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 32900,
+        "endMs": 40260,
+        "text": "What is today? What is your name? You don't tell me.",
+        "confidence": 1.0
+      },
+      {
+        "id": "a7140082-0361-4450-b7f6-ae227749076b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 40580,
+        "endMs": 44840,
+        "text": "मेरे साथ अच कुछ नहीं हुआ, मैं जाही नहीं रहूं कहीं पर ओफिस",
+        "confidence": 1.0
+      },
+      {
+        "id": "70bbf09f-61b0-48d5-8e41-b947108a37f6",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 54560,
+        "endMs": 57920,
+        "text": "O final do hall, nós já me ó.",
+        "confidence": 1.0
+      },
+      {
+        "id": "ad0308b3-9428-4c38-ae16-f228da9eda03",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 62720,
+        "endMs": 65360,
+        "text": "Thank you.",
+        "confidence": 1.0
+      },
+      {
+        "id": "ee64c889-5e85-47fa-a651-15a3ea87865f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 65360,
+        "endMs": 67400,
+        "text": "پھر کیا کر رہی تھی یہ",
+        "confidence": 1.0
+      },
+      {
+        "id": "eee14309-e9a1-453e-8660-f6ff6a114e67",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 74660,
+        "endMs": 76880,
+        "text": "Maybe I won't do it.",
+        "confidence": 1.0
+      },
+      {
+        "id": "a057b4c6-295b-423e-946f-11e03d0ae022",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 77660,
+        "endMs": 79760,
+        "text": "What about I getting brought back?",
+        "confidence": 1.0
+      },
+      {
+        "id": "d2db7e91-0d5c-4115-ab72-a1a02d96aa77",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 80400,
+        "endMs": 83400,
+        "text": "A dek a kita bolir",
+        "confidence": 1.0
+      },
+      {
+        "id": "550ffc69-1f36-40b4-9c31-b8b8d5a067e4",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 83400,
+        "endMs": 88420,
+        "text": "No, I don't think that it's not like that.",
+        "confidence": 1.0
+      },
+      {
+        "id": "2ee16b6f-43d0-4ca6-804f-8088e3d45195",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 88420,
+        "endMs": 89720,
+        "text": "But yeah...",
+        "confidence": 1.0
+      },
+      {
+        "id": "b55bd8f8-6c7e-4edb-a34d-d069c55d07d4",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 90120,
+        "endMs": 94700,
+        "text": "It's another question to me and thank you.",
+        "confidence": 1.0
+      },
+      {
+        "id": "cbfd9f6a-1fb4-47a7-8ccd-011cec99f39f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 94700,
+        "endMs": 97760,
+        "text": "आहां ऐसे बोलो तुम तुम्हें कितना ज्यान रगता हूं तुम्हा",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787232002542
+  },
+  {
+    "id": "c043e61a-0ecb-47d8-810e-a3303e2b9d26",
+    "title": "Meeting 20/08/2026, 20:11:28",
+    "startedAt": 1787236888507,
+    "endedAt": 1787236907869,
+    "durationSeconds": 19,
+    "summaryMarkdown": "Meeting **Meeting 20/08/2026, 20:11:28** completed with 1 spoken turns across You.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "d2e77dfa-6ded-49ae-80c0-cd0237abd43f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 520,
+        "endMs": 2620,
+        "text": "Hello.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787236888507
+  },
+  {
+    "id": "ff1c7fc8-72d7-4398-93d7-6ea9fcb4b057",
+    "title": "Meeting 20/08/2026, 18:24:09",
+    "startedAt": 1787230449994,
+    "endedAt": 1787230498568,
+    "durationSeconds": 48,
+    "summaryMarkdown": "Meeting **Meeting 20/08/2026, 18:24:09** completed with 1 spoken turns across Others.",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "Others",
+        "task": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the Noterization by Friday."
+      }
+    ],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "f6265b4f-d17a-449f-aeca-8d5a4323de89",
+        "channel": "system",
+        "speaker": "Others",
+        "startMs": 220,
+        "endMs": 9000,
+        "text": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the Noterization by Friday.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787230449994
+  },
+  {
+    "id": "9a23b764-4e60-4884-98f4-0e5a16f264f6",
+    "title": "Meeting 20/08/2026, 20:23:37",
+    "startedAt": 1787237617593,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "a1d85823-3746-475c-8b3a-ad996dceb5ae",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 40,
+        "endMs": 4320,
+        "text": "Hello!",
+        "confidence": 1.0
+      },
+      {
+        "id": "37bc4df9-583f-42ca-9f84-00bd2e04c271",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 11440,
+        "endMs": 13060,
+        "text": "You are.",
+        "confidence": 1.0
+      },
+      {
+        "id": "b65a45e0-3712-47fb-a9f9-e3f053f7ceaa",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 31660,
+        "endMs": 46660,
+        "text": "This is Louie Hesse, or Jesus because Uncle was left speechless, completely stunned by the lack of self-awareness, mocked by everyone. Nobito went home to Doremon, just wanting some praise during the day.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787237617593
+  },
+  {
+    "id": "e6795f23-f6b6-46bb-8b92-f707874bf60b",
+    "title": "Meeting 20/08/2026, 18:51:48",
+    "startedAt": 1787232108944,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [],
+    "createdAt": 1787232108944
+  },
+  {
+    "id": "75faa7fe-3f45-4b84-99fe-edce858e5827",
+    "title": "Meeting 20/08/2026, 23:40:54",
+    "startedAt": 1787249454785,
+    "endedAt": 1787249560877,
+    "durationSeconds": 106,
+    "summaryMarkdown": "No speech recorded during this meeting.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [],
+    "createdAt": 1787249454785
+  },
+  {
+    "id": "04a761ce-88bb-4d36-9b57-978df0366c59",
+    "title": "Meeting 20/08/2026, 18:55:55",
+    "startedAt": 1787232355668,
+    "endedAt": 1787232427474,
+    "durationSeconds": 71,
+    "summaryMarkdown": "Meeting **Meeting 20/08/2026, 18:55:55** completed with 13 spoken turns across You, Others.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "db5e2556-8c3a-49a1-b335-566ad8f39743",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 13580,
+        "endMs": 18620,
+        "text": "And Anmol is also giving her daughter. She is our daughter.",
+        "confidence": 1.0
+      },
+      {
+        "id": "2a7700f5-2b52-4cc4-aa5c-1e4af42003e7",
+        "channel": "system",
+        "speaker": "Others",
+        "startMs": 220,
+        "endMs": 7640,
+        "text": "नमस्ते सभी को, आज हम लॉंच प्लान फाइनल करेंगे, मैं शुक्रवार तक नोर्टराइजेशन पूरा कर दूँगा.",
+        "confidence": 1.0
+      },
+      {
+        "id": "2305b815-ddc3-45d2-bbc7-c357d25cc59b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 18620,
+        "endMs": 20420,
+        "text": "Hapa da wutu.",
+        "confidence": 1.0
+      },
+      {
+        "id": "e9753d4b-1601-483b-a886-55f50d276bc2",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 20820,
+        "endMs": 23400,
+        "text": "- The ice cream is so amazing.",
+        "confidence": 1.0
+      },
+      {
+        "id": "ade084a3-ff7c-48b6-b7c7-46178f37b039",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 23560,
+        "endMs": 26900,
+        "text": "So that's why we don't talk about it.",
+        "confidence": 1.0
+      },
+      {
+        "id": "bbdaf434-c91f-4a72-9974-18f1ef373357",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 26940,
+        "endMs": 28600,
+        "text": "What do you say?",
+        "confidence": 1.0
+      },
+      {
+        "id": "6d5bd604-577e-4122-b668-f7d9a8146854",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 29240,
+        "endMs": 30880,
+        "text": "Bye, bye.",
+        "confidence": 1.0
+      },
+      {
+        "id": "babe1ce1-557c-4040-83c2-3482a4f19895",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 31200,
+        "endMs": 33180,
+        "text": "Drugi gola tadu.",
+        "confidence": 1.0
+      },
+      {
+        "id": "4db23b78-4ce3-4a47-9ec7-5f2021364471",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 33180,
+        "endMs": 34840,
+        "text": "You're doing this all right.",
+        "confidence": 1.0
+      },
+      {
+        "id": "1cc8b5b6-725e-498d-b681-4dbafa06c6bf",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 40040,
+        "endMs": 46840,
+        "text": "तो फिर वो एक बास बूले बैटकर भाट कर ला न? दुरूती से? दुरूती को न?",
+        "confidence": 1.0
+      },
+      {
+        "id": "cf5c3db5-ed60-4e64-a77e-735437c230ab",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 59020,
+        "endMs": 61560,
+        "text": "Pero no me vuelvo a poner, no me vuelvo a poner.",
+        "confidence": 1.0
+      },
+      {
+        "id": "0c063657-103d-4637-be33-de56064904d7",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 63820,
+        "endMs": 66040,
+        "text": "ये देरा कमेशन एंडे",
+        "confidence": 1.0
+      },
+      {
+        "id": "9c6d3fb5-8c0e-409f-8076-978f53a5ce23",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 67080,
+        "endMs": 70540,
+        "text": "दुरूती कोन है जो इसकी गर्फ्रेंड है वो",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787232355668
+  },
+  {
+    "id": "f4250f60-bbaf-4763-bb79-9d73892b5867",
+    "title": "Meeting 20/08/2026, 18:32:37",
+    "startedAt": 1787230957608,
+    "endedAt": 1787231023851,
+    "durationSeconds": 66,
+    "summaryMarkdown": "Meeting **Meeting 20/08/2026, 18:32:37** completed with 14 spoken turns across You.",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "213ea68d-b3a9-4a79-8b48-795c9ef302c5",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 12560,
+        "endMs": 14480,
+        "text": "Many kids are very cool.",
+        "confidence": 1.0
+      },
+      {
+        "id": "293d4bae-59c7-4f93-8aea-faea318c06e0",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 15420,
+        "endMs": 18460,
+        "text": "I mean, make a good deal of respect.",
+        "confidence": 1.0
+      },
+      {
+        "id": "f90fce2e-8ea5-4f4f-84c2-7628d9878056",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 18500,
+        "endMs": 20100,
+        "text": "later",
+        "confidence": 1.0
+      },
+      {
+        "id": "fc181cc6-0879-4229-95c8-298109f75648",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 20320,
+        "endMs": 22200,
+        "text": "Yeah, you can say it.",
+        "confidence": 1.0
+      },
+      {
+        "id": "eb41e3eb-303d-41b9-809e-694ffe5f2f6f",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 24280,
+        "endMs": 26860,
+        "text": "Feel like I'm in the fabric, yeah.",
+        "confidence": 1.0
+      },
+      {
+        "id": "810cac9f-12c3-4998-b2f5-24ac8cb4024c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 27760,
+        "endMs": 31780,
+        "text": "I'm not happy. What did you do? What?",
+        "confidence": 1.0
+      },
+      {
+        "id": "cb722f64-33fb-4d39-bc92-8bcbc1caf45c",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 32600,
+        "endMs": 34600,
+        "text": "Come again",
+        "confidence": 1.0
+      },
+      {
+        "id": "cc448fcf-3ea3-41cd-a5cb-3b695c96b2bd",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 34600,
+        "endMs": 36160,
+        "text": "on to get on any game.",
+        "confidence": 1.0
+      },
+      {
+        "id": "a9fcb2e9-9efb-49c0-b052-d2cb0e5ad76d",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 38000,
+        "endMs": 39520,
+        "text": "Okay, so I go",
+        "confidence": 1.0
+      },
+      {
+        "id": "17bffe2d-f17e-4ba3-b081-e84bccab81ed",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 47200,
+        "endMs": 48740,
+        "text": "DSO",
+        "confidence": 1.0
+      },
+      {
+        "id": "b95e4a90-6c2f-4521-a138-7d633c47c22e",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 48960,
+        "endMs": 50640,
+        "text": "The end.",
+        "confidence": 1.0
+      },
+      {
+        "id": "8157b04d-07b6-418f-976c-856ea398617b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 51460,
+        "endMs": 53020,
+        "text": "The End.",
+        "confidence": 1.0
+      },
+      {
+        "id": "8ec92d56-8202-4d94-84a2-059d38662ddc",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 54140,
+        "endMs": 58780,
+        "text": "I don't know what to do. I don't know what to do.",
+        "confidence": 1.0
+      },
+      {
+        "id": "0ae1808e-8645-4fc7-bf42-7b40a8cfa6c2",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 61880,
+        "endMs": 63420,
+        "text": "I'm gonna go down.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787230957608
+  },
+  {
+    "id": "e64c920c-5a9e-4df1-bd19-95356943b0ac",
+    "title": "STT verification",
+    "startedAt": 1787229934935,
+    "endedAt": 1787229960168,
+    "durationSeconds": 25,
+    "summaryMarkdown": "Meeting **STT verification** completed with 1 spoken turns across You.",
+    "actionItems": [
+      {
+        "deadline": "TBD",
+        "owner": "You",
+        "task": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the Noterization by Friday."
+      }
+    ],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "8c07a83d-1d18-45a4-aea7-05dcc786e5ab",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 220,
+        "endMs": 9000,
+        "text": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the Noterization by Friday.",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787229934935
+  },
+  {
+    "id": "a52ea0ea-c28c-4629-b718-5662f9bbc4d9",
+    "title": "Meeting 20/08/2026, 23:47:50",
+    "startedAt": 1787249870553,
+    "endedAt": null,
+    "durationSeconds": 0,
+    "summaryMarkdown": "",
+    "actionItems": [],
+    "keyDecisions": [],
+    "topics": [],
+    "emailDraft": "",
+    "metadata": {},
+    "transcript": [
+      {
+        "id": "b4b79992-35f5-4ced-8491-964f8a29851b",
+        "channel": "mic",
+        "speaker": "You",
+        "startMs": 81100,
+        "endMs": 82760,
+        "text": "What are you doing?",
+        "confidence": 1.0
+      }
+    ],
+    "createdAt": 1787249870553
+  }
+]

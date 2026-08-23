@@ -1,0 +1,31 @@
+{
+  "name": "@alpha/core-backend",
+  "version": "1.0.0",
+  "description": "Rust performance core with a compatibility Node.js implementation",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "cargo run --release --manifest-path Cargo.toml",
+    "dev": "cargo run --manifest-path Cargo.toml",
+    "test": "cargo test --manifest-path Cargo.toml",
+    "test:legacy": "node test/run-tests.js",
+    "build": "cargo build --release --manifest-path Cargo.toml"
+  },
+  "keywords": [
+    "meeting-assistant",
+    "audio-dsp",
+    "vad",
+    "whisper",
+    "diarization",
+    "screencapturekit",
+    "wasapi",
+    "claude-ai",
+    "sqlite-fts"
+  ],
+  "author": "Alpha Engineering Team",
+  "license": "Commercial",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {}
+}

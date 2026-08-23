@@ -1,0 +1,31 @@
+{
+    "name": "meeting-assistant-monorepo",
+    "version": "1.0.0",
+    "description": "Commercial Desktop Meeting Assistant - Decoupled UI & Backend",
+    "private": true,
+    "workspaces": [
+        "apps/*"
+    ],
+    "scripts": {
+        "start": "npm run build:ui && npm run --prefix apps/desktop start",
+        "dev": "npm run --prefix apps/desktop dev",
+        "start:app": "npm run --prefix apps/desktop start",
+        "start:ui": "npm run --prefix apps/ui dev",
+        "start:backend": "npm run --prefix apps/core-backend start",
+        "test:backend": "npm run --prefix apps/core-backend test",
+        "build:ui": "npm run --prefix apps/ui build",
+        "build:backend": "npm run --prefix apps/core-backend build",
+        "build:all": "npm run build:ui && npm run build:backend",
+        "package": "npm run --prefix ../.. package",
+        "make": "npm run --prefix ../.. make"
+    },
+    "keywords": [
+        "meeting assistant",
+        "transcription",
+        "diarization",
+        "whisper",
+        "claude"
+    ],
+    "author": "Alpha Team",
+    "license": "Commercial"
+}
