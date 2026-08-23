@@ -1,4 +1,6 @@
 const { app, BrowserWindow, Menu, shell, nativeTheme } = require('electron');
+const recorder = require('./recorder');
+const podcast = require('./podcast');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -6,9 +8,10 @@ const path = require('node:path');
 
 const BACKEND_HOST = process.env.CORE_BACKEND_HOST || '127.0.0.1';
 const BACKEND_PORT = Number(process.env.CORE_BACKEND_PORT || 48900);
-// large-v3 is the only cached model that transcribes Hindi in Devanagari rather
-// than romanising it or falling back to Urdu script; it costs ~30s to load once.
-const STT_MODEL = process.env.CORE_BACKEND_STT_MODEL || 'large-v3-v20240930';
+// This is large-v3-turbo (OpenAI shipped turbo as the 2024-09-30 large-v3
+// release). It is also the backend's own default now, so this only pins it for a
+// backend started with a different one; it costs ~30s to load once.
+const STT_MODEL = process.env.CORE_BACKEND_STT_MODEL || 'large-v3-turbo';
 const STT_LANGUAGE = process.env.CORE_BACKEND_STT_LANGUAGE || 'auto';
 
 const HEALTH_TIMEOUT_MS = 800;
@@ -58,6 +61,14 @@ async function startBackend() {
         CORE_BACKEND_PORT: String(BACKEND_PORT),
         CORE_BACKEND_STT_MODEL: STT_MODEL,
         CORE_BACKEND_STT_LANGUAGE: STT_LANGUAGE,
+        // The backend receives only relative recording paths. This trusted root
+        // lets it resolve a completed recording for Sarvam batch STT without
+        // accepting arbitrary local file paths from HTTP clients.
+        ALPHA_RECORDINGS_DIR: recorder.RECORDINGS_ROOT,
+        // Podcast media follows the same trust model as recordings: renderer
+        // requests carry project ids, while the backend receives one fixed root.
+        ALPHA_PODCASTS_DIR: podcast.PODCASTS_ROOT,
+        ALPHA_FFMPEG_PATH: podcast.mediaTool('ffmpeg'),
     };
 
     if (fs.existsSync(CORE_BACKEND_BINARY)) {
@@ -143,10 +154,13 @@ function createWindow() {
         },
     });
 
-    // The renderer needs the microphone; everything else stays denied.
+    // The renderer needs the microphone, and the screen once recording is on;
+    // everything else stays denied.
     mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-        callback(permission === 'media' || permission === 'audioCapture');
+        callback(permission === 'media' || permission === 'audioCapture' || permission === 'display-capture');
     });
+
+    recorder.installDisplayMediaHandler(mainWindow.webContents.session);
 
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
@@ -168,6 +182,11 @@ function createWindow() {
     });
 }
 
+// Must run before `app.ready`: a scheme cannot be made privileged afterwards, and
+// without that the player cannot stream or seek a recording.
+recorder.registerMediaScheme();
+podcast.registerScheme();
+
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
@@ -180,6 +199,10 @@ if (!app.requestSingleInstanceLock()) {
 
     app.whenReady().then(async () => {
         buildMenu();
+        recorder.serveMediaScheme();
+        recorder.registerHandlers();
+        podcast.serveScheme();
+        podcast.registerHandlers();
 
         try {
             const status = await startBackend();
@@ -201,6 +224,12 @@ if (!app.requestSingleInstanceLock()) {
         if (process.platform !== 'darwin') app.quit();
     });
 
-    app.on('before-quit', stopBackend);
+    app.on('before-quit', async () => {
+        // Close the recording file before the backend goes away, so quitting
+        // mid-meeting still leaves something playable on disk.
+        await recorder.shutdown();
+        await podcast.shutdown();
+        stopBackend();
+    });
     process.on('exit', stopBackend);
 }

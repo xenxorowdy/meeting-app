@@ -1,19 +1,46 @@
 import tailwindcssAnimate from 'tailwindcss-animate';
 
+const spacing = {
+    0: '0px',
+    px: '1px',
+    1: '4px',
+    2: '8px',
+    4: '16px',
+    6: '24px',
+    8: '32px',
+    9: '36px',
+    10: '40px',
+    11: '44px',
+    12: '48px',
+    13: '52px',
+    14: '56px',
+    16: '64px',
+    20: '80px',
+    24: '96px',
+    28: '112px',
+    36: '144px',
+    44: '176px',
+    56: '224px',
+    55: '220px',
+};
+
 /** @type {import('tailwindcss').Config} */
 export default {
     darkMode: ['class'],
     content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
     theme: {
+        spacing,
         extend: {
             fontFamily: {
                 sans: [
+                    'ui-sans-serif',
+                    'system-ui',
                     '-apple-system',
                     'BlinkMacSystemFont',
+                    'SF Pro Display',
                     'SF Pro Text',
                     'Segoe UI Variable Text',
                     'Segoe UI',
-                    'Roboto',
                     'Helvetica Neue',
                     'Arial',
                     'sans-serif',
@@ -21,16 +48,16 @@ export default {
                 mono: ['ui-monospace', 'SF Mono', 'SFMono-Regular', 'Menlo', 'Cascadia Mono', 'Consolas', 'monospace'],
             },
             fontSize: {
-                'large-title': ['26px', { lineHeight: '32px', letterSpacing: '-0.02em' }],
-                title1: ['22px', { lineHeight: '28px', letterSpacing: '-0.015em' }],
-                title2: ['17px', { lineHeight: '22px', letterSpacing: '-0.01em' }],
-                title3: ['15px', { lineHeight: '20px', letterSpacing: '-0.005em' }],
-                headline: ['13px', { lineHeight: '16px', letterSpacing: '-0.005em' }],
-                body: ['13px', { lineHeight: '18px' }],
-                callout: ['12px', { lineHeight: '16px' }],
-                subhead: ['11px', { lineHeight: '15px' }],
-                footnote: ['11px', { lineHeight: '14px' }],
-                caption: ['10px', { lineHeight: '13px' }],
+                'large-title': ['34px', { lineHeight: '40px', letterSpacing: '-0.02em', fontWeight: '600' }],
+                title1: ['28px', { lineHeight: '34px', letterSpacing: '-0.02em', fontWeight: '600' }],
+                title2: ['22px', { lineHeight: '26px', letterSpacing: '-0.02em', fontWeight: '600' }],
+                title3: ['17px', { lineHeight: '22px', letterSpacing: '-0.01em' }],
+                headline: ['15px', { lineHeight: '20px', letterSpacing: '-0.01em' }],
+                body: ['15px', { lineHeight: '21px' }],
+                callout: ['13px', { lineHeight: '18px' }],
+                subhead: ['13px', { lineHeight: '18px' }],
+                footnote: ['11px', { lineHeight: '15px' }],
+                caption: ['11px', { lineHeight: '15px' }],
             },
             colors: {
                 border: 'hsl(var(--border))',
@@ -84,19 +111,24 @@ export default {
                 },
             },
             borderRadius: {
-                xl: 'calc(var(--radius) + 4px)',
-                lg: 'var(--radius)',
-                md: 'calc(var(--radius) - 2px)',
-                sm: 'calc(var(--radius) - 4px)',
+                xl: '12px',
+                lg: '10px',
+                md: '8px',
+                sm: '6px',
             },
             boxShadow: {
-                control: '0 1px 1px hsl(var(--scrim) / 0.06)',
-                card: '0 1px 3px hsl(var(--scrim) / 0.08), 0 4px 14px -6px hsl(var(--scrim) / 0.12)',
+                control: 'none',
+                card: 'none',
                 sheet: '0 18px 60px -12px hsl(var(--scrim) / 0.45)',
+                knob: '0 1px 2px hsl(var(--scrim) / 0.24)',
             },
             transitionTimingFunction: {
-                'apple-standard': 'cubic-bezier(0.4, 0, 0.2, 1)',
-                'apple-emphasis': 'cubic-bezier(0.32, 0.72, 0, 1)',
+                'apple-standard': 'cubic-bezier(0, 0, 0.2, 1)',
+                'apple-emphasis': 'cubic-bezier(0, 0, 0.2, 1)',
+            },
+            transitionDuration: {
+                DEFAULT: '200ms',
+                150: '200ms',
             },
             keyframes: {
                 'level-idle': {
@@ -110,7 +142,7 @@ export default {
             },
             animation: {
                 'level-idle': 'level-idle 1.6s ease-in-out infinite',
-                breathe: 'breathe 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                breathe: 'breathe 2s cubic-bezier(0, 0, 0.2, 1) infinite',
             },
         },
     },

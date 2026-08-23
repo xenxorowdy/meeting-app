@@ -37,9 +37,7 @@ const AlertDialogContent = React.forwardRef(({ className, ...props }, ref) => (
 ));
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
-const AlertDialogHeader = ({ className, ...props }) => (
-    <div className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />
-);
+const AlertDialogHeader = ({ className, ...props }) => <div className={cn('flex flex-col space-y-2 text-left', className)} {...props} />;
 AlertDialogHeader.displayName = 'AlertDialogHeader';
 
 const AlertDialogFooter = ({ className, ...props }) => (
@@ -48,12 +46,12 @@ const AlertDialogFooter = ({ className, ...props }) => (
 AlertDialogFooter.displayName = 'AlertDialogFooter';
 
 const AlertDialogTitle = React.forwardRef(({ className, ...props }, ref) => (
-    <AlertDialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold', className)} {...props} />
+    <AlertDialogPrimitive.Title ref={ref} className={cn('text-title3 font-semibold', className)} {...props} />
 ));
 AlertDialogTitle.displayName = AlertDialogPrimitive.Title.displayName;
 
 const AlertDialogDescription = React.forwardRef(({ className, ...props }, ref) => (
-    <AlertDialogPrimitive.Description ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />
+    <AlertDialogPrimitive.Description ref={ref} className={cn('text-callout text-muted-foreground', className)} {...props} />
 ));
 AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayName;
 

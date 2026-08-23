@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Calendar, Clock, Users, Download, Trash2, ChevronRight, ListChecks, X, RotateCw, TriangleAlert } from 'lucide-react';
+import { Search, Calendar, Clock, Users, Download, Trash2, ChevronRight, ListChecks, X, RotateCw } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,9 +53,9 @@ const DATE_WINDOWS_MS = {
 
 function StatTile({ label, value, unit }) {
     return (
-        <div className="rounded-lg bg-muted px-3 py-2.5">
+        <div className="rounded-lg bg-muted px-4 py-2">
             <p className="text-footnote text-muted-foreground">{label}</p>
-            <p className="mt-0.5 flex items-baseline gap-1">
+            <p className="mt-1 flex items-baseline gap-1">
                 <span className="tnum text-title1 font-semibold">{value}</span>
                 {unit && <span className="text-footnote text-muted-foreground">{unit}</span>}
             </p>
@@ -63,15 +63,12 @@ function StatTile({ label, value, unit }) {
     );
 }
 
-function EmptyState({ icon: Icon, title, description, action }) {
+function EmptyState({ title, description, action }) {
     return (
-        <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
-            <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Icon className="size-5" aria-hidden="true" />
-            </div>
+        <div className="flex h-full flex-col justify-center px-8 py-16">
             <p className="text-headline font-semibold">{title}</p>
             <p className="mt-1 max-w-sm text-callout text-muted-foreground">{description}</p>
-            {action && <div className="mt-3">{action}</div>}
+            {action && <div className="mt-4">{action}</div>}
         </div>
     );
 }
@@ -126,8 +123,8 @@ export function HistoryExplorer({
     };
 
     return (
-        <section aria-label="Meeting history" className="flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-card">
-            <div className="flex flex-col gap-3 p-3 hairline-bottom sm:p-4">
+        <section aria-label="Meeting history" className="flex h-full flex-col overflow-hidden rounded-xl border">
+            <div className="flex flex-col gap-4 p-4 hairline-bottom sm:p-4">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-2xl">
                     <StatTile label="Meetings" value={stats.totalMeetings} unit="stored" />
                     <StatTile label="Recorded" value={`${stats.totalHours}h`} unit="of audio" />
@@ -137,7 +134,7 @@ export function HistoryExplorer({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <div className="relative flex-1">
                         <Search
-                            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                            className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                             aria-hidden="true"
                         />
                         <Input
@@ -147,7 +144,7 @@ export function HistoryExplorer({
                             value={searchQuery}
                             disabled={!isConnected}
                             onChange={event => onSearchChange && onSearchChange(event.target.value)}
-                            className="h-8 rounded-full pl-8 pr-8 text-callout"
+                            className="h-9 pl-8 pr-8 text-callout"
                         />
                         {searchQuery && (
                             <Button
@@ -155,7 +152,7 @@ export function HistoryExplorer({
                                 size="iconXs"
                                 onClick={() => onSearchChange && onSearchChange('')}
                                 aria-label="Clear search"
-                                className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded-full text-muted-foreground"
+                                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full text-muted-foreground"
                             >
                                 <X aria-hidden="true" />
                             </Button>
@@ -165,7 +162,7 @@ export function HistoryExplorer({
                     <div className="flex items-center gap-2">
                         <SegmentedControl value={dateFilter} onValueChange={setDateFilter} aria-label="Filter by date">
                             {DATE_FILTERS.map(filter => (
-                                <SegmentedItem key={filter.value} value={filter.value} className="px-3">
+                                <SegmentedItem key={filter.value} value={filter.value} className="px-4">
                                     {filter.label}
                                 </SegmentedItem>
                             ))}
@@ -186,7 +183,6 @@ export function HistoryExplorer({
             <div className="flex-1 overflow-y-auto">
                 {!isConnected ? (
                     <EmptyState
-                        icon={TriangleAlert}
                         title="Backend offline"
                         description="Meetings are stored by the core backend. Start it to browse and search your history."
                         action={
@@ -198,7 +194,6 @@ export function HistoryExplorer({
                     />
                 ) : error ? (
                     <EmptyState
-                        icon={TriangleAlert}
                         title="Couldn’t load meetings"
                         description={error}
                         action={
@@ -211,16 +206,15 @@ export function HistoryExplorer({
                 ) : isLoading && meetings.length === 0 ? (
                     <ul className="divide-y divide-border" aria-busy="true" aria-label="Loading meetings">
                         {[0, 1, 2].map(row => (
-                            <li key={row} className="space-y-2 px-3 py-3.5 sm:px-4">
-                                <div className="h-3.5 w-1/3 animate-breathe rounded bg-muted" />
-                                <div className="h-3 w-2/3 animate-breathe rounded bg-muted" />
-                                <div className="h-3 w-1/4 animate-breathe rounded bg-muted" />
+                            <li key={row} className="space-y-2 px-4 py-4 sm:px-4">
+                                <div className="h-4 w-1/3 animate-breathe rounded bg-muted" />
+                                <div className="h-4 w-2/3 animate-breathe rounded bg-muted" />
+                                <div className="h-4 w-1/4 animate-breathe rounded bg-muted" />
                             </li>
                         ))}
                     </ul>
                 ) : visibleMeetings.length === 0 ? (
                     <EmptyState
-                        icon={Calendar}
                         title={searchQuery || dateFilter !== 'ALL' ? 'Nothing found' : 'No meetings yet'}
                         description={
                             searchQuery || dateFilter !== 'ALL'
@@ -258,7 +252,7 @@ export function HistoryExplorer({
                                             }
                                         }}
                                         className={cn(
-                                            'group flex cursor-pointer items-start justify-between gap-4 px-3 py-3 transition-colors sm:px-4',
+                                            'group flex cursor-pointer items-start justify-between gap-4 px-4 py-4 transition-colors sm:px-4',
                                             isSelected ? 'bg-primary/[0.10]' : 'hover:bg-muted/60'
                                         )}
                                     >
@@ -272,17 +266,17 @@ export function HistoryExplorer({
                                                 {plainSnippet(item.summaryMarkdown) || 'No summary stored for this meeting.'}
                                             </p>
 
-                                            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-footnote text-muted-foreground">
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-footnote text-muted-foreground">
                                                 <span className="flex items-center gap-1">
-                                                    <Calendar className="size-3" aria-hidden="true" />
+                                                    <Calendar className="size-4" aria-hidden="true" />
                                                     {formattedDate}
                                                 </span>
                                                 <span className="flex items-center gap-1">
-                                                    <Clock className="size-3" aria-hidden="true" />
+                                                    <Clock className="size-4" aria-hidden="true" />
                                                     {formatDurationNice(item.durationSeconds || 0)}
                                                 </span>
                                                 <span className="flex items-center gap-1">
-                                                    <Users className="size-3" aria-hidden="true" />
+                                                    <Users className="size-4" aria-hidden="true" />
                                                     {speakerCount === 0
                                                         ? 'No speakers detected'
                                                         : `${speakerCount} ${speakerCount === 1 ? 'speaker' : 'speakers'}`}
@@ -292,7 +286,7 @@ export function HistoryExplorer({
                                                 </span>
                                                 {pendingActions > 0 && (
                                                     <span className="flex items-center gap-1 text-warning">
-                                                        <ListChecks className="size-3" aria-hidden="true" />
+                                                        <ListChecks className="size-4" aria-hidden="true" />
                                                         {pendingActions} open
                                                     </span>
                                                 )}

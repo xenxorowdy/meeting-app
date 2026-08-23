@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     env, io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -14,6 +14,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    process::Command,
     sync::{broadcast, mpsc, Mutex, RwLock},
 };
 use uuid::Uuid;
@@ -24,11 +25,20 @@ use alpha_core_backend::{
     vad::{SpeechDetector, Utterance},
 };
 
+mod calendar;
+use calendar::CalendarService;
+
 mod stt;
 use stt::SttService;
 
+mod sarvam;
+mod settings;
+mod podcast;
 mod summarizer;
-use summarizer::{MeetingSummary, SummaryRequest, SummaryService, SummaryTurn};
+use podcast::{Host as PodcastHost, PodcastService, ScriptRequest as PodcastScriptRequest, SourceTurn as PodcastSourceTurn};
+use sarvam::{label_speakers, BatchConfig, SarvamService};
+use settings::SettingsStore;
+use summarizer::{MeetingSummary, SummaryNote, SummaryRequest, SummaryService, SummaryTurn};
 
 const VERSION: &str = "2.0.0-rust";
 const DEFAULT_PORT: u16 = 48900;
@@ -61,6 +71,10 @@ struct TranscriptTurn {
     end_ms: i64,
     text: String,
     confidence: f32,
+    /// What the engine reported decoding this turn in. Absent on every record
+    /// stored before detection was surfaced, hence the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,13 +93,22 @@ struct Meeting {
     #[serde(default)]
     email_draft: String,
     metadata: Value,
+    /// Where the screen recording for this meeting lives, when there is one.
+    /// Written by the Electron shell (which owns the files) and stored here only
+    /// so the player can find them. Absent on every meeting recorded before this
+    /// existed, hence the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recording: Option<Value>,
+    #[serde(default)]
+    notes: Vec<Value>,
     transcript: Vec<TranscriptTurn>,
     created_at: i64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize)]
 enum SessionState {
     #[serde(rename = "IDLE")]
+    #[default]
     Idle,
     #[serde(rename = "STARTING")]
     Starting,
@@ -124,12 +147,7 @@ struct Session {
     system_rms: f32,
     mic_vad: SpeechDetector,
     system_vad: SpeechDetector,
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        Self::Idle
-    }
+    transcription_provider: String,
 }
 
 #[derive(Clone)]
@@ -195,7 +213,6 @@ impl Store {
             .read()
             .await
             .values()
-            .cloned()
             .filter(|m| {
                 query.is_empty()
                     || m.title.to_lowercase().contains(&query)
@@ -204,6 +221,7 @@ impl Store {
                         .iter()
                         .any(|t| t.text.to_lowercase().contains(&query))
             })
+            .cloned()
             .collect();
         values.sort_by_key(|m| std::cmp::Reverse(m.started_at));
         values.into_iter().skip(offset).take(limit).collect()
@@ -218,6 +236,140 @@ struct TranscriptionJob {
     utterance: Utterance,
 }
 
+fn posted_transcript(payload: &Value) -> Vec<TranscriptTurn> {
+    payload
+        .get("transcript")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .filter_map(|(index, turn)| {
+            let channel = turn
+                .get("channel")
+                .or_else(|| turn.get("stream"))
+                .and_then(Value::as_str)
+                .unwrap_or("system");
+            let text = turn
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if text.is_empty() {
+                return None;
+            }
+            let supplied = turn.get("speaker").and_then(Value::as_str);
+            Some(TranscriptTurn {
+                id: turn
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("turn-{index}")),
+                channel: channel.to_string(),
+                speaker: if channel == "mic" {
+                    "You".into()
+                } else if supplied == Some("You") || supplied.is_none() {
+                    "Others".into()
+                } else {
+                    supplied.unwrap().to_string()
+                },
+                start_ms: turn.get("startMs").and_then(Value::as_i64).unwrap_or(0),
+                end_ms: turn.get("endMs").and_then(Value::as_i64).unwrap_or(0),
+                text: text.to_string(),
+                confidence: turn
+                    .get("confidence")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(1.0) as f32,
+                language: turn
+                    .get("language")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            })
+        })
+        .collect()
+}
+
+fn set_meeting_metadata(meeting: &mut Meeting, key: &str, value: Value) {
+    if !meeting.metadata.is_object() {
+        meeting.metadata = json!({});
+    }
+    meeting.metadata[key] = value;
+}
+
+fn rename_meeting_speakers(
+    meeting: &mut Meeting,
+    renames: &serde_json::Map<String, Value>,
+) -> Result<usize, String> {
+    let mut cleaned = HashMap::new();
+    for (current, next) in renames {
+        let current = current.trim();
+        let next = next
+            .as_str()
+            .ok_or_else(|| "speaker names must be strings".to_string())?
+            .trim();
+        if current.is_empty() || next.is_empty() {
+            return Err("speaker names cannot be empty".into());
+        }
+        if next.chars().count() > 80 {
+            return Err("speaker names cannot exceed 80 characters".into());
+        }
+        cleaned.insert(current.to_string(), next.to_string());
+    }
+    if cleaned.is_empty() {
+        return Err("provide at least one speaker name to change".into());
+    }
+
+    let mut changed = 0;
+    for turn in &mut meeting.transcript {
+        if let Some(next) = cleaned.get(&turn.speaker) {
+            turn.speaker = next.clone();
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+/// The renderer only sends a relative recording path. Resolve it under the one
+/// directory the Electron parent explicitly handed to this process, then
+/// canonicalize both sides so `..` and symlinks cannot turn batch STT into an
+/// arbitrary local-file uploader.
+fn batch_recording_path(recording: Option<&Value>) -> Result<PathBuf, String> {
+    if recording
+        .and_then(|value| value.get("durationMs"))
+        .and_then(Value::as_i64)
+        .is_some_and(|duration| duration > 2 * 60 * 60 * 1000)
+    {
+        return Err("Sarvam batch transcription supports recordings up to two hours".into());
+    }
+    let relative = recording
+        .and_then(|value| value.get("videoPath"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            "Sarvam batch transcription needs a completed meeting recording".to_string()
+        })?;
+    let relative = Path::new(relative);
+    let root = env::var_os("ALPHA_RECORDINGS_DIR")
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "Sarvam batch transcription is available from the Alpha desktop app".to_string()
+        })?;
+    resolve_batch_recording(&root, relative)
+}
+
+fn resolve_batch_recording(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+    if relative.is_absolute() {
+        return Err("the recording path must be relative to Alpha's recording directory".into());
+    }
+    let canonical_root = std::fs::canonicalize(root)
+        .map_err(|cause| format!("could not open Alpha's recording directory: {cause}"))?;
+    let candidate = std::fs::canonicalize(root.join(relative))
+        .map_err(|cause| format!("could not open the completed meeting recording: {cause}"))?;
+    if !candidate.starts_with(&canonical_root) || !candidate.is_file() {
+        return Err("the meeting recording is outside Alpha's recording directory".into());
+    }
+    Ok(candidate)
+}
+
 #[derive(Clone)]
 struct AppState {
     started_at: i64,
@@ -225,22 +377,58 @@ struct AppState {
     store: Store,
     events: broadcast::Sender<String>,
     stt: Arc<SttService>,
+    sarvam: Arc<SarvamService>,
     summarizer: Arc<SummaryService>,
     transcriptions: mpsc::UnboundedSender<TranscriptionJob>,
     pending_transcriptions: Arc<AtomicUsize>,
+    settings: Arc<SettingsStore>,
+    calendar: Arc<CalendarService>,
+    podcast: Arc<PodcastService>,
 }
 
 impl AppState {
+    async fn stt_status(&self, active_provider: Option<&str>) -> Value {
+        let configured = match active_provider.filter(|value| !value.is_empty()) {
+            Some(provider) => provider.to_string(),
+            None => self
+                .settings
+                .get_str("transcriptionProvider")
+                .await
+                .unwrap_or_else(|| "whisper".into()),
+        };
+        let mut status = self.stt.status_value().await;
+        status["provider"] = json!(configured);
+        status["sarvam"] = self.sarvam.status_value().await;
+        status
+    }
+
     async fn status(&self) -> Value {
         let session = self.session.lock().await;
-        let turns = session.current.as_ref().map(|m| m.transcript.len()).unwrap_or(0);
+        let turns = session
+            .current
+            .as_ref()
+            .map(|m| m.transcript.len())
+            .unwrap_or(0);
+        let session_provider = if matches!(
+            session.state,
+            SessionState::Starting
+                | SessionState::Recording
+                | SessionState::Paused
+                | SessionState::ProcessingStt
+                | SessionState::Summarizing
+        ) {
+            session.transcription_provider.clone()
+        } else {
+            String::new()
+        };
         let state = json!({ "state": session.state.as_str(), "meetingId": session.current.as_ref().map(|m| &m.id), "meetingTitle": session.current.as_ref().map(|m| &m.title), "durationSeconds": session.current.as_ref().map(|m| (now_ms() - m.started_at).max(0) / 1000).unwrap_or(0), "turnsCount": turns, "audioLevels": { "mic": session.mic_rms * 100.0, "system": session.system_rms * 100.0 } });
         drop(session);
 
         let mut status = state;
-        status["stt"] = self.stt.status_value().await;
+        status["stt"] = self.stt_status(Some(&session_provider)).await;
         status["stt"]["pending"] = json!(self.pending_transcriptions.load(Ordering::SeqCst));
         status["summary"] = self.summarizer.status_value().await;
+        status["podcast"] = self.podcast.status_value().await;
         status
     }
 
@@ -251,12 +439,27 @@ impl AppState {
     }
 
     async fn start(&self, payload: &Value) -> Result<Meeting, String> {
+        let provider = self
+            .settings
+            .get_str("transcriptionProvider")
+            .await
+            .unwrap_or_else(|| "whisper".into())
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(provider.as_str(), "whisper" | "sarvam") {
+            return Err(format!("Unknown transcription provider '{provider}'"));
+        }
+        if provider == "sarvam" && !self.sarvam.has_key().await {
+            return Err("Add a Sarvam API key in Transcription settings before starting batch transcription.".into());
+        }
+
         let mut session = self.session.lock().await;
         if matches!(
             session.state,
             SessionState::Recording
                 | SessionState::Paused
                 | SessionState::Starting
+                | SessionState::ProcessingStt
                 | SessionState::Summarizing
         ) {
             return Err("A meeting session is already in progress.".into());
@@ -264,11 +467,25 @@ impl AppState {
         session.state = SessionState::Starting;
         session.mic_vad.reset();
         session.system_vad.reset();
+        session.transcription_provider = provider.clone();
         let now = now_ms();
 
         // Warm the model while the first sentences are still being spoken.
-        let stt = self.stt.clone();
-        tokio::spawn(async move { stt.ensure_ready().await });
+        // The language readout describes one meeting, so clear the previous
+        // meeting's tally before this one starts producing turns.
+        if provider == "whisper" {
+            self.stt.reset_language_stats().await;
+            let stt = self.stt.clone();
+            tokio::spawn(async move { stt.ensure_ready().await });
+        }
+        let mut metadata = payload
+            .get("metadata")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        if !metadata.is_object() {
+            metadata = json!({});
+        }
+        metadata["transcriptionProvider"] = json!(provider);
         let meeting = Meeting {
             id: Uuid::new_v4().to_string(),
             title: payload
@@ -285,10 +502,9 @@ impl AppState {
             key_decisions: vec![],
             topics: vec![],
             email_draft: String::new(),
-            metadata: payload
-                .get("metadata")
-                .cloned()
-                .unwrap_or_else(|| json!({})),
+            metadata,
+            recording: None,
+            notes: vec![],
             transcript: vec![],
             created_at: now,
         };
@@ -310,9 +526,9 @@ impl AppState {
     }
 
     async fn finish(&self, payload: &Value) -> Result<Meeting, String> {
-        // Close whatever speech is still buffered and give the engine a moment to
-        // return it, so the last sentence spoken is in the stored transcript.
-        let tail = {
+        // Whisper closes its live VAD buffers here. Sarvam deliberately has no
+        // live jobs: it waits for the complete mixed recording below.
+        let (provider, tail) = {
             let mut session = self.session.lock().await;
             let meeting_id = match session.current.as_ref() {
                 Some(meeting) => meeting.id.clone(),
@@ -328,27 +544,42 @@ impl AppState {
                     .ok_or_else(|| "No meeting session is active".to_string());
             }
             session.state = SessionState::ProcessingStt;
+            let provider = if session.transcription_provider.is_empty() {
+                "whisper".to_string()
+            } else {
+                session.transcription_provider.clone()
+            };
 
             let mut jobs = Vec::new();
-            if let Some(utterance) = session.mic_vad.flush() {
-                jobs.push(TranscriptionJob {
-                    meeting_id: meeting_id.clone(),
-                    stream_id: STREAM_MIC,
-                    utterance,
-                });
+            if provider == "whisper" {
+                if let Some(utterance) = session.mic_vad.flush() {
+                    jobs.push(TranscriptionJob {
+                        meeting_id: meeting_id.clone(),
+                        stream_id: STREAM_MIC,
+                        utterance,
+                    });
+                }
+                if let Some(utterance) = session.system_vad.flush() {
+                    jobs.push(TranscriptionJob {
+                        meeting_id,
+                        stream_id: STREAM_SYSTEM,
+                        utterance,
+                    });
+                }
             }
-            if let Some(utterance) = session.system_vad.flush() {
-                jobs.push(TranscriptionJob {
-                    meeting_id,
-                    stream_id: STREAM_SYSTEM,
-                    utterance,
-                });
-            }
-            jobs
+            (provider, jobs)
         };
 
-        self.queue_transcriptions(tail).await;
-        self.drain_transcriptions(TRANSCRIPTION_DRAIN_BUDGET).await;
+        self.emit(
+            "state_change",
+            json!({"newState":"PROCESSING_STT","oldState":"RECORDING","provider":provider}),
+        )
+        .await;
+
+        if provider == "whisper" {
+            self.queue_transcriptions(tail).await;
+            self.drain_transcriptions(TRANSCRIPTION_DRAIN_BUDGET).await;
+        }
 
         let mut session = self.session.lock().await;
         let mut meeting = session
@@ -356,60 +587,93 @@ impl AppState {
             .clone()
             .ok_or("No meeting session is active")?;
 
-        // Turns the engine produced win; a posted transcript is only a fallback
-        // for when no transcription engine was available.
+        // The shell reports where it wrote the screen recording, if it made one.
+        // It owns those files; the meeting record only needs to be able to find them.
+        if let Some(recording) = payload.get("recording") {
+            meeting.recording = recording.as_object().map(|_| recording.clone());
+        }
+
+        // Live backend turns win. The renderer copy is a compatibility fallback
+        // when local Whisper was not installed, and a last-resort fallback if a
+        // Sarvam job later fails without producing any text.
         if meeting.transcript.is_empty() {
-            if let Some(turns) = payload.get("transcript").and_then(Value::as_array) {
-            meeting.transcript = turns
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| {
-                    Some(TranscriptTurn {
-                        id: t
-                            .get("id")
-                            .and_then(Value::as_str)
-                            .unwrap_or(&format!("turn-{i}"))
-                            .to_string(),
-                        channel: t
-                            .get("channel")
-                            .or_else(|| t.get("stream"))
-                            .and_then(Value::as_str)
-                            .unwrap_or("system")
-                            .to_string(),
-                        speaker: {
-                            let channel = t
-                                .get("channel")
-                                .or_else(|| t.get("stream"))
-                                .and_then(Value::as_str)
-                                .unwrap_or("system");
-                            let supplied = t.get("speaker").and_then(Value::as_str);
-                            if channel == "mic" {
-                                "You".to_string()
-                            } else if supplied == Some("You") || supplied.is_none() {
-                                "Others".to_string()
-                            } else {
-                                supplied.unwrap().to_string()
-                            }
-                        },
-                        start_ms: t.get("startMs").and_then(Value::as_i64).unwrap_or(0),
-                        end_ms: t.get("endMs").and_then(Value::as_i64).unwrap_or(0),
-                        text: t
-                            .get("text")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .trim()
-                            .to_string(),
-                        confidence: t.get("confidence").and_then(Value::as_f64).unwrap_or(1.0)
-                            as f32,
-                    })
-                })
-                .filter(|t| !t.text.is_empty())
-                .collect();
-            }
+            meeting.transcript = posted_transcript(payload);
         }
         let ended = now_ms();
         meeting.ended_at = Some(ended);
         meeting.duration_seconds = ((ended - meeting.started_at).max(0)) / 1000;
+        session.current = Some(meeting.clone());
+        drop(session);
+
+        let mut transcription_warning = None;
+        if provider == "sarvam" {
+            let recording_offset = meeting
+                .recording
+                .as_ref()
+                .and_then(|value| value.get("startedAtMs"))
+                .and_then(Value::as_i64)
+                .map(|started| (started - meeting.started_at).max(0))
+                .unwrap_or(0);
+            let config = BatchConfig {
+                language: self
+                    .settings
+                    .get_str("sarvamLanguage")
+                    .await
+                    .unwrap_or_else(|| "unknown".into()),
+                mode: self
+                    .settings
+                    .get_str("sarvamMode")
+                    .await
+                    .unwrap_or_else(|| "transcribe".into()),
+                num_speakers: self
+                    .settings
+                    .get_i64("sarvamNumSpeakers")
+                    .await
+                    .and_then(|value| u8::try_from(value).ok()),
+            };
+
+            let result = match batch_recording_path(meeting.recording.as_ref()) {
+                Ok(path) => self.sarvam.transcribe(&path, config).await,
+                Err(cause) => Err(cause),
+            };
+            match result {
+                Ok(batch) => {
+                    let labels = label_speakers(&batch.turns);
+                    meeting.transcript = batch
+                        .turns
+                        .into_iter()
+                        .map(|turn| TranscriptTurn {
+                            id: Uuid::new_v4().to_string(),
+                            channel: "mixed".into(),
+                            speaker: labels
+                                .get(&turn.speaker_id)
+                                .cloned()
+                                .unwrap_or_else(|| "Speaker 1".into()),
+                            start_ms: recording_offset + turn.start_ms,
+                            end_ms: recording_offset + turn.end_ms,
+                            text: turn.text,
+                            confidence: 1.0,
+                            language: turn.language.or_else(|| batch.language.clone()),
+                        })
+                        .collect();
+                    set_meeting_metadata(&mut meeting, "transcriptionProvider", json!("sarvam"));
+                    set_meeting_metadata(&mut meeting, "diarized", json!(true));
+                    for turn in &meeting.transcript {
+                        self.emit(
+                            "transcript_turn",
+                            serde_json::to_value(turn).unwrap_or_else(|_| json!({})),
+                        )
+                        .await;
+                    }
+                }
+                Err(cause) => {
+                    set_meeting_metadata(&mut meeting, "transcriptionWarning", json!(cause));
+                    transcription_warning = Some(cause);
+                }
+            }
+        }
+
+        let mut session = self.session.lock().await;
         session.current = Some(meeting.clone());
         session.state = SessionState::Summarizing;
         drop(session);
@@ -419,7 +683,17 @@ impl AppState {
         )
         .await;
 
-        let summary = self.summarize_into(&mut meeting).await;
+        // `autoSummarize: false` means "keep everything on device" — so do not
+        // send the transcript anywhere, and do not fabricate notes either.
+        let summary = if self.settings.get_bool("autoSummarize").await == Some(false) {
+            MeetingSummary {
+                summary_markdown: String::new(),
+                provider: "disabled".into(),
+                ..Default::default()
+            }
+        } else {
+            self.summarize_into(&mut meeting).await
+        };
 
         self.store
             .put(meeting.clone())
@@ -430,9 +704,16 @@ impl AppState {
         session.current = Some(meeting.clone());
         session.state = SessionState::Completed;
         drop(session);
+        if let Some(warning) = &transcription_warning {
+            self.emit(
+                "warning",
+                json!({"message": warning, "stage": "transcription"}),
+            )
+            .await;
+        }
         self.emit(
             "summary_generated",
-            json!({"meetingId": meeting.id, "provider": summary.provider, "warning": summary.warning}),
+            json!({"meetingId": meeting.id, "provider": summary.provider, "warning": summary.warning, "transcriptionWarning": transcription_warning}),
         )
         .await;
         self.emit(
@@ -459,6 +740,18 @@ impl AppState {
                     text: t.text.clone(),
                 })
                 .collect(),
+            notes: meeting
+                .notes
+                .iter()
+                .map(|note| SummaryNote {
+                    at_ms: note.get("atMs").and_then(Value::as_i64).unwrap_or(0),
+                    text: note
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                })
+                .collect(),
         };
 
         let summary = self.summarizer.summarize(&request).await;
@@ -474,6 +767,7 @@ impl AppState {
         let mut session = self.session.lock().await;
         let packets = session.parser.feed(bytes);
         let recording = matches!(session.state, SessionState::Recording);
+        let live_whisper = session.transcription_provider != "sarvam";
         let meeting_id = session.current.as_ref().map(|m| m.id.clone());
         let mut jobs = Vec::new();
 
@@ -487,7 +781,7 @@ impl AppState {
 
             // Audio is metered whenever it arrives, but only a live meeting is
             // segmented and transcribed.
-            if let (true, Some(id)) = (recording, meeting_id.as_ref()) {
+            if let (true, true, Some(id)) = (recording, live_whisper, meeting_id.as_ref()) {
                 let utterances = if stream_id == STREAM_MIC {
                     session.mic_vad.feed(&pcm)
                 } else {
@@ -536,23 +830,109 @@ impl AppState {
 
     async fn drain_transcriptions(&self, budget: Duration) {
         let deadline = SystemTime::now() + budget;
-        while self.pending_transcriptions.load(Ordering::SeqCst) > 0 && SystemTime::now() < deadline {
+        while self.pending_transcriptions.load(Ordering::SeqCst) > 0 && SystemTime::now() < deadline
+        {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
     /// Attach a transcribed utterance to the meeting it belongs to and tell the
     /// clients about it.
-    async fn commit_turn(&self, job: &TranscriptionJob, text: String) {
+    async fn add_note(&self, meeting_id: &str, text: &str) -> Result<Value, String> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err("A note needs some text".into());
+        }
+        if trimmed.chars().count() > 4000 {
+            return Err("A note is limited to 4000 characters".into());
+        }
+
+        let created_at = now_ms();
+        let mut note = json!({
+            "id": Uuid::new_v4().to_string(),
+            "text": trimmed,
+            "createdAt": created_at,
+            "atMs": 0,
+        });
+
+        {
+            let mut session = self.session.lock().await;
+            if let Some(meeting) = session.current.as_mut() {
+                if meeting.id == meeting_id {
+                    note["atMs"] = json!((created_at - meeting.started_at).max(0));
+                    meeting.notes.push(note.clone());
+                    let snapshot = meeting.clone();
+                    drop(session);
+                    self.emit("note_added", json!({"meetingId": meeting_id, "note": note}))
+                        .await;
+                    let _ = self.store.put(snapshot).await;
+                    return Ok(note);
+                }
+            }
+        }
+
+        let mut meeting = self
+            .store
+            .get(meeting_id)
+            .await
+            .ok_or_else(|| "Meeting not found".to_string())?;
+        note["atMs"] = json!((created_at - meeting.started_at).max(0));
+        meeting.notes.push(note.clone());
+        self.store
+            .put(meeting)
+            .await
+            .map_err(|cause| cause.to_string())?;
+        self.emit("note_added", json!({"meetingId": meeting_id, "note": note}))
+            .await;
+        Ok(note)
+    }
+
+    async fn remove_note(&self, meeting_id: &str, note_id: &str) -> Result<(), String> {
+        {
+            let mut session = self.session.lock().await;
+            if let Some(meeting) = session.current.as_mut() {
+                if meeting.id == meeting_id {
+                    meeting
+                        .notes
+                        .retain(|note| note.get("id").and_then(Value::as_str) != Some(note_id));
+                    let snapshot = meeting.clone();
+                    drop(session);
+                    let _ = self.store.put(snapshot).await;
+                    return Ok(());
+                }
+            }
+        }
+
+        let mut meeting = self
+            .store
+            .get(meeting_id)
+            .await
+            .ok_or_else(|| "Meeting not found".to_string())?;
+        meeting
+            .notes
+            .retain(|note| note.get("id").and_then(Value::as_str) != Some(note_id));
+        self.store
+            .put(meeting)
+            .await
+            .map_err(|cause| cause.to_string())
+    }
+
+    async fn commit_turn(&self, job: &TranscriptionJob, text: String, language: Option<String>) {
         let turn = TranscriptTurn {
             id: Uuid::new_v4().to_string(),
             channel: channel_name(job.stream_id).to_string(),
             // The core has no diarization yet, so remote audio is one voice.
-            speaker: if job.stream_id == STREAM_MIC { "You" } else { "Others" }.to_string(),
+            speaker: if job.stream_id == STREAM_MIC {
+                "You"
+            } else {
+                "Others"
+            }
+            .to_string(),
             start_ms: job.utterance.start_ms,
             end_ms: job.utterance.end_ms,
             text,
             confidence: 1.0,
+            language,
         };
 
         let snapshot = {
@@ -590,16 +970,65 @@ async fn main() -> io::Result<()> {
     let (events, _) = broadcast::channel(256);
     let (transcriptions, mut transcription_queue) = mpsc::unbounded_channel::<TranscriptionJob>();
     let stt = Arc::new(SttService::detect());
+    let sarvam = Arc::new(SarvamService::detect());
     let summarizer = Arc::new(SummaryService::detect());
+    let podcast = Arc::new(PodcastService::detect());
+    let settings = Arc::new(SettingsStore::load().await);
+    let calendar = Arc::new(CalendarService::new(settings.clone(), events.clone()));
+
+    // Saved choices have to be applied before the first request, or the engine
+    // runs its defaults while the UI shows what the user picked last time.
+    if let Some(language) = settings.get_str("sttLanguage").await {
+        if let Err(cause) = stt.set_language(&language).await {
+            eprintln!("[Alpha Core Backend] stored sttLanguage ignored: {cause}");
+        }
+    }
+    if let Some(model) = settings.get_str("whisperModel").await {
+        if let Err(cause) = stt.set_model(&model).await {
+            eprintln!("[Alpha Core Backend] stored whisperModel ignored: {cause}");
+        }
+    }
+    if let Some(model) = settings.get_str("aiModel").await {
+        if let Err(cause) = summarizer.set_model(&model).await {
+            eprintln!("[Alpha Core Backend] stored aiModel ignored: {cause}");
+        }
+    }
+    // An explicit ALPHA_SUMMARY_PROVIDER is a deliberate override, so a stored
+    // preference must not quietly replace it.
+    if env::var("ALPHA_SUMMARY_PROVIDER").is_err() {
+        if let Some(provider) = settings.get_str("summaryProvider").await {
+            if let Err(cause) = summarizer.set_preference(&provider).await {
+                eprintln!("[Alpha Core Backend] stored summaryProvider ignored: {cause}");
+            }
+        }
+    }
+    // An env key wins over a stored one, so a launcher can override without
+    // rewriting the user's file.
+    if env::var("ALPHA_GEMINI_API_KEY").is_err() {
+        if let Some(key) = settings.gemini_key().await {
+            summarizer.set_gemini_key(Some(key.clone())).await;
+            podcast.set_gemini_key(Some(key)).await;
+        }
+    }
+    if env::var("ALPHA_SARVAM_API_KEY").is_err() {
+        if let Some(key) = settings.sarvam_key().await {
+            sarvam.set_api_key(Some(key)).await;
+        }
+    }
+
     let state = AppState {
         started_at: now_ms(),
         session: Arc::new(Mutex::new(Session::default())),
         store: Store::load().await,
         events,
         stt: stt.clone(),
+        sarvam: sarvam.clone(),
         summarizer: summarizer.clone(),
         transcriptions,
         pending_transcriptions: Arc::new(AtomicUsize::new(0)),
+        settings: settings.clone(),
+        calendar: calendar.clone(),
+        podcast: podcast.clone(),
     };
 
     // One worker drains the queue, so a long utterance's parts are transcribed
@@ -609,21 +1038,27 @@ async fn main() -> io::Result<()> {
         while let Some(job) = transcription_queue.recv().await {
             let wav = audio::encode_wav(&job.utterance.pcm, 16_000);
             match worker_state.stt.transcribe(wav).await {
-                Ok(text) => {
-                    if let Some(speech) = strip_non_speech(&text) {
-                        worker_state.commit_turn(&job, speech).await;
+                Ok(transcription) => {
+                    if let Some(speech) = strip_non_speech(&transcription.text) {
+                        worker_state
+                            .commit_turn(&job, speech, transcription.language)
+                            .await;
                     }
                 }
                 Err(cause) => eprintln!("[Alpha Core Backend] transcription failed: {cause}"),
             }
-            worker_state.pending_transcriptions.fetch_sub(1, Ordering::SeqCst);
+            worker_state
+                .pending_transcriptions
+                .fetch_sub(1, Ordering::SeqCst);
         }
     });
 
     // Load the model at boot rather than on the first meeting, so the very first
     // sentence of a recording is transcribed instead of being spent on warm-up.
-    let warm_stt = stt.clone();
-    tokio::spawn(async move { warm_stt.ensure_ready().await });
+    if settings.get_str("transcriptionProvider").await.as_deref() != Some("sarvam") {
+        let warm_stt = stt.clone();
+        tokio::spawn(async move { warm_stt.ensure_ready().await });
+    }
 
     let shutdown_stt = stt.clone();
     tokio::spawn(async move {
@@ -674,7 +1109,7 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
         .await;
     }
     let (status, content_type, body) = route(&request, &state).await;
-    let response = format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nConnection: close\r\n\r\n", body.as_bytes().len());
+    let response = format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\r\nConnection: close\r\n\r\n", body.len());
     stream.write_all(response.as_bytes()).await?;
     stream.write_all(body.as_bytes()).await
 }
@@ -784,7 +1219,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/health") => json_response(
             200,
-            json!({"status":"ok","version":VERSION,"uptimeSeconds":((now_ms()-state.started_at).max(0)/1000),"state":state.session.lock().await.state.as_str(),"stt":state.stt.status_value().await}),
+            json!({"status":"ok","version":VERSION,"uptimeSeconds":((now_ms()-state.started_at).max(0)/1000),"state":state.session.lock().await.state.as_str(),"stt":state.stt_status(None).await,"podcast":state.podcast.status_value().await}),
         ),
         ("GET", "/api/status") => json_response(200, state.status().await),
         ("GET", "/api/meetings") => {
@@ -834,30 +1269,155 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             json!({"success":false,"error":"License verification is not implemented in the Rust core yet."}),
         ),
         ("GET", "/api/settings") => {
+            // The stored settings are the answer; the live engine fills in the two
+            // it owns so a first run (nothing saved yet) still reports the truth.
             let stt = state.stt.status_value().await;
-            json_response(
-                200,
-                json!({"settings": {"whisperModel": stt["model"], "sttLanguage": stt["language"]}}),
-            )
+            let mut settings = state.settings.public_value().await;
+            for (key, value) in [
+                ("whisperModel", &stt["model"]),
+                ("sttLanguage", &stt["language"]),
+            ] {
+                if settings.get(key).is_none() {
+                    settings[key] = value.clone();
+                }
+            }
+            if settings.get("transcriptionProvider").is_none() {
+                settings["transcriptionProvider"] = json!("whisper");
+            }
+            if settings.get("sarvamLanguage").is_none() {
+                settings["sarvamLanguage"] = json!("unknown");
+            }
+            if settings.get("sarvamMode").is_none() {
+                settings["sarvamMode"] = json!("transcribe");
+            }
+            json_response(200, json!({"settings": settings}))
         }
         ("POST", "/api/settings") => {
-            let settings = body.get("settings").cloned().unwrap_or_else(|| body.clone());
+            let incoming = body
+                .get("settings")
+                .cloned()
+                .unwrap_or_else(|| body.clone());
+            let Some(object) = incoming.as_object() else {
+                return json_response(400, json!({"error": "settings must be an object"}));
+            };
             let mut warnings = Vec::new();
 
-            if let Some(language) = settings.get("sttLanguage").and_then(Value::as_str) {
+            if let Some(provider) = object.get("transcriptionProvider").and_then(Value::as_str) {
+                if !matches!(
+                    provider.trim().to_ascii_lowercase().as_str(),
+                    "whisper" | "sarvam"
+                ) {
+                    return json_response(
+                        400,
+                        json!({"error": format!("Unknown transcription provider '{provider}'")}),
+                    );
+                }
+            }
+            if let Some(mode) = object.get("sarvamMode").and_then(Value::as_str) {
+                if let Err(cause) = (BatchConfig {
+                    mode: mode.into(),
+                    ..Default::default()
+                })
+                .validate()
+                {
+                    return json_response(400, json!({"error": cause}));
+                }
+            }
+            if let Some(value) = object.get("sarvamNumSpeakers") {
+                if !value.is_null() {
+                    let Some(count) = value.as_i64() else {
+                        return json_response(
+                            400,
+                            json!({"error": "Sarvam speaker count must be a number or automatic"}),
+                        );
+                    };
+                    if !(1..=20).contains(&count) {
+                        return json_response(
+                            400,
+                            json!({"error": "Sarvam speaker count must be between 1 and 20"}),
+                        );
+                    }
+                }
+            }
+
+            // Apply to the running engine first: a value it rejects should not be
+            // stored, or the next restart would fail the same way with no warning.
+            if let Some(language) = object.get("sttLanguage").and_then(Value::as_str) {
                 if let Err(cause) = state.stt.set_language(language).await {
                     warnings.push(cause);
                 }
             }
-            if let Some(model) = settings.get("whisperModel").and_then(Value::as_str) {
+            if let Some(model) = object.get("whisperModel").and_then(Value::as_str) {
                 if let Err(cause) = state.stt.set_model(model).await {
                     warnings.push(cause);
                 }
             }
+            if let Some(model) = object.get("aiModel").and_then(Value::as_str) {
+                if let Err(cause) = state.summarizer.set_model(model).await {
+                    warnings.push(cause);
+                }
+            }
+            if let Some(provider) = object.get("summaryProvider").and_then(Value::as_str) {
+                match state.summarizer.set_preference(provider).await {
+                    // Asking for a provider that cannot run is worth saying out
+                    // loud, rather than silently summarising some other way.
+                    Ok(resolved) => {
+                        let asked = provider.trim().to_ascii_lowercase();
+                        if asked != "auto" && resolved.as_str() != asked {
+                            warnings.push(format!(
+                                "'{provider}' cannot run here, so summaries will use {} instead",
+                                resolved.as_str()
+                            ));
+                        }
+                    }
+                    Err(cause) => warnings.push(cause),
+                }
+            }
+
+            for provider in ["google", "microsoft"] {
+                for suffix in ["ClientId", "ClientSecret"] {
+                    let field = format!("{provider}Calendar{suffix}");
+                    if let Some(value) = object.get(&field).and_then(Value::as_str) {
+                        if let Err(cause) = state.settings.set_credential(&field, Some(value)).await {
+                            warnings.push(format!("could not store {field}: {cause}"));
+                        }
+                    }
+                }
+            }
+
+            if let Some(key) = object.get("geminiApiKey").and_then(Value::as_str) {
+                match state.settings.set_gemini_key(Some(key)).await {
+                    Ok(stored) => {
+                        state.summarizer.set_gemini_key(stored.clone()).await;
+                        state.podcast.set_gemini_key(stored).await;
+                    }
+                    Err(cause) => warnings.push(format!("could not store the Gemini key: {cause}")),
+                }
+            }
+            if let Some(key) = object.get("sarvamApiKey").and_then(Value::as_str) {
+                match state.settings.set_sarvam_key(Some(key)).await {
+                    Ok(stored) => state.sarvam.set_api_key(stored).await,
+                    Err(cause) => warnings.push(format!("could not store the Sarvam key: {cause}")),
+                }
+            }
+
+            let (rejected, written) = state.settings.merge(object).await;
+            for key in rejected {
+                warnings.push(format!("'{key}' is not a setting this backend stores"));
+            }
+            if let Err(cause) = written {
+                warnings.push(format!("could not save settings: {cause}"));
+            }
 
             json_response(
                 200,
-                json!({"success": warnings.is_empty(), "warnings": warnings, "stt": state.stt.status_value().await}),
+                json!({
+                    "success": warnings.is_empty(),
+                    "warnings": warnings,
+                    "settings": state.settings.public_value().await,
+                    "stt": state.stt_status(None).await,
+                    "summary": state.summarizer.status_value().await,
+                }),
             )
         }
         ("POST", "/api/stt/config") => {
@@ -871,7 +1431,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     return json_response(400, json!({"error": cause}));
                 }
             }
-            json_response(200, json!({"success": true, "stt": state.stt.status_value().await}))
+            json_response(
+                200,
+                json!({"success": true, "stt": state.stt.status_value().await}),
+            )
         }
         ("POST", "/api/summary/config") => {
             if let Some(model) = body.get("model").and_then(Value::as_str) {
@@ -884,6 +1447,37 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json!({"success": true, "summary": state.summarizer.status_value().await}),
             )
         }
+        ("GET", "/api/podcast/status") => {
+            json_response(200, state.podcast.status_value().await)
+        }
+        ("GET", "/api/calendar/status") => json_response(200, state.calendar.status().await),
+        ("POST", "/api/calendar/connect") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            match state.calendar.begin(provider).await {
+                Ok(value) => json_response(200, value),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("POST", "/api/calendar/disconnect") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            match state.calendar.disconnect(provider).await {
+                Ok(()) => json_response(200, json!({"success": true, "provider": provider})),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("GET", "/api/calendar/events") => {
+            let back = req
+                .query
+                .get("minutesBack")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(15);
+            let ahead = req
+                .query
+                .get("minutesAhead")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(720);
+            json_response(200, state.calendar.events(back, ahead).await)
+        }
         ("GET", "/api/search") => {
             let q = req.query.get("q").map(String::as_str).unwrap_or("");
             json_response(
@@ -891,8 +1485,158 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json!({"results":state.store.list(q,req.query.get("limit").and_then(|v|v.parse().ok()).unwrap_or(50),0).await}),
             )
         }
+        _ if req.path.starts_with("/api/podcasts/") => route_podcast(req, state, &body).await,
         _ => route_meeting(req, state, &body).await,
     }
+}
+
+async fn route_podcast(
+    req: &HttpRequest,
+    state: &AppState,
+    body: &Value,
+) -> (u16, &'static str, String) {
+    let parts: Vec<_> = req.path.trim_matches('/').split('/').collect();
+    if parts.len() != 4 || parts[0] != "api" || parts[1] != "podcasts" {
+        return json_response(404, json!({"error": "Not found"}));
+    }
+    let project_id = parts[2];
+    match (req.method.as_str(), parts[3]) {
+        ("POST", "script") => {
+            let transcript_value = if let Some(transcript) = body.get("transcript") {
+                transcript.clone()
+            } else if let Some(meeting_id) = body.get("meetingId").and_then(Value::as_str) {
+                match state.store.get(meeting_id).await {
+                    Some(meeting) => serde_json::to_value(
+                        meeting.transcript.into_iter().map(|turn| PodcastSourceTurn {
+                            id: turn.id,
+                            speaker: turn.speaker,
+                            start_ms: turn.start_ms,
+                            text: turn.text,
+                        }).collect::<Vec<_>>()
+                    ).unwrap_or_else(|_| json!([])),
+                    None => return json_response(404, json!({"error": "Source meeting not found"})),
+                }
+            } else {
+                json!([])
+            };
+            let transcript: Vec<PodcastSourceTurn> = match serde_json::from_value(transcript_value) {
+                Ok(value) => value,
+                Err(cause) => return json_response(400, json!({"error": format!("Podcast transcript is invalid: {cause}")})),
+            };
+            let hosts: Vec<PodcastHost> = match serde_json::from_value(body.get("hosts").cloned().unwrap_or_else(|| json!([
+                {"id":"host-a","name":"Avery","voice":"Kore"},
+                {"id":"host-b","name":"Riley","voice":"Puck"}
+            ]))) {
+                Ok(value) => value,
+                Err(cause) => return json_response(400, json!({"error": format!("Podcast hosts are invalid: {cause}")})),
+            };
+            let request = PodcastScriptRequest {
+                project_id: project_id.to_string(),
+                title: body.get("title").and_then(Value::as_str).unwrap_or("Untitled podcast").to_string(),
+                language: body.get("language").and_then(Value::as_str).unwrap_or("auto").to_string(),
+                hosts,
+                transcript,
+            };
+            state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"script","status":"running","progress":0.05})).await;
+            match state.podcast.generate_script(&request).await {
+                Ok(script) => {
+                    state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"script","status":"completed","progress":1.0})).await;
+                    json_response(200, json!({"success":true,"script":script}))
+                }
+                Err(cause) => {
+                    state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"script","status":"failed","error":cause})).await;
+                    json_response(502, json!({"error":cause}))
+                }
+            }
+        }
+        ("POST", "voice") => {
+            state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"voice","status":"running","progress":0.05})).await;
+            match state.podcast.generate_audio(project_id).await {
+                Ok(value) => {
+                    state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"voice","status":"completed","progress":1.0})).await;
+                    json_response(200, value)
+                }
+                Err(cause) => {
+                    state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"voice","status":"failed","error":cause})).await;
+                    json_response(502, json!({"error":cause}))
+                }
+            }
+        }
+        ("POST", "transcribe") => {
+            let Some(relative) = body.get("assetPath").and_then(Value::as_str) else {
+                return json_response(400, json!({"error":"assetPath is required"}));
+            };
+            let source = match state.podcast.resolve_asset(project_id, relative) {
+                Ok(path) => path,
+                Err(cause) => return json_response(400, json!({"error":cause})),
+            };
+            state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"transcribe","status":"running","progress":0.02})).await;
+            match transcribe_podcast_asset(state, project_id, &source).await {
+                Ok(turns) => {
+                    state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"transcribe","status":"completed","progress":1.0})).await;
+                    json_response(200, json!({"success":true,"transcript":turns}))
+                }
+                Err(cause) => {
+                    state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"transcribe","status":"failed","error":cause})).await;
+                    json_response(502, json!({"error":cause}))
+                }
+            }
+        }
+        _ => json_response(404, json!({"error": "Podcast route not found"})),
+    }
+}
+
+async fn transcribe_podcast_asset(
+    state: &AppState,
+    project_id: &str,
+    source: &Path,
+) -> Result<Vec<PodcastSourceTurn>, String> {
+    let scratch = env::temp_dir().join(format!("alpha-podcast-transcribe-{}", Uuid::new_v4()));
+    tokio::fs::create_dir_all(&scratch)
+        .await
+        .map_err(|cause| format!("could not create transcription workspace: {cause}"))?;
+    let pattern = scratch.join("chunk-%05d.wav");
+    let ffmpeg = env::var("ALPHA_FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".into());
+    let output = Command::new(ffmpeg)
+        .args(["-y", "-v", "error", "-i"])
+        .arg(source)
+        .args(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "segment", "-segment_time", "60", "-reset_timestamps", "1"])
+        .arg(&pattern)
+        .output()
+        .await
+        .map_err(|cause| format!("could not start FFmpeg for transcription: {cause}"))?;
+    if !output.status.success() {
+        let _ = tokio::fs::remove_dir_all(&scratch).await;
+        return Err(format!("FFmpeg could not prepare the podcast audio: {}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+    let mut entries = tokio::fs::read_dir(&scratch)
+        .await
+        .map_err(|cause| format!("could not read transcription chunks: {cause}"))?;
+    let mut chunks = Vec::new();
+    while let Some(entry) = entries.next_entry().await.map_err(|cause| cause.to_string())? {
+        if entry.path().extension().and_then(|value| value.to_str()) == Some("wav") {
+            chunks.push(entry.path());
+        }
+    }
+    chunks.sort();
+    let total = chunks.len().max(1);
+    let mut turns = Vec::new();
+    for (index, chunk) in chunks.iter().enumerate() {
+        let wav = tokio::fs::read(chunk).await.map_err(|cause| format!("could not read podcast audio chunk: {cause}"))?;
+        let result = state.stt.transcribe(wav).await?;
+        if let Some(text) = strip_non_speech(&result.text) {
+            turns.push(PodcastSourceTurn {
+                id: format!("import-{index:05}"),
+                speaker: "Speaker".into(),
+                start_ms: index as i64 * 60_000,
+                text,
+            });
+        }
+        state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"transcribe","status":"running","progress":(index + 1) as f64 / total as f64})).await;
+    }
+    let _ = tokio::fs::remove_dir_all(&scratch).await;
+    state.podcast.save_transcript(project_id, &turns).await?;
+    Ok(turns)
 }
 
 async fn route_meeting(
@@ -903,6 +1647,38 @@ async fn route_meeting(
     let parts: Vec<_> = req.path.trim_matches('/').split('/').collect();
     if parts.len() >= 3 && parts[0] == "api" && parts[1] == "meetings" {
         let id = parts[2];
+        if req.method == "POST" && parts.len() == 4 && parts[3] == "notes" {
+            let text = body.get("text").and_then(Value::as_str).unwrap_or_default();
+            return match state.add_note(id, text).await {
+                Ok(note) => json_response(200, json!({"success": true, "note": note})),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            };
+        }
+        if req.method == "DELETE" && parts.len() == 5 && parts[3] == "notes" {
+            return match state.remove_note(id, parts[4]).await {
+                Ok(()) => json_response(200, json!({"success": true})),
+                Err(cause) => json_response(404, json!({"error": cause})),
+            };
+        }
+        if req.method == "PATCH" && parts.len() == 3 {
+            let Some(mut meeting) = state.store.get(id).await else {
+                return json_response(404, json!({"error":"Meeting not found"}));
+            };
+            let Some(renames) = body.get("speakerRenames").and_then(Value::as_object) else {
+                return json_response(400, json!({"error":"speakerRenames must be an object"}));
+            };
+            let changed = match rename_meeting_speakers(&mut meeting, renames) {
+                Ok(changed) => changed,
+                Err(cause) => return json_response(400, json!({"error": cause})),
+            };
+            if let Err(cause) = state.store.put(meeting.clone()).await {
+                return json_response(500, json!({"error": cause.to_string()}));
+            }
+            return json_response(
+                200,
+                json!({"success":true,"changedTurns":changed,"meeting":meeting}),
+            );
+        }
         if req.method == "DELETE" && parts.len() == 3 {
             return match state.store.delete(id).await {
                 Ok(_) => json_response(200, json!({"success":true})),
@@ -935,7 +1711,8 @@ async fn route_meeting(
 
             let mut provider = "stored".to_string();
             let mut warning = None;
-            if !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty()) {
+            if !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty())
+            {
                 let summary = state.summarize_into(&mut meeting).await;
                 provider = summary.provider;
                 warning = summary.warning;
@@ -996,14 +1773,23 @@ fn export_markdown(meeting: &Meeting) -> String {
         out.push_str("## Action Items\n\n");
         for item in &meeting.action_items {
             let task = item.get("task").and_then(Value::as_str).unwrap_or("");
-            let owner = item.get("owner").and_then(Value::as_str).unwrap_or("Unassigned");
-            let deadline = item.get("deadline").and_then(Value::as_str).unwrap_or("TBD");
+            let owner = item
+                .get("owner")
+                .and_then(Value::as_str)
+                .unwrap_or("Unassigned");
+            let deadline = item
+                .get("deadline")
+                .and_then(Value::as_str)
+                .unwrap_or("TBD");
             out.push_str(&format!("- **{owner}** — {task} ({deadline})\n"));
         }
         out.push('\n');
     }
     if !meeting.email_draft.is_empty() {
-        out.push_str(&format!("## Follow-Up Email\n\n{}\n\n", meeting.email_draft));
+        out.push_str(&format!(
+            "## Follow-Up Email\n\n{}\n\n",
+            meeting.email_draft
+        ));
     }
     if !meeting.transcript.is_empty() {
         out.push_str("## Transcript\n\n");
@@ -1199,4 +1985,156 @@ fn sha1(data: &[u8]) -> [u8; 20] {
         out[i * 4..i * 4 + 4].copy_from_slice(&v.to_be_bytes())
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A real record from `.alpha-meeting-assistant/meetings.json`, written before
+    /// turns carried a language and before meetings carried a recording. There are
+    /// 24 of these on the author's machine; if they stop deserialising, the whole
+    /// history silently loads as empty.
+    const LEGACY_MEETING: &str = r#"{
+        "id": "bb6f2d56-0000-0000-0000-000000000000",
+        "title": "probe",
+        "startedAt": 1787232456163,
+        "endedAt": 1787232497817,
+        "durationSeconds": 41,
+        "summaryMarkdown": "Meeting **probe** completed with 6 spoken turns across You.",
+        "actionItems": [{"deadline": "TBD", "owner": "You", "task": "I will do a bully, yes."}],
+        "keyDecisions": [],
+        "topics": [],
+        "emailDraft": "",
+        "metadata": {},
+        "transcript": [{
+            "id": "69b4b928-0000-0000-0000-000000000000",
+            "channel": "mic",
+            "speaker": "You",
+            "startMs": 8280,
+            "endMs": 11580,
+            "text": "Gracias.",
+            "confidence": 1.0
+        }],
+        "createdAt": 1787232456163
+    }"#;
+
+    #[test]
+    fn legacy_meetings_still_load() {
+        let meeting: Meeting =
+            serde_json::from_str(LEGACY_MEETING).expect("a stored meeting must still parse");
+        assert_eq!(meeting.title, "probe");
+        assert_eq!(meeting.transcript.len(), 1);
+        assert_eq!(meeting.transcript[0].text, "Gracias.");
+        // The new fields are absent, not zero-valued nonsense.
+        assert!(meeting.recording.is_none());
+        assert!(meeting.transcript[0].language.is_none());
+    }
+
+    #[test]
+    fn a_record_without_the_newer_optional_fields_round_trips() {
+        let meeting: Meeting = serde_json::from_str(LEGACY_MEETING).unwrap();
+        let written = serde_json::to_string(&meeting).unwrap();
+
+        // `skip_serializing_if` keeps absent fields absent rather than writing
+        // nulls back into every stored record.
+        assert!(!written.contains("\"recording\""));
+        assert!(!written.contains("\"language\""));
+
+        let reparsed: Meeting = serde_json::from_str(&written).unwrap();
+        assert_eq!(reparsed.id, meeting.id);
+        assert_eq!(reparsed.transcript.len(), 1);
+    }
+
+    #[test]
+    fn a_recording_descriptor_survives_a_round_trip() {
+        let mut meeting: Meeting = serde_json::from_str(LEGACY_MEETING).unwrap();
+        meeting.recording = Some(json!({
+            "videoPath": "abc/screen.webm",
+            "startedAtMs": 1787232457000i64,
+            "durationMs": 40000,
+            "bytes": 211199,
+            "hasSystemAudio": true
+        }));
+        meeting.transcript[0].language = Some("es".into());
+
+        let reparsed: Meeting =
+            serde_json::from_str(&serde_json::to_string(&meeting).unwrap()).unwrap();
+        assert_eq!(
+            reparsed.recording.as_ref().unwrap()["videoPath"],
+            "abc/screen.webm"
+        );
+        assert_eq!(reparsed.recording.as_ref().unwrap()["hasSystemAudio"], true);
+        assert_eq!(reparsed.transcript[0].language.as_deref(), Some("es"));
+    }
+
+    #[test]
+    fn speaker_renames_update_every_matching_turn_and_reject_blank_names() {
+        let mut meeting: Meeting = serde_json::from_str(LEGACY_MEETING).unwrap();
+        meeting.transcript.push(TranscriptTurn {
+            id: "second".into(),
+            channel: "mixed".into(),
+            speaker: "Speaker 1".into(),
+            start_ms: 12_000,
+            end_ms: 13_000,
+            text: "Hello".into(),
+            confidence: 1.0,
+            language: None,
+        });
+        meeting.transcript.push(TranscriptTurn {
+            id: "third".into(),
+            channel: "mixed".into(),
+            speaker: "Speaker 1".into(),
+            start_ms: 14_000,
+            end_ms: 15_000,
+            text: "Again".into(),
+            confidence: 1.0,
+            language: None,
+        });
+
+        let renames = json!({"Speaker 1":"Riya"}).as_object().unwrap().clone();
+        assert_eq!(rename_meeting_speakers(&mut meeting, &renames).unwrap(), 2);
+        assert_eq!(meeting.transcript[1].speaker, "Riya");
+        assert_eq!(meeting.transcript[2].speaker, "Riya");
+
+        let blank = json!({"Riya":"  "}).as_object().unwrap().clone();
+        assert!(rename_meeting_speakers(&mut meeting, &blank).is_err());
+    }
+
+    #[test]
+    fn sarvam_can_only_read_recordings_under_the_trusted_root() {
+        let scratch = env::temp_dir().join(format!("alpha-sarvam-path-{}", Uuid::new_v4()));
+        let root = scratch.join("recordings");
+        let meeting = root.join("meeting-id");
+        let outside = scratch.join("outside.webm");
+        std::fs::create_dir_all(&meeting).unwrap();
+        std::fs::write(meeting.join("screen.webm"), b"recording").unwrap();
+        std::fs::write(&outside, b"private").unwrap();
+
+        let resolved = resolve_batch_recording(&root, Path::new("meeting-id/screen.webm")).unwrap();
+        assert_eq!(
+            resolved,
+            std::fs::canonicalize(meeting.join("screen.webm")).unwrap()
+        );
+        assert!(resolve_batch_recording(&root, Path::new("../outside.webm")).is_err());
+        assert!(resolve_batch_recording(&root, &outside).is_err());
+
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn every_stored_meeting_in_the_repo_data_file_parses() {
+        // Guards against a schema change that would drop real history. Skipped
+        // when the file is absent, so a clean checkout still passes.
+        let path = std::path::Path::new(".alpha-meeting-assistant/meetings.json");
+        let Ok(bytes) = std::fs::read(path) else {
+            return;
+        };
+        let meetings: Vec<Meeting> = serde_json::from_slice(&bytes)
+            .expect("every stored meeting must parse with the current schema");
+        assert!(!meetings.is_empty());
+        for meeting in &meetings {
+            assert!(!meeting.id.is_empty());
+        }
+    }
 }

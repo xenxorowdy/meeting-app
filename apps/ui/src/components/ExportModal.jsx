@@ -169,16 +169,16 @@ export function ExportModal({ isOpen, onClose, meeting }) {
         <head>
           <title>${meeting.title}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #1e293b; padding: 40px; max-width: 800px; margin: auto; }
-            h1 { font-size: 24px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
-            h2 { font-size: 18px; color: #4338ca; margin-top: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
-            .meta { color: #64748b; font-size: 13px; margin-bottom: 20px; }
-            ul { padding-left: 20px; }
-            li { margin-bottom: 6px; }
-            pre { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; font-size: 12px; }
-            .transcript-turn { margin-bottom: 12px; }
-            .speaker { font-weight: 600; color: #0f172a; }
-            .time { color: #94a3b8; font-size: 11px; }
+            body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; line-height: 1.4; color: #1D1D1F; padding: 40px; max-width: 680px; margin: auto; font-size: 15px; }
+            h1 { font-size: 28px; line-height: 1.2; letter-spacing: -0.02em; font-weight: 600; margin: 0 0 8px; }
+            h2 { font-size: 17px; line-height: 1.2; font-weight: 600; margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #E5E5EA; }
+            .meta { color: #6E6E73; font-size: 13px; margin-bottom: 32px; }
+            ul { padding-left: 16px; margin: 0; }
+            li { margin-bottom: 8px; }
+            pre { background: #F5F5F7; border: 1px solid #E5E5EA; padding: 16px; border-radius: 10px; font-size: 13px; overflow-x: auto; }
+            .transcript-turn { margin-bottom: 16px; }
+            .speaker { font-weight: 600; }
+            .time { color: #6E6E73; font-size: 11px; }
           </style>
         </head>
         <body>
@@ -209,14 +209,14 @@ export function ExportModal({ isOpen, onClose, meeting }) {
     return (
         <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
             <DialogContent className="flex max-h-[86vh] flex-col gap-0 p-0 sm:max-w-2xl">
-                <DialogHeader className="space-y-1 p-5 pb-4 pr-12 text-left hairline-bottom">
+                <DialogHeader className="space-y-1 p-4 pb-4 pr-12 text-left hairline-bottom">
                     <DialogTitle className="text-title2 font-semibold">Export notes</DialogTitle>
                     <DialogDescription className="text-callout text-muted-foreground">
                         Copy the notes for “{meeting.title}” or save them as a file.
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
                     <div className="space-y-2">
                         <Label className="text-body font-medium">Format</Label>
                         <SegmentedControl value={activeFormat} onValueChange={setActiveFormat} aria-label="Export format" className="w-full">
@@ -233,13 +233,13 @@ export function ExportModal({ isOpen, onClose, meeting }) {
                     </div>
 
                     <div className="divide-y divide-border overflow-hidden rounded-lg border bg-muted">
-                        <div className="flex items-center gap-2.5 px-3 py-2.5">
+                        <div className="flex items-center gap-2 px-4 py-2">
                             <Checkbox id="include-transcript" checked={includeTranscript} onCheckedChange={setIncludeTranscript} />
                             <Label htmlFor="include-transcript" className="cursor-pointer text-body font-normal">
                                 Include the full transcript
                             </Label>
                         </div>
-                        <div className="flex items-center gap-2.5 px-3 py-2.5">
+                        <div className="flex items-center gap-2 px-4 py-2">
                             <Checkbox id="include-email" checked={includeEmailDraft} onCheckedChange={setIncludeEmailDraft} />
                             <Label htmlFor="include-email" className="cursor-pointer text-body font-normal">
                                 Include the follow-up email
@@ -249,13 +249,13 @@ export function ExportModal({ isOpen, onClose, meeting }) {
 
                     <div className="space-y-2">
                         <Label className="text-body font-medium">Preview</Label>
-                        <div className="h-44 select-text overflow-y-auto whitespace-pre-wrap rounded-lg border bg-muted p-3 font-mono text-footnote text-muted-foreground">
+                        <div className="h-44 select-text overflow-y-auto whitespace-pre-wrap rounded-lg border bg-muted p-4 font-mono text-footnote text-muted-foreground">
                             {getExportContent()}
                         </div>
                     </div>
                 </div>
 
-                <DialogFooter className="flex-row items-center justify-end gap-2 p-5 pt-4 hairline-top">
+                <DialogFooter className="flex-row items-center justify-end gap-2 p-4 pt-4 hairline-top">
                     <Button variant="outline" onClick={handleCopy}>
                         {copied ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
                         {copied ? 'Copied' : 'Copy'}

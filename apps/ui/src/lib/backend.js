@@ -195,6 +195,9 @@ export function normalizeTurn(turn, index = 0) {
         endMs: turn.endMs ?? turn.startMs ?? 0,
         text: (turn.text || '').trim(),
         confidence: turn.confidence,
+        // What the engine decoded this turn in. Absent on meetings recorded
+        // before the backend reported it.
+        language: turn.language || null,
     };
 }
 
@@ -210,5 +213,7 @@ export function normalizeMeeting(meeting) {
         actionItems: Array.isArray(meeting.actionItems) ? meeting.actionItems : [],
         keyDecisions: Array.isArray(meeting.keyDecisions) ? meeting.keyDecisions : [],
         summaryMarkdown: meeting.summaryMarkdown || '',
+        // The screen recording descriptor, when the shell made one.
+        recording: meeting.recording || null,
     };
 }

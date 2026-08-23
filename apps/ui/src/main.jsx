@@ -2,10 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { applySystemAppearance } from '@/hooks/useSystemAppearance';
+import { applyTheme, getTheme } from '@/lib/theme';
 import './index.css';
 
-applySystemAppearance(window.matchMedia('(prefers-color-scheme: dark)').matches);
+applyTheme(getTheme());
 
 const rootElement = document.getElementById('root');
 

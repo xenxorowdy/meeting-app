@@ -49,6 +49,14 @@ export function useMeetingHistory({ enabled = true } = {}) {
     const deleteMeeting = useCallback(async id => {
         try {
             await apiRequest(`/api/meetings/${id}`, { method: 'DELETE' });
+
+            // The backend cannot reach the recording: the Electron shell owns those
+            // files. Without this every deleted meeting leaks its video, which for
+            // an hour-long recording is hundreds of megabytes.
+            if (globalThis.alphaRecorder) {
+                await globalThis.alphaRecorder.remove(id).catch(() => {});
+            }
+
             setMeetings(prev => prev.filter(meeting => meeting.id !== id));
             return true;
         } catch (cause) {

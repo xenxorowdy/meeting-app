@@ -1,1 +1,3 @@
 /target/
+.alpha-meeting-assistant/credentials.json
+.alpha-meeting-assistant/settings.json

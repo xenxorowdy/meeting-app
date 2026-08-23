@@ -130,7 +130,7 @@ export function MarkdownText({ markdown, className }) {
     const blocks = parseBlocks(markdown);
 
     return (
-        <div className={cn('space-y-3 text-body', className)}>
+        <div className={cn('space-y-4 text-body', className)}>
             {blocks.map((block, index) => {
                 if (block.type === 'heading') {
                     const Tag = block.level <= 2 ? 'h5' : 'h6';
@@ -143,7 +143,7 @@ export function MarkdownText({ markdown, className }) {
 
                 if (block.type === 'list') {
                     return (
-                        <ul key={index} className="space-y-1.5">
+                        <ul key={index} className="space-y-1">
                             {block.items.map((item, itemIndex) => (
                                 <li key={itemIndex} className="flex gap-2">
                                     <span className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground" aria-hidden="true" />
@@ -164,7 +164,7 @@ export function MarkdownText({ markdown, className }) {
                                 <thead>
                                     <tr className="bg-muted text-footnote text-muted-foreground">
                                         {headers.map((header, headerIndex) => (
-                                            <th key={headerIndex} scope="col" className="px-2.5 py-2 font-medium">
+                                            <th key={headerIndex} scope="col" className="px-2 py-2 font-medium">
                                                 {header}
                                             </th>
                                         ))}
@@ -174,7 +174,7 @@ export function MarkdownText({ markdown, className }) {
                                     {bodyRows.map((row, rowIndex) => (
                                         <tr key={rowIndex}>
                                             {splitRow(row).map((cell, cellIndex) => (
-                                                <td key={cellIndex} className="px-2.5 py-2">
+                                                <td key={cellIndex} className="px-2 py-2">
                                                     {renderInline(cell, `td-${index}-${rowIndex}-${cellIndex}`)}
                                                 </td>
                                             ))}

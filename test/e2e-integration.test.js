@@ -286,7 +286,7 @@ test('BackendServer: Handles HTTP API requests and broadcasts meeting events', a
 
     // Mock HTTP request/response dispatcher
     const makeRequest = (reqPath, method = 'GET', body = null) => {
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
             const { EventEmitter } = require('events');
             const req = new EventEmitter();
             req.url = reqPath;

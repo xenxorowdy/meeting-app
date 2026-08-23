@@ -4,43 +4,9 @@ import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SegmentedControl, SegmentedItem } from '@/components/ui/segmented-control';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-
-/**
- * Format timestamp in ms to MM:SS
- */
-function formatMs(ms = 0) {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
-
-const SPEAKER_PALETTE = ['bg-speaker-1', 'bg-speaker-2', 'bg-speaker-3', 'bg-speaker-4'];
-
-/**
- * Deterministic speaker badge color mapping
- */
-function getSpeakerStyle(speaker = '') {
-    if (speaker === 'You' || speaker.toLowerCase().startsWith('you')) {
-        return { avatar: 'bg-primary text-primary-foreground', bar: 'bg-primary', isYou: true };
-    }
-
-    const hash = speaker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const fill = SPEAKER_PALETTE[hash % SPEAKER_PALETTE.length];
-    return { avatar: `${fill} text-background`, bar: fill, isYou: false };
-}
-
-function initialsFor(speaker = '') {
-    const words = speaker
-        .replace(/\(.*?\)/g, '')
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
-    if (words.length === 0) return 'S';
-    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    return (words[0][0] + words[1][0]).toUpperCase();
-}
+import { formatMs, getSpeakerStyle, initialsFor, languageName } from '@/lib/speakers';
 
 export function TranscriptView({
     turns = [],
@@ -85,6 +51,7 @@ export function TranscriptView({
 
     // The transcript is only as live as the engine behind it, so say which one is
     // running rather than leaving an empty panel unexplained.
+    const detected = stt?.languageMode === 'auto' ? languageName(stt.detectedLanguage) : languageName(stt?.language);
     const sttNotice = !stt
         ? null
         : stt.engine === 'unavailable'
@@ -95,7 +62,14 @@ export function TranscriptView({
                 hint: 'Install whisperkit-cli so the backend can transcribe speech on the Neural Engine.',
             }
           : stt.status === 'ready'
-            ? { variant: 'success', icon: Cpu, label: 'On device', hint: `Whisper ${stt.model} on the Neural Engine` }
+            ? {
+                  variant: 'success',
+                  icon: Cpu,
+                  // Naming the language it settled on is the only way to tell a
+                  // correct auto-detection from a wrong one at a glance.
+                  label: detected ? `On device · ${detected}` : 'On device',
+                  hint: detected ? `Whisper ${stt.model} on the Neural Engine, detected ${detected}` : `Whisper ${stt.model} on the Neural Engine`,
+              }
             : stt.status === 'starting'
               ? { variant: 'muted', icon: Cpu, label: 'Loading model', hint: `Loading Whisper ${stt.model}` }
               : stt.status === 'failed'
@@ -108,8 +82,8 @@ export function TranscriptView({
                 : { variant: 'muted', icon: Cpu, label: 'Engine idle', hint: `Whisper ${stt.model} is not loaded yet` };
 
     return (
-        <section aria-label="Transcript" className="flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-card">
-            <div className="flex flex-col gap-3 p-3 hairline-bottom sm:p-4">
+        <section aria-label="Transcript" className="flex h-full flex-col overflow-hidden rounded-xl border">
+            <div className="flex flex-col gap-4 p-4 hairline-bottom sm:p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                         <MessageSquare className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -118,7 +92,7 @@ export function TranscriptView({
                             {turns.length} {turns.length === 1 ? 'turn' : 'turns'}
                         </Badge>
                         {isLive && (
-                            <span className="flex items-center gap-1.5 text-footnote font-medium text-destructive" aria-live="polite">
+                            <span className="flex items-center gap-1 text-footnote font-medium text-destructive" aria-live="polite">
                                 <span className="size-[6px] animate-breathe rounded-full bg-destructive" aria-hidden="true" />
                                 Live
                             </span>
@@ -136,7 +110,7 @@ export function TranscriptView({
                         )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                         {isLive && (
                             <Button
                                 variant={autoScroll ? 'tinted' : 'ghost'}
@@ -159,7 +133,7 @@ export function TranscriptView({
                 <div className="flex flex-col gap-2">
                     <div className="relative flex-1">
                         <Search
-                            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                            className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                             aria-hidden="true"
                         />
                         <Input
@@ -168,7 +142,7 @@ export function TranscriptView({
                             aria-label="Search transcript"
                             value={searchQuery}
                             onChange={event => onSearchChange && onSearchChange(event.target.value)}
-                            className="h-8 rounded-full pl-8 pr-8 text-callout"
+                            className="h-9 pl-8 pr-8 text-callout"
                         />
                         {searchQuery && (
                             <Button
@@ -176,49 +150,36 @@ export function TranscriptView({
                                 size="iconXs"
                                 onClick={() => onSearchChange && onSearchChange('')}
                                 aria-label="Clear search"
-                                className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded-full text-muted-foreground"
+                                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full text-muted-foreground"
                             >
                                 <X aria-hidden="true" />
                             </Button>
                         )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label="Filter by speaker">
-                        <Button
-                            variant={selectedSpeakerFilter === 'ALL' ? 'default' : 'secondary'}
-                            size="xs"
-                            className="rounded-full"
-                            aria-pressed={selectedSpeakerFilter === 'ALL'}
-                            onClick={() => onSpeakerFilterChange && onSpeakerFilterChange('ALL')}
+                    <div className="flex items-center overflow-x-auto pb-1">
+                        <SegmentedControl
+                            className="w-auto"
+                            value={selectedSpeakerFilter}
+                            onValueChange={next => onSpeakerFilterChange && onSpeakerFilterChange(next)}
+                            aria-label="Filter by speaker"
                         >
-                            Everyone
-                        </Button>
-
-                        {speakers.map(speaker => {
-                            const isSelected = selectedSpeakerFilter === speaker;
-                            return (
-                                <Button
-                                    key={speaker}
-                                    variant={isSelected ? 'default' : 'secondary'}
-                                    size="xs"
-                                    className="whitespace-nowrap rounded-full"
-                                    aria-pressed={isSelected}
-                                    onClick={() => onSpeakerFilterChange && onSpeakerFilterChange(speaker)}
-                                >
+                            <SegmentedItem value="ALL" className="w-auto flex-none px-2">
+                                Everyone
+                            </SegmentedItem>
+                            {speakers.map(speaker => (
+                                <SegmentedItem key={speaker} value={speaker} className="w-auto flex-none whitespace-nowrap px-2">
                                     {speaker}
-                                </Button>
-                            );
-                        })}
+                                </SegmentedItem>
+                            ))}
+                        </SegmentedControl>
                     </div>
                 </div>
             </div>
 
             <div ref={scrollContainerRef} className="flex-1 divide-y divide-border overflow-y-auto">
                 {filteredTurns.length === 0 ? (
-                    <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
-                        <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                            <MessageSquare className="size-5" aria-hidden="true" />
-                        </div>
+                    <div className="flex h-full flex-col justify-center px-8 py-16">
                         <p className="text-headline font-semibold">{searchQuery ? 'No matches' : 'No speech yet'}</p>
                         <p className="mt-1 max-w-xs text-callout text-muted-foreground">
                             {searchQuery
@@ -234,15 +195,15 @@ export function TranscriptView({
                         const isCopied = copiedId === turn.id;
 
                         return (
-                            <article key={turn.id} className="group flex items-start gap-3 px-3 py-3 transition-colors hover:bg-muted/60 sm:px-4">
+                            <article key={turn.id} className="group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60 sm:px-4">
                                 <div
                                     className={cn(
-                                        'flex size-7 shrink-0 items-center justify-center rounded-full text-footnote font-semibold',
+                                        'flex size-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold',
                                         style.avatar
                                     )}
                                     aria-hidden="true"
                                 >
-                                    {style.isYou ? <User className="size-3.5" /> : initialsFor(turn.speaker)}
+                                    {style.isYou ? <User className="size-4" /> : initialsFor(turn.speaker)}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
@@ -278,13 +239,13 @@ export function TranscriptView({
             </div>
 
             {speakerStats.length > 0 && (
-                <div className="p-3 hairline-top sm:px-4">
+                <div className="p-4 hairline-top sm:px-4">
                     <div className="mb-2 flex items-center justify-between text-footnote text-muted-foreground">
                         <span>Talk time</span>
                         <span className="tnum">{totalWords} words</span>
                     </div>
 
-                    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted" role="presentation">
+                    <div className="flex h-1 w-full overflow-hidden rounded-full bg-muted" role="presentation">
                         {speakerStats.map(stat => (
                             <div
                                 key={stat.speaker}
@@ -296,7 +257,7 @@ export function TranscriptView({
 
                     <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                         {speakerStats.map(stat => (
-                            <li key={stat.speaker} className="flex items-center gap-1.5 text-footnote">
+                            <li key={stat.speaker} className="flex items-center gap-1 text-footnote">
                                 <span className={cn('size-2 rounded-full', getSpeakerStyle(stat.speaker).bar)} aria-hidden="true" />
                                 <span className="font-medium">{stat.speaker}</span>
                                 <span className="tnum text-muted-foreground">

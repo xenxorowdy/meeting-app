@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, Play, Pause, Square, Sparkles, SlidersHorizontal, Pencil, Check } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Play, Pause, Square, SlidersHorizontal, Pencil, Check } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,7 @@ function LevelMeter({ level = 0, isMuted = false, label }) {
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuetext={isMuted ? 'Muted' : `${Math.round(level)} percent`}
-            className="flex h-3.5 items-end gap-[2px]"
+            className="flex h-4 items-end gap-[2px]"
         >
             {Array.from({ length: SEGMENT_COUNT }).map((_, index) => {
                 const isOn = index < filled;
@@ -43,7 +43,7 @@ function LevelMeter({ level = 0, isMuted = false, label }) {
                     <span
                         key={index}
                         className={cn(
-                            'w-[3px] rounded-full transition-[background-color,height] duration-100 ease-apple-standard',
+                            'w-[3px] rounded-full transition-[background-color,height] duration-100 ease-out',
                             isOn ? 'h-full' : 'h-[40%]',
                             !isOn && 'bg-foreground/25',
                             isOn && ratio > 0.92 && 'bg-destructive',
@@ -59,7 +59,7 @@ function LevelMeter({ level = 0, isMuted = false, label }) {
 
 function StreamMeter({ label, description, level, isMuted, onToggle, MutedIcon, ActiveIcon, unavailable = false, unavailableHint }) {
     return (
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -89,6 +89,14 @@ function StreamMeter({ label, description, level, isMuted, onToggle, MutedIcon, 
     );
 }
 
+function eventClock(event) {
+    const startMs = Date.parse(event?.start);
+    if (!Number.isFinite(startMs)) return 'Next';
+    const started = startMs <= Date.now();
+    const clock = new Date(startMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return started ? 'Now' : clock;
+}
+
 export function LiveMeetingHUD({
     sessionState,
     durationSeconds,
@@ -97,6 +105,8 @@ export function LiveMeetingHUD({
     micMuted = false,
     systemAudioMuted = false,
     systemAudioSeen = false,
+    recordingState = null,
+    upcomingEvent = null,
     canRecord = true,
     onStartMeeting,
     onPauseMeeting,
@@ -133,32 +143,34 @@ export function LiveMeetingHUD({
     const elapsed = isActive ? durationSeconds : activeMeeting?.durationSeconds || 0;
 
     return (
-        <section aria-label="Recording controls" className="rounded-xl border bg-card p-3 shadow-card sm:p-4">
+        <section aria-label="Recording controls" className="rounded-xl border p-4 sm:p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                    {isRecording && (
-                        <Badge variant="destructive">
-                            <span className="size-[6px] animate-breathe rounded-full bg-destructive" aria-hidden="true" />
-                            Recording
-                        </Badge>
-                    )}
-                    {isPaused && (
-                        <Badge variant="warning">
-                            <Pause aria-hidden="true" />
-                            Paused
-                        </Badge>
-                    )}
-                    {isProcessing && (
-                        <Badge variant="tinted">
-                            <Sparkles className="animate-breathe" aria-hidden="true" />
-                            Summarizing
-                        </Badge>
-                    )}
-                    {isIdle && <Badge variant="muted">Ready</Badge>}
+                <div className="flex min-w-0 flex-1 items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-callout">
+                        {isRecording && (
+                            <span className="flex items-center gap-2 font-medium">
+                                <span className="size-[6px] animate-breathe rounded-full bg-destructive" aria-hidden="true" />
+                                Recording
+                            </span>
+                        )}
+                        {isPaused && <span className="font-medium text-warning">Paused</span>}
+                        {isProcessing && <span className="font-medium text-muted-foreground">Summarizing</span>}
+                        {isIdle && <span className="text-muted-foreground">Ready</span>}
+                        {isIdle && upcomingEvent && (
+                            <span className="min-w-0 truncate text-muted-foreground">
+                                {eventClock(upcomingEvent)} · {upcomingEvent.title}
+                            </span>
+                        )}
+
+                        {recordingState?.active && <span className="text-muted-foreground">Screen</span>}
+                        {/* The recording carrying only your own voice is worth saying
+                            during the meeting, while it can still be fixed. */}
+                        {recordingState?.active && recordingState.hasSystemAudio === false && <span className="text-warning">No meeting audio</span>}
+                    </div>
 
                     <div className="flex min-w-0 items-center gap-1">
                         {isEditingTitle ? (
-                            <form onSubmit={handleTitleSubmit} className="flex items-center gap-1.5">
+                            <form onSubmit={handleTitleSubmit} className="flex items-center gap-1">
                                 <Input
                                     value={titleInput}
                                     onChange={event => setTitleInput(event.target.value)}
@@ -210,7 +222,7 @@ export function LiveMeetingHUD({
                 </div>
 
                 {isActive && (
-                    <div className="flex items-center gap-4 rounded-lg bg-muted px-3 py-2">
+                    <div className="flex items-center gap-4 rounded-lg bg-muted px-4 py-2">
                         <StreamMeter
                             label="You"
                             description="your microphone"
@@ -239,7 +251,7 @@ export function LiveMeetingHUD({
                     {isIdle && (
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button onClick={() => onStartMeeting && onStartMeeting()} disabled={!canRecord}>
+                                <Button onClick={() => onStartMeeting && onStartMeeting(upcomingEvent?.title)} disabled={!canRecord}>
                                     <Mic aria-hidden="true" />
                                     Start recording
                                 </Button>

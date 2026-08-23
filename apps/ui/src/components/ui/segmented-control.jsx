@@ -21,11 +21,11 @@ const SegmentedItem = React.forwardRef(({ className, ...props }, ref) => (
     <ToggleGroupPrimitive.Item
         ref={ref}
         className={cn(
-            'inline-flex h-[26px] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-2.5 text-callout font-medium text-muted-foreground',
-            'transition-[background-color,color,box-shadow] duration-150 ease-apple-standard hover:text-foreground',
+            'inline-flex h-[26px] flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-[7px] px-2 text-callout font-medium text-muted-foreground',
+            'transition-[background-color,color,box-shadow] duration-200 ease-out hover:text-foreground',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
             'data-[state=on]:bg-segment data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:shadow-control',
-            '[&_svg]:size-3.5 [&_svg]:shrink-0',
+            '[&_svg]:size-4 [&_svg]:shrink-0',
             className
         )}
         {...props}
