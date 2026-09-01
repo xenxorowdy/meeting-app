@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
+import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/utils/cn';
+import { REMINDER_MIN_ATTENDEES } from '@/lib/calendarEvents';
 
 function clock(value) {
     const ms = Date.parse(value);
@@ -36,7 +38,7 @@ function groupByDay(events) {
     return [...groups.values()];
 }
 
-export function HomeView({ events = [], providers = [], isConnected, canRecord, onStartMeeting, onOpenSettings }) {
+export function HomeView({ events = [], providers = [], isConnected, canRecord, remindersEnabled = true, onStartMeeting, onOpenSettings }) {
     const groups = useMemo(() => groupByDay(events), [events]);
     const anyConnected = providers.some(provider => provider.connected);
     const now = Date.now();
@@ -84,11 +86,13 @@ export function HomeView({ events = [], providers = [], isConnected, canRecord, 
                             <ul className="mt-4 divide-y divide-border border-t">
                                 {group.events.map(event => {
                                     const live = event.startMs <= now && event.endMs > now;
+                                    const invited = Array.isArray(event.attendees) ? event.attendees.length : 0;
+                                    const willRemind = remindersEnabled && !live && event.startMs > now && invited >= REMINDER_MIN_ATTENDEES;
                                     return (
                                         <li key={`${event.provider}-${event.id}`}>
                                             <button
                                                 type="button"
-                                                onClick={() => onStartMeeting(event.title)}
+                                                onClick={() => onStartMeeting(event.title, event)}
                                                 disabled={!canRecord}
                                                 className={cn(
                                                     'flex h-12 w-full items-center gap-4 text-left transition-colors duration-200 ease-out',
@@ -100,7 +104,14 @@ export function HomeView({ events = [], providers = [], isConnected, canRecord, 
                                                     {clock(event.start)}
                                                 </span>
                                                 <span className="min-w-0 flex-1 truncate text-body">{event.title}</span>
-                                                {live && <span className="shrink-0 pr-2 text-footnote text-muted-foreground">Now</span>}
+                                                {live ? (
+                                                    <span className="shrink-0 pr-2 text-footnote text-muted-foreground">Now</span>
+                                                ) : willRemind ? (
+                                                    <Bell
+                                                        className="mr-2 size-4 shrink-0 text-muted-foreground"
+                                                        aria-label={`Alpha will remind you a minute before this meeting · ${invited} invited`}
+                                                    />
+                                                ) : null}
                                             </button>
                                         </li>
                                     );

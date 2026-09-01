@@ -64,3 +64,8 @@ contextBridge.exposeInMainWorld('alphaPodcast', {
     mediaUrl: (projectId, relativePath) =>
         `alpha-podcast://${encodeURIComponent(projectId)}/${String(relativePath).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`,
 });
+
+// The main window owns the floating-widget preference; the shell owns the window.
+contextBridge.exposeInMainWorld('alphaShell', {
+    setWidgetVisible: visible => ipcRenderer.invoke('widget:set-visible', Boolean(visible)),
+});

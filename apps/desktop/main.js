@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, shell, nativeTheme } = require('electron');
 const recorder = require('./recorder');
 const podcast = require('./podcast');
+const widget = require('./widget');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -20,6 +21,7 @@ const BACKEND_START_TIMEOUT_MS = 90_000;
 const CORE_BACKEND_DIR = path.resolve(__dirname, '..', 'core-backend');
 const CORE_BACKEND_BINARY = path.join(CORE_BACKEND_DIR, 'target', 'release', 'alpha-core-backend');
 const UI_DIST_INDEX = path.resolve(__dirname, '..', 'ui', 'dist', 'index.html');
+const UI_DIST_WIDGET = path.resolve(__dirname, '..', 'ui', 'dist', 'widget.html');
 const DEV_UI_URL = process.env.MEETING_UI_URL || 'http://localhost:5173/';
 
 let backendProcess = null;
@@ -154,10 +156,10 @@ function createWindow() {
         },
     });
 
-    // The renderer needs the microphone, and the screen once recording is on;
-    // everything else stays denied.
+    // The renderer needs the microphone, the screen once recording is on, and
+    // notifications for the pre-meeting reminder; everything else stays denied.
     mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-        callback(permission === 'media' || permission === 'audioCapture' || permission === 'display-capture');
+        callback(permission === 'media' || permission === 'audioCapture' || permission === 'display-capture' || permission === 'notifications');
     });
 
     recorder.installDisplayMediaHandler(mainWindow.webContents.session);
@@ -179,6 +181,30 @@ function createWindow() {
 
     mainWindow.on('closed', () => {
         mainWindow = null;
+        // The widget is skipTaskbar and always-on-top, so on Windows and Linux it
+        // would keep the app alive with no way back to it once the main window is
+        // gone. macOS keeps running without windows by design, so it stays.
+        if (process.platform !== 'darwin') widget.destroy();
+    });
+}
+
+function showMainWindow() {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow();
+        return;
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+}
+
+function createWidget() {
+    const useDevServer = process.argv.includes('--dev') || !fs.existsSync(UI_DIST_WIDGET);
+    widget.create({
+        devUrl: useDevServer ? new URL('widget.html', DEV_UI_URL).href : null,
+        distFile: UI_DIST_WIDGET,
+        preload: path.join(__dirname, 'widgetPreload.js'),
+        onActivateMain: showMainWindow,
     });
 }
 
@@ -190,12 +216,7 @@ podcast.registerScheme();
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on('second-instance', () => {
-        if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.focus();
-        }
-    });
+    app.on('second-instance', showMainWindow);
 
     app.whenReady().then(async () => {
         buildMenu();
@@ -203,6 +224,7 @@ if (!app.requestSingleInstanceLock()) {
         recorder.registerHandlers();
         podcast.serveScheme();
         podcast.registerHandlers();
+        widget.registerHandlers();
 
         try {
             const status = await startBackend();
@@ -214,9 +236,12 @@ if (!app.requestSingleInstanceLock()) {
         }
 
         createWindow();
+        createWidget();
 
+        // Counting every window would include the floating widget, which is
+        // always open — the dock icon would then never bring the app back.
         app.on('activate', () => {
-            if (BrowserWindow.getAllWindows().length === 0) createWindow();
+            if (!mainWindow || mainWindow.isDestroyed()) createWindow();
         });
     });
 
@@ -227,6 +252,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on('before-quit', async () => {
         // Close the recording file before the backend goes away, so quitting
         // mid-meeting still leaves something playable on disk.
+        widget.destroy();
         await recorder.shutdown();
         await podcast.shutdown();
         stopBackend();

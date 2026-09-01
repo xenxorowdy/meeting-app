@@ -61,6 +61,32 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+fn invited_names(metadata: &Value) -> Vec<String> {
+    metadata
+        .pointer("/calendarEvent/attendees")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|person| {
+                    let field = |key: &str| {
+                        person
+                            .get(key)
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                    };
+                    match (field("name"), field("email")) {
+                        (Some(name), Some(email)) => Some(format!("{name} <{email}>")),
+                        (Some(name), None) => Some(name.to_string()),
+                        (None, Some(email)) => Some(email.to_string()),
+                        (None, None) => None,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TranscriptTurn {
@@ -752,6 +778,7 @@ impl AppState {
                         .to_string(),
                 })
                 .collect(),
+            attendees: invited_names(&meeting.metadata),
         };
 
         let summary = self.summarizer.summarize(&request).await;
@@ -1990,6 +2017,34 @@ fn sha1(data: &[u8]) -> [u8; 20] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invited_names_prefer_a_name_and_fall_back_to_the_address() {
+        let metadata = json!({
+            "calendarEvent": {
+                "attendees": [
+                    { "name": "Asha Rao", "email": "asha@example.com" },
+                    { "name": "", "email": "ben@example.com" },
+                    { "name": "Chen", "email": null },
+                    { "name": null, "email": null }
+                ]
+            }
+        });
+        assert_eq!(
+            invited_names(&metadata),
+            vec![
+                "Asha Rao <asha@example.com>".to_string(),
+                "ben@example.com".to_string(),
+                "Chen".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_meeting_without_a_calendar_event_has_no_invited_names() {
+        assert!(invited_names(&json!({})).is_empty());
+        assert!(invited_names(&json!({ "calendarEvent": { "title": "Ad hoc" } })).is_empty());
+    }
 
     /// A real record from `.alpha-meeting-assistant/meetings.json`, written before
     /// turns carried a language and before meetings carried a recording. There are

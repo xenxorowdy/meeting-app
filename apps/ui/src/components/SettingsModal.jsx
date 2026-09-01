@@ -134,6 +134,7 @@ export function SettingsModal({
     const [usageBytes, setUsageBytes] = useState(null);
     const [screenPermission, setScreenPermission] = useState(null);
     const recordingSupported = isRecordingSupported();
+    const widgetSupported = Boolean(globalThis.alphaShell);
 
     // Adopt whatever the backend reported the last time the sheet was opened. The
     // key field always starts blank — the backend never sends it back.
@@ -668,6 +669,20 @@ export function SettingsModal({
 
                             <SettingGroup>
                                 <SettingRow
+                                    id="meeting-reminders"
+                                    label="Remind me before a meeting"
+                                    description="A notification a minute before any scheduled meeting with two or more people invited. Clicking it starts the recording."
+                                >
+                                    <Switch
+                                        id="meeting-reminders"
+                                        checked={formData.meetingReminders !== false}
+                                        onCheckedChange={checked => setFormData({ ...formData, meetingReminders: checked })}
+                                    />
+                                </SettingRow>
+                            </SettingGroup>
+
+                            <SettingGroup>
+                                <SettingRow
                                     id="google-client-id"
                                     label="Google client id"
                                     description="From a Google Cloud OAuth client of type Desktop app. Stored locally, never sent anywhere but Google."
@@ -705,6 +720,21 @@ export function SettingsModal({
                                     Screen recording needs the Alpha desktop window. It is unavailable in a browser tab.
                                 </p>
                             )}
+
+                            <SettingGroup>
+                                <SettingRow
+                                    id="floating-widget"
+                                    label="Floating status widget"
+                                    description="A small always-on-top pill showing whether Alpha is recording. Click it to read the live transcript without leaving your call."
+                                >
+                                    <Switch
+                                        id="floating-widget"
+                                        disabled={!widgetSupported}
+                                        checked={formData.floatingWidget !== false}
+                                        onCheckedChange={checked => setFormData({ ...formData, floatingWidget: checked })}
+                                    />
+                                </SettingRow>
+                            </SettingGroup>
 
                             <SettingGroup>
                                 <SettingRow

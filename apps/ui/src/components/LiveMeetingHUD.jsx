@@ -251,7 +251,7 @@ export function LiveMeetingHUD({
                     {isIdle && (
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button onClick={() => onStartMeeting && onStartMeeting(upcomingEvent?.title)} disabled={!canRecord}>
+                                <Button onClick={() => onStartMeeting && onStartMeeting(upcomingEvent?.title, upcomingEvent)} disabled={!canRecord}>
                                     <Mic aria-hidden="true" />
                                     Start recording
                                 </Button>

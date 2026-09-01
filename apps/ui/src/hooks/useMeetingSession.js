@@ -9,6 +9,7 @@ import {
     STREAM_MIC,
     STREAM_SYSTEM,
 } from '@/lib/backend';
+import { calendarEventMetadata } from '@/lib/calendarEvents';
 import { startMicCapture } from '@/lib/micCapture';
 import { DEFAULT_BITS_PER_SECOND, isRecordingSupported, startScreenRecording } from '@/lib/screenRecorder';
 
@@ -41,6 +42,8 @@ const DEFAULT_SETTINGS = {
     // silently next time.
     recordingSource: 'ask',
     recordingBitsPerSecond: DEFAULT_BITS_PER_SECOND,
+    meetingReminders: true,
+    floatingWidget: true,
 };
 
 const clampLevel = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
@@ -350,16 +353,20 @@ export function useMeetingSession() {
     );
 
     const startMeeting = useCallback(
-        async (title, { sourceId = null } = {}) => {
+        async (title, { sourceId = null, event = null } = {}) => {
             setError(null);
             if (settingsRef.current.transcriptionProvider === 'sarvam' && !isRecordingSupported()) {
                 setError('Sarvam batch transcription needs the Alpha desktop app so it can capture the complete meeting audio.');
                 return null;
             }
             try {
+                const calendarEvent = calendarEventMetadata(event);
                 const response = await apiRequest('/api/meetings/start', {
                     method: 'POST',
-                    body: { title: title || `Meeting ${new Date().toLocaleString()}` },
+                    body: {
+                        title: title || event?.title || `Meeting ${new Date().toLocaleString()}`,
+                        ...(calendarEvent ? { metadata: { calendarEvent } } : {}),
+                    },
                 });
                 const meeting = adoptMeeting(response.meeting);
                 setSessionState(SESSION_STATES.RECORDING);

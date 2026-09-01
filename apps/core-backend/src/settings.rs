@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 
 /// Settings the backend understands. Anything else is rejected with a warning so
 /// the UI finds out rather than believing a write landed.
-const KNOWN_SETTINGS: [&str; 15] = [
+const KNOWN_SETTINGS: [&str; 17] = [
     "transcriptionProvider",
     "whisperModel",
     "sttLanguage",
@@ -35,6 +35,8 @@ const KNOWN_SETTINGS: [&str; 15] = [
     "recordScreen",
     "recordingSource",
     "recordingBitsPerSecond",
+    "meetingReminders",
+    "floatingWidget",
 ];
 
 const GEMINI_KEY: &str = "geminiApiKey";

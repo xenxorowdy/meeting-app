@@ -14,6 +14,8 @@
         "start:backend": "npm run --prefix apps/core-backend start",
         "test:backend": "npm run --prefix apps/core-backend test",
         "test:podcast": "node --test test/podcast-projects.test.js test/recorder-paths.test.js",
+        "test:shell": "node --test test/widget-window.test.js",
+        "test:ui": "node --test test/calendar-events.test.js",
         "build:ui": "npm run --prefix apps/ui build",
         "build:backend": "npm run --prefix apps/core-backend build",
         "build:all": "npm run build:ui && npm run build:backend",

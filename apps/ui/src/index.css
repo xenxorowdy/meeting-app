@@ -183,6 +183,12 @@
     .no-drag {
         -webkit-app-region: no-drag;
     }
+
+    /* The floating widget is a transparent, frameless window: its rounded panel
+       has to sit on nothing, not on the app's own background colour. */
+    body.transparent-shell {
+        background-color: transparent;
+    }
 }
 
 @layer utilities {

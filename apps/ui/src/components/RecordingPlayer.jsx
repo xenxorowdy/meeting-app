@@ -22,7 +22,7 @@ function EmptyState({ title, children }) {
     );
 }
 
-function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSeek, onRenameSpeaker, isConnected }) {
+function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSeek, onRenameSpeaker, nameSuggestions = [], isConnected }) {
     const [editing, setEditing] = useState(null);
     const [draftName, setDraftName] = useState('');
     const [renameError, setRenameError] = useState(null);
@@ -97,6 +97,7 @@ function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSee
                                             }
                                         }}
                                         maxLength={80}
+                                        list={nameSuggestions.length > 0 ? 'speaker-name-suggestions' : undefined}
                                         aria-label={`Rename ${row.speaker}`}
                                         className="h-8 min-w-0 px-2 text-footnote"
                                     />
@@ -168,6 +169,13 @@ function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSee
                     );
                 })}
             </div>
+            {nameSuggestions.length > 0 && (
+                <datalist id="speaker-name-suggestions">
+                    {nameSuggestions.map(name => (
+                        <option key={name} value={name} />
+                    ))}
+                </datalist>
+            )}
             {renameError && <p className="text-footnote text-destructive">{renameError}</p>}
         </div>
     );
@@ -183,7 +191,7 @@ function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSee
  * if a stream stalls; if that ever shows up in practice the fix is a wall-clock
  * stamp per turn rather than a bigger constant here.
  */
-export function RecordingPlayer({ meeting, isConnected = true, onRenameSpeaker }) {
+export function RecordingPlayer({ meeting, isConnected = true, nameSuggestions = [], onRenameSpeaker }) {
     const videoRef = useRef(null);
     const activeRef = useRef(null);
     const listRef = useRef(null);
@@ -395,6 +403,7 @@ export function RecordingPlayer({ meeting, isConnected = true, onRenameSpeaker }
                         currentMs={currentMs}
                         onSeek={seekTo}
                         onRenameSpeaker={onRenameSpeaker}
+                        nameSuggestions={nameSuggestions}
                         isConnected={isConnected}
                     />
                 )}

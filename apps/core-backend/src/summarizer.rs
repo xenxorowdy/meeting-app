@@ -18,6 +18,9 @@ You turn speaker-diarized meeting transcripts into precise, executive-ready note
 Rules:
 - Ground every sentence in what was actually said. Never invent attendees, dates, numbers or commitments.
 - \"You\" is the local user of the app; other labels are the remote participants.
+- A calendar invite list, when given, is who was invited, not who spoke. Use it to spell names \
+correctly and to address the follow-up email. Never claim someone attended or said anything on the \
+strength of the invite alone.
 - Attribute each action item to the speaker who committed to it, or to the person it was asked of.
 - Use \"TBD\" when a deadline was never stated. Never guess one.
 - Prefer specifics over praise: no filler, no meta-commentary about the transcript.
@@ -131,6 +134,7 @@ pub struct SummaryRequest {
     pub duration_seconds: i64,
     pub turns: Vec<SummaryTurn>,
     pub notes: Vec<SummaryNote>,
+    pub attendees: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -613,13 +617,20 @@ fn render_transcript(request: &SummaryRequest) -> String {
         block
     };
 
+    let invited = if request.attendees.is_empty() {
+        String::new()
+    } else {
+        format!("Calendar invite list: {}\n", request.attendees.join(", "))
+    };
+
     format!(
-        "Meeting title: {}\nStarted at (epoch ms): {}\nDuration: {}\nSpoken turns: {}\nUser notes: {}\n{}\n--- TRANSCRIPT ---\n{}--- END TRANSCRIPT ---\n",
+        "Meeting title: {}\nStarted at (epoch ms): {}\nDuration: {}\nSpoken turns: {}\nUser notes: {}\n{}{}\n--- TRANSCRIPT ---\n{}--- END TRANSCRIPT ---\n",
         request.title,
         request.started_at,
         duration,
         request.turns.len(),
         request.notes.len(),
+        invited,
         notes,
         transcript
     )
@@ -924,6 +935,7 @@ mod tests {
     fn request() -> SummaryRequest {
         SummaryRequest {
             notes: vec![],
+            attendees: vec![],
             title: "Release Sync".into(),
             started_at: 1_700_000_000_000,
             duration_seconds: 630,
@@ -979,6 +991,24 @@ mod tests {
         assert!(prompt.contains("Duration: 11 minutes"));
         assert!(prompt.contains("[00:01] You: We agreed to ship the beta on Friday."));
         assert!(prompt.contains("[01:05] Others: I will send the release notes."));
+    }
+
+    #[test]
+    fn the_calendar_invite_list_reaches_the_prompt() {
+        let mut invited = request();
+        invited.attendees = vec![
+            "Asha Rao <asha@example.com>".into(),
+            "ben@example.com".into(),
+        ];
+        let prompt = render_transcript(&invited);
+        assert!(
+            prompt.contains("Calendar invite list: Asha Rao <asha@example.com>, ben@example.com")
+        );
+    }
+
+    #[test]
+    fn an_ad_hoc_meeting_gets_no_invite_line() {
+        assert!(!render_transcript(&request()).contains("Calendar invite list"));
     }
 
     #[test]
@@ -1080,6 +1110,7 @@ mod tests {
         let summary = service
             .summarize(&SummaryRequest {
                 notes: vec![],
+                attendees: vec![],
                 title: "Quiet".into(),
                 started_at: 0,
                 duration_seconds: 0,

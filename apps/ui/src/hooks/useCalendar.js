@@ -101,13 +101,3 @@ export function useCalendar({ isConnected }) {
         clearError: () => setError(null),
     };
 }
-
-export function currentOrNextEvent(events, nowMs = Date.now()) {
-    if (!Array.isArray(events) || events.length === 0) return null;
-    const parsed = events
-        .map(event => ({ ...event, startMs: Date.parse(event.start), endMs: Date.parse(event.end) }))
-        .filter(event => Number.isFinite(event.startMs));
-    const running = parsed.find(event => event.startMs <= nowMs && event.endMs > nowMs);
-    if (running) return running;
-    return parsed.find(event => event.startMs > nowMs) || null;
-}

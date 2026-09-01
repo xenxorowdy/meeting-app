@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Home, Mic, FileText, CalendarDays, Play, Podcast, Settings, Download, Wifi, WifiOff, RotateCw, TriangleAlert, Sun, Moon } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +9,9 @@ import { useTheme } from '@/lib/theme';
 import { useMeetingSession, SESSION_STATES } from '@/hooks/useMeetingSession';
 import { useTranscriptStream } from '@/hooks/useTranscriptStream';
 import { useMeetingHistory } from '@/hooks/useMeetingHistory';
-import { useCalendar, currentOrNextEvent } from '@/hooks/useCalendar';
+import { useCalendar } from '@/hooks/useCalendar';
+import { currentOrNextEvent, eventForNow, attendeeNames } from '@/lib/calendarEvents';
+import { useMeetingReminder } from '@/hooks/useMeetingReminder';
 import { LiveMeetingHUD } from '@/components/LiveMeetingHUD';
 import { TranscriptView } from '@/components/TranscriptView';
 import { SummaryEditor } from '@/components/SummaryEditor';
@@ -43,7 +45,7 @@ export default function App() {
     const [activeTab, setActiveTab] = useState('home');
     const [isExportOpen, setIsExportOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [pendingRecordingTitle, setPendingRecordingTitle] = useState(null);
+    const [pendingStart, setPendingStart] = useState(null);
 
     const {
         backendUrl,
@@ -106,6 +108,11 @@ export default function App() {
     const calendar = useCalendar({ isConnected });
     const upcoming = currentOrNextEvent(calendar.events);
 
+    const calendarEventsRef = useRef(calendar.events);
+    calendarEventsRef.current = calendar.events;
+
+    const invitedNames = useMemo(() => attendeeNames(activeMeeting?.metadata?.calendarEvent), [activeMeeting?.metadata?.calendarEvent]);
+
     // Live turns arrive over the backend socket.
     useEffect(() => {
         setOnLiveTurn(addTurn);
@@ -124,28 +131,45 @@ export default function App() {
     }, [setOnMeetingCompleted, history]);
 
     const startWithSource = useCallback(
-        async (title, sourceId) => {
+        async (title, sourceId, event) => {
             clearTurns();
             setActiveTab('live');
-            await startMeeting(title, { sourceId });
+            await startMeeting(title, { sourceId, event });
         },
         [clearTurns, startMeeting]
     );
 
     const handleStartRecording = useCallback(
-        async title => {
+        async (title, event) => {
+            const linkedEvent = event || eventForNow(calendarEventsRef.current);
+            const resolvedTitle = title || linkedEvent?.title || '';
+
             // Which screen to capture is a per-meeting choice, so ask at the point
             // of starting rather than burying it in settings.
             const needsBatchRecording = settings.transcriptionProvider === 'sarvam';
             if ((settings.recordScreen || needsBatchRecording) && settings.recordingSource === 'ask' && isRecordingSupported()) {
-                setPendingRecordingTitle(title || '');
+                setPendingStart({ title: resolvedTitle, event: linkedEvent });
                 return;
             }
             const sourceId = (settings.recordScreen || needsBatchRecording) && settings.recordingSource !== 'ask' ? settings.recordingSource : null;
-            await startWithSource(title, sourceId);
+            await startWithSource(resolvedTitle, sourceId, linkedEvent);
         },
         [settings.recordScreen, settings.recordingSource, settings.transcriptionProvider, startWithSource]
     );
+
+    useEffect(() => {
+        globalThis.alphaShell?.setWidgetVisible(settings.floatingWidget !== false);
+    }, [settings.floatingWidget]);
+
+    useMeetingReminder({
+        events: calendar.events,
+        enabled: settings.meetingReminders !== false,
+        canRecord: isConnected && isIdle,
+        onStart: event => {
+            setActiveTab('live');
+            handleStartRecording(event.title, event);
+        },
+    });
 
     const handleStopRecording = useCallback(() => {
         stopMeeting(turns);
@@ -326,6 +350,7 @@ export default function App() {
                             providers={calendar.providers}
                             isConnected={isConnected}
                             canRecord={isConnected && isIdle}
+                            remindersEnabled={settings.meetingReminders !== false}
                             onStartMeeting={handleStartRecording}
                             onOpenSettings={() => setIsSettingsOpen(true)}
                         />
@@ -410,7 +435,12 @@ export default function App() {
                     )}
 
                     {activeTab === 'replay' && (
-                        <RecordingPlayer meeting={activeMeeting} isConnected={isConnected} onRenameSpeaker={handleRenameSpeaker} />
+                        <RecordingPlayer
+                            meeting={activeMeeting}
+                            isConnected={isConnected}
+                            nameSuggestions={invitedNames}
+                            onRenameSpeaker={handleRenameSpeaker}
+                        />
                     )}
 
                     {activeTab === 'podcast' && (
@@ -441,13 +471,13 @@ export default function App() {
             </div>
 
             <SourcePicker
-                isOpen={pendingRecordingTitle !== null}
+                isOpen={pendingStart !== null}
                 batchUpload={settings.transcriptionProvider === 'sarvam'}
-                onClose={() => setPendingRecordingTitle(null)}
+                onClose={() => setPendingStart(null)}
                 onConfirm={sourceId => {
-                    const title = pendingRecordingTitle;
-                    setPendingRecordingTitle(null);
-                    startWithSource(title, sourceId);
+                    const requested = pendingStart;
+                    setPendingStart(null);
+                    startWithSource(requested?.title || '', sourceId, requested?.event || null);
                 }}
             />
             <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} meeting={activeMeeting} />
