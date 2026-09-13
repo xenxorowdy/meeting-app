@@ -1,4 +1,4 @@
-export const FOLDER_COLORS = ['#0047ab', '#5b9bff', '#a78bfa', '#ffbd2e', '#ff5f57'];
+export const FOLDER_COLORS = ['var(--ks-speaker-1)', 'var(--ks-speaker-2)', 'var(--ks-speaker-3)', 'var(--ks-speaker-4)', 'var(--ks-speaker-5)'];
 
 export function speakerColor(name = '') {
     const hash = [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -34,8 +34,16 @@ export function leadParagraph(markdown = '') {
     return (headingIndex === -1 ? markdown : markdown.slice(0, headingIndex)).trim();
 }
 
-export function turnsForIds(transcript, ids) {
+export function turnIndex(transcript) {
+    return new Map((transcript || []).map(turn => [turn.id, turn]));
+}
+
+export function turnsForIds(index, ids) {
     if (!ids?.length) return [];
-    const wanted = new Set(ids);
-    return (transcript || []).filter(turn => wanted.has(turn.id));
+    const found = [];
+    for (const id of ids) {
+        const turn = index.get(id);
+        if (turn) found.push(turn);
+    }
+    return found;
 }

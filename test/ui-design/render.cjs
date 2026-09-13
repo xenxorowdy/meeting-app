@@ -7,6 +7,46 @@ const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
+const CONTRAST_PROBE = `(() => {
+    const channels = value => (value.match(/[\\d.]+/g) || []).map(Number);
+    const luminance = rgb => {
+        const [r, g, b] = rgb.map(value => {
+            const channel = value / 255;
+            return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const over = (top, alpha, bottom) => top.map((value, index) => value * alpha + bottom[index] * (1 - alpha));
+    const backdrop = node => {
+        const layers = [];
+        for (let el = node; el; el = el.parentElement) {
+            const parts = channels(getComputedStyle(el).backgroundColor);
+            if (parts.length < 3) continue;
+            const alpha = parts.length > 3 ? parts[3] : 1;
+            if (alpha === 0) continue;
+            layers.push({ rgb: parts.slice(0, 3), alpha });
+            if (alpha === 1) break;
+        }
+        let base = channels(getComputedStyle(document.documentElement).backgroundColor).slice(0, 3);
+        if (base.length < 3) base = [255, 255, 255];
+        for (let i = layers.length - 1; i >= 0; i -= 1) base = over(layers[i].rgb, layers[i].alpha, base);
+        return base;
+    };
+    const ratio = node => {
+        const back = backdrop(node);
+        const parts = channels(getComputedStyle(node).color);
+        const alpha = parts.length > 3 ? parts[3] : 1;
+        const front = luminance(over(parts.slice(0, 3), alpha, back));
+        const behind = luminance(back);
+        return Math.round(((Math.max(front, behind) + 0.05) / (Math.min(front, behind) + 0.05)) * 100) / 100;
+    };
+    return SELECTORS.map(selector => {
+        const nodes = [...document.querySelectorAll(selector)].filter(node => node.textContent.trim());
+        if (!nodes.length) return { selector, ratio: null };
+        return { selector, ratio: Math.min(...nodes.map(ratio)), count: nodes.length };
+    });
+})()`;
+
 async function run() {
     const output = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-render-'));
     console.log(`Render output: ${output}`);
@@ -42,7 +82,13 @@ async function run() {
         { urls: ['http://127.0.0.1:48900/*', 'ws://127.0.0.1:48900/*'] },
         (_, done) => done({ cancel: true })
     );
-    const evaluate = script => window.webContents.executeJavaScript(script);
+    const evaluate = async script => {
+        try {
+            return await window.webContents.executeJavaScript(script);
+        } catch (cause) {
+            throw new Error(`Renderer script failed:\n${String(script).trim().slice(0, 400)}\n-> ${cause.message}`);
+        }
+    };
     const settle = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
     const click = async text => {
         assert(
@@ -84,9 +130,15 @@ async function run() {
     assert(await evaluate("document.body.textContent.includes('Research')"));
     await click('Home');
     await click('New Meeting');
+    const midStream = await evaluate("document.querySelector('.ks-turn-interim p').textContent");
+    await evaluate('new Promise(resolve => setTimeout(resolve, 800))');
     await capture('03-transcript');
     assert.equal(await evaluate("document.querySelectorAll('.ks-turn:not(.ks-turn-interim)').length"), 6);
-    assert.equal(await evaluate("document.querySelector('.ks-turn-interim p').textContent"), 'One more thing before we');
+    const settledInterim = await evaluate("document.querySelector('.ks-turn-interim p').textContent");
+    assert.equal(settledInterim, 'One more thing before we');
+    assert(midStream.length < settledInterim.length, `live speech arrives word by word, not all at once (saw "${midStream}")`);
+    assert(await evaluate("document.querySelectorAll('.ks-turn-interim .ks-word').length") >= 5, 'each revealed word is its own element');
+    assert.equal(await evaluate("document.querySelectorAll('.ks-turn:not(.ks-turn-interim) .ks-word').length"), 0, 'a stored transcript renders at once');
     assert.deepEqual(
         await evaluate("[...document.querySelectorAll('.ks-meeting-tabs > button')].map(button => button.id)"),
         ['tab-transcript', 'tab-notes'],
@@ -141,6 +193,9 @@ async function run() {
         "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (window.fixtureReady) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Fixture video timeout')); } }, 50); })"
     );
     await click('ScreenHD');
+    await evaluate(
+        "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('video')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy recording player never loaded')); } }, 25); })"
+    );
     await capture('06-replay');
     assert(await evaluate("!!document.querySelector('video')"));
     await click('Mark');
@@ -154,10 +209,16 @@ async function run() {
     assert.equal(await evaluate("document.querySelectorAll('.ks-chat-citation:disabled').length"), 1);
     assert(await evaluate("[...document.querySelectorAll('.ks-chat-citation')].every(chip => !/\\[\\d+\\]/.test(chip.textContent))"));
     assert.equal(await evaluate("document.querySelector('.ks-chat-citation').textContent"), '0:04');
-    await evaluate("document.querySelector('.ks-chat-citation:not(:disabled)').focus()");
-    await settle();
+    const chip = await evaluate(
+        "(() => { const rect = document.querySelector('.ks-chat-citation:not(:disabled)').getBoundingClientRect(); return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) }; })()"
+    );
+    window.webContents.sendInputEvent({ type: 'mouseMove', ...chip });
+    await evaluate(
+        "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('[role=\"tooltip\"]')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 3000) { clearInterval(timer); reject(new Error('Source tooltip never opened')); } }, 25); })"
+    );
     assert(await evaluate("document.querySelector('[role=\"tooltip\"]').textContent.includes('Q4 Product Roadmap Review')"));
-    await evaluate('document.activeElement.blur()');
+    window.webContents.sendInputEvent({ type: 'mouseMove', x: 8, y: 8 });
+    await settle();
     assert.equal(await evaluate("document.querySelector('code').textContent"), '[1]');
     assert.equal(await evaluate("document.querySelectorAll('code button').length"), 0);
     await click('Copy response');
@@ -178,12 +239,53 @@ async function run() {
     assert(await evaluate("window.fixtureCalls.some(call => call.path.endsWith('/messages') && call.body?.question.includes('Explain the answer'))"));
     assert.equal(await evaluate("document.querySelectorAll('.ks-chat-response-actions').length"), 2);
     await capture('07-ask-ai');
+    window.setContentSize(1280, 824);
+    await settle();
     window.setContentSize(720, 780);
     await capture('08-narrow');
     assert(await evaluate('document.documentElement.scrollWidth <= innerWidth'));
     await evaluate("document.querySelector('.ks-chat-citation:not(:disabled)').click()");
     await settle();
     assert.equal(await evaluate('window.fixtureSourceTarget?.startMs'), 4000);
+    window.setContentSize(1280, 824);
+    await settle();
+
+    const probe = selectors => evaluate(CONTRAST_PROBE.replace('SELECTORS', JSON.stringify(selectors)));
+    for (const theme of ['dark', 'light']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await settle();
+        await click('Home');
+        await click('New Meeting');
+        await evaluate('new Promise(resolve => setTimeout(resolve, 800))');
+        await capture(`11-live-${theme}`);
+        const live = await probe([
+            '.ks-rec',
+            '.ks-turn p',
+            '.ks-turn time',
+            '.ks-speaker-name',
+            '.ks-avatar',
+            '.ks-meeting-tabs > button[aria-selected="true"]',
+            '.ks-sidebar-nav button',
+        ]);
+        for (const { selector, ratio } of live) {
+            assert(ratio !== null, `${theme}: ${selector} is rendered`);
+            assert(ratio >= 4.5, `${theme}: ${selector} contrast ${ratio} must reach 4.5:1`);
+        }
+        assert(await evaluate("document.querySelectorAll('.ks-balls i').length >= 3"), `${theme}: the listening indicator is animated`);
+        await click('Stop');
+        await click('Ask AI');
+        await evaluate("new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('.ks-chat-copy')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Chat fixture timeout')); } }, 25); })");
+        await capture(`12-ask-${theme}`);
+        const chat = await probe(['.ks-chat-bubble', '.ks-chat-ai-label', '.ks-chat-head-text h2', '.ks-chat-followups button']);
+        for (const { selector, ratio } of chat) {
+            assert(ratio !== null, `${theme}: ${selector} is rendered`);
+            assert(ratio >= 4.5, `${theme}: ${selector} contrast ${ratio} must reach 4.5:1`);
+        }
+        assert(await evaluate('document.documentElement.scrollWidth <= innerWidth'), `${theme}: no horizontal overflow`);
+    }
+    await evaluate("window.fixtureSetTheme('dark')");
+    await settle();
+
     assert.deepEqual(errors, []);
     // Smoke-test the actual production entry as well, with backend requests blocked.
     await window.loadFile(path.resolve(__dirname, '../../apps/ui/dist/index.html'));
@@ -193,9 +295,18 @@ async function run() {
     await capture('10-production-home-offline');
     assert(await evaluate("!!document.querySelector('.ks-workspace')"));
     assert(await evaluate("document.querySelector('.ks-new-meeting button').disabled"));
+    // Code-split surfaces are fetched at runtime; over file:// that is exactly
+    // where a dynamic import would fail, so prove one actually loads.
+    await evaluate('document.querySelector(\'[aria-label="Workspace tools"]\').click()');
+    await settle();
+    await click('Settings');
+    await evaluate(
+        "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('[role=\"dialog\"]')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy settings chunk never loaded')); } }, 25); })"
+    );
+    assert(await evaluate("document.querySelector('[role=\"dialog\"]').textContent.length > 0"), 'the lazily loaded settings surface rendered');
     assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
     console.log(
-        `PASS: sign-in, local entry, folder filtering, live transcript and tab narrowing, meeting tabs, task completion, recording stop, replay zoom/bookmark, AI citations/copy/follow-ups, responsive overflow. Screenshots: ${output}`
+        `PASS: sign-in, local entry, folder filtering, live transcript and tab narrowing, dark+light contrast (AA), meeting tabs, task completion, recording stop, replay zoom/bookmark, AI citations/copy/follow-ups, responsive overflow. Screenshots: ${output}`
     );
     window.destroy();
     app.quit();

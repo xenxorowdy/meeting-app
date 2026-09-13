@@ -5,17 +5,13 @@ use std::{
     collections::HashMap,
     env, io,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    process::Command,
-    sync::{broadcast, mpsc, Mutex, RwLock},
+    sync::{broadcast, mpsc, Mutex, RwLock, Semaphore},
 };
 use uuid::Uuid;
 
@@ -25,15 +21,17 @@ use alpha_core_backend::{
     dsp,
     echo::EchoWindow,
     transcript::strip_non_speech,
-    vad::{SpeechDetector, Utterance},
+    vad::SpeechDetector,
     voiceprint::{VoiceRoster, Voiceprint},
 };
 
 mod calendar;
 use calendar::CalendarService;
 
-mod stt;
-use stt::SttService;
+mod security;
+use security::SecurityConfig;
+use futures_util::{SinkExt, StreamExt};
+use tokio_tungstenite::{WebSocketStream, tungstenite::{Message, protocol::{Role, WebSocketConfig}}};
 
 mod library;
 mod workspace;
@@ -54,9 +52,6 @@ use summarizer::{MeetingSummary, SummaryNote, SummaryRequest, SummaryService, Su
 
 const VERSION: &str = "2.0.0-rust";
 const DEFAULT_PORT: u16 = 48900;
-/// How long a stopping meeting waits for queued utterances to come back from the
-/// transcription engine before the summary is written.
-const TRANSCRIPTION_DRAIN_BUDGET: Duration = Duration::from_secs(12);
 /// How long a stopping meeting waits for Sarvam to return the transcripts it
 /// still owes for audio already streamed to it.
 const LIVE_FLUSH_BUDGET: Duration = Duration::from_secs(10);
@@ -222,6 +217,7 @@ struct Session {
     echo: EchoWindow,
     echo_suppression: bool,
     system_samples: i64,
+    mic_samples: i64,
 }
 
 #[derive(Clone)]
@@ -300,14 +296,6 @@ impl Store {
         values.sort_by_key(|m| std::cmp::Reverse(m.started_at));
         values.into_iter().skip(offset).take(limit).collect()
     }
-}
-
-/// One utterance waiting to be transcribed. Jobs run through a single worker so
-/// the parts of a long sentence stay in order.
-struct TranscriptionJob {
-    meeting_id: String,
-    stream_id: u32,
-    utterance: Utterance,
 }
 
 fn posted_transcript(payload: &Value) -> Vec<TranscriptTurn> {
@@ -474,11 +462,9 @@ struct AppState {
     session: Arc<Mutex<Session>>,
     store: Store,
     events: broadcast::Sender<String>,
-    stt: Arc<SttService>,
+    security: Arc<SecurityConfig>,
     sarvam: Arc<SarvamService>,
     summarizer: Arc<SummaryService>,
-    transcriptions: mpsc::UnboundedSender<TranscriptionJob>,
-    pending_transcriptions: Arc<AtomicUsize>,
     settings: Arc<SettingsStore>,
     calendar: Arc<CalendarService>,
     podcast: Arc<PodcastService>,
@@ -493,9 +479,14 @@ impl AppState {
                 .settings
                 .get_str("transcriptionProvider")
                 .await
-                .unwrap_or_else(|| "whisper".into()),
+                .unwrap_or_else(|| "sarvam-realtime".into()),
         };
-        let mut status = self.stt.status_value().await;
+        let mut status = json!({
+            "engine": "sarvam", "status": if self.sarvam.has_key().await { "ready" } else { "unavailable" },
+            "available": self.sarvam.has_key().await, "model": sarvam_live::model_name(),
+            "language": self.settings.get_str("sarvamLanguage").await.unwrap_or_else(|| "unknown".into()),
+            "pending": 0,
+        });
         status["provider"] = json!(configured);
         status["sarvam"] = self.sarvam.status_value().await;
         if configured == "sarvam-realtime" {
@@ -503,7 +494,7 @@ impl AppState {
                 .settings
                 .get_bool("sarvamDiarizeAfterMeeting")
                 .await
-                .unwrap_or(true);
+                .unwrap_or(true) && !self.security.hosted;
             status["sarvam"]["mode"] = json!("realtime");
             status["sarvam"]["model"] = json!(sarvam_live::model_name());
             status["sarvam"]["diarization"] = json!(diarize);
@@ -542,7 +533,6 @@ impl AppState {
         let mut status = state;
         status["participants"] = participants;
         status["stt"] = self.stt_status(Some(&session_provider)).await;
-        status["stt"]["pending"] = json!(self.pending_transcriptions.load(Ordering::SeqCst));
         status["summary"] = self.summarizer.status_value().await;
         status["podcast"] = self.podcast.status_value().await;
         status
@@ -559,11 +549,14 @@ impl AppState {
             .settings
             .get_str("transcriptionProvider")
             .await
-            .unwrap_or_else(|| "whisper".into())
+            .unwrap_or_else(|| "sarvam-realtime".into())
             .trim()
             .to_ascii_lowercase();
-        if !matches!(provider.as_str(), "whisper" | "sarvam" | "sarvam-realtime") {
+        if !matches!(provider.as_str(), "sarvam" | "sarvam-realtime") {
             return Err(format!("Unknown transcription provider '{provider}'"));
+        }
+        if self.security.hosted && provider == "sarvam" {
+            return Err("Hosted meetings require Sarvam realtime; batch transcription needs a recording on the backend machine.".into());
         }
         if provider.starts_with("sarvam") && !self.sarvam.has_key().await {
             return Err(if provider == "sarvam-realtime" {
@@ -620,17 +613,10 @@ impl AppState {
         session.echo = EchoWindow::default();
         session.echo_suppression = echo_suppression;
         session.system_samples = 0;
+        session.mic_samples = 0;
         session.transcription_provider = provider.clone();
         let now = now_ms();
 
-        // Warm the model while the first sentences are still being spoken.
-        // The language readout describes one meeting, so clear the previous
-        // meeting's tally before this one starts producing turns.
-        if provider == "whisper" {
-            self.stt.reset_language_stats().await;
-            let stt = self.stt.clone();
-            tokio::spawn(async move { stt.ensure_ready().await });
-        }
         let mut metadata = payload
             .get("metadata")
             .cloned()
@@ -694,11 +680,9 @@ impl AppState {
     }
 
     async fn finish(&self, payload: &Value) -> Result<Meeting, String> {
-        // Whisper closes its live VAD buffers here and Sarvam realtime closes its
-        // sockets. Sarvam batch deliberately has no live jobs: it waits for the
-        // complete mixed recording below.
+        // Realtime closes its sockets; batch waits for the complete recording.
         let mut tail_voice = None;
-        let (provider, tail, live, mic_speech, participants) = {
+        let (provider, live, mic_speech, participants) = {
             let mut session = self.session.lock().await;
             let meeting_id = match session.current.as_ref() {
                 Some(meeting) => meeting.id.clone(),
@@ -715,7 +699,7 @@ impl AppState {
             }
             session.state = SessionState::ProcessingStt;
             let provider = if session.transcription_provider.is_empty() {
-                "whisper".to_string()
+                "sarvam-realtime".to_string()
             } else {
                 session.transcription_provider.clone()
             };
@@ -723,7 +707,6 @@ impl AppState {
             let mic_epoch = session.mic_epoch_ms.unwrap_or(0);
             let system_epoch = session.system_epoch_ms.unwrap_or(0);
 
-            let mut jobs = Vec::new();
             if let Some(mut utterance) = session.mic_vad.flush() {
                 utterance.start_ms += mic_epoch;
                 utterance.end_ms += mic_epoch;
@@ -732,13 +715,7 @@ impl AppState {
                     utterance.start_ms,
                     utterance.end_ms,
                 );
-                if provider == "whisper" {
-                    jobs.push(TranscriptionJob {
-                        meeting_id: meeting_id.clone(),
-                        stream_id: STREAM_MIC,
-                        utterance,
-                    });
-                }
+
             }
             if let Some(mut utterance) = session.system_vad.flush() {
                 utterance.start_ms += system_epoch;
@@ -748,13 +725,7 @@ impl AppState {
                     utterance.end_ms,
                     utterance.pcm.clone(),
                 ));
-                if provider == "whisper" {
-                    jobs.push(TranscriptionJob {
-                        meeting_id,
-                        stream_id: STREAM_SYSTEM,
-                        utterance,
-                    });
-                }
+
             }
             let mic_speech = std::mem::take(&mut session.mic_speech);
             let started_at = session
@@ -764,8 +735,14 @@ impl AppState {
                 .unwrap_or_else(now_ms);
             let mut participants = std::mem::take(&mut session.participants);
             participants.close((now_ms() - started_at).max(0));
+            let mic_tail = session.echo.flush_microphone();
             let live = session.live.take();
-            (provider, jobs, live, mic_speech, participants)
+            if let Some(live) = live.as_ref() {
+                if !mic_tail.is_empty() {
+                    live.feed(STREAM_MIC, &mic_tail);
+                }
+            }
+            (provider, live, mic_speech, participants)
         };
 
         self.emit(
@@ -775,10 +752,6 @@ impl AppState {
         .await;
 
         self.learn_voices(tail_voice.into_iter().collect()).await;
-        if provider == "whisper" {
-            self.queue_transcriptions(tail).await;
-            self.drain_transcriptions(TRANSCRIPTION_DRAIN_BUDGET).await;
-        }
         if let Some(live) = live {
             live.finish(LIVE_FLUSH_BUDGET).await;
         }
@@ -791,13 +764,11 @@ impl AppState {
 
         // The shell reports where it wrote the screen recording, if it made one.
         // It owns those files; the meeting record only needs to be able to find them.
-        if let Some(recording) = payload.get("recording") {
+        if let Some(recording) = payload.get("recording").filter(|_| !self.security.hosted) {
             meeting.recording = recording.as_object().map(|_| recording.clone());
         }
 
-        // Live backend turns win. The renderer copy is a compatibility fallback
-        // when local Whisper was not installed, and a last-resort fallback if a
-        // Sarvam job later fails without producing any text.
+        // Live backend turns win; retain the renderer fallback for older clients.
         if meeting.transcript.is_empty() {
             meeting.transcript = posted_transcript(payload);
         }
@@ -808,9 +779,9 @@ impl AppState {
         drop(session);
 
         let mut transcription_warning = None;
-        let diarize_recording = provider == "sarvam"
+        let diarize_recording = !self.security.hosted && (provider == "sarvam"
             || (provider == "sarvam-realtime"
-                && self.settings.get_bool("sarvamDiarizeAfterMeeting").await != Some(false));
+                && self.settings.get_bool("sarvamDiarizeAfterMeeting").await != Some(false)));
         if diarize_recording {
             let recording_offset = meeting
                 .recording
@@ -1042,14 +1013,12 @@ impl AppState {
         let packets = session.parser.feed(bytes);
         let recording = matches!(session.state, SessionState::Recording);
         let provider = session.transcription_provider.clone();
-        let live_whisper = !provider.starts_with("sarvam");
         let live_sarvam = provider == "sarvam-realtime";
-        let separate_voices = live_whisper || live_sarvam;
+        let separate_voices = live_sarvam;
         let meeting = session
             .current
             .as_ref()
             .map(|meeting| (meeting.id.clone(), meeting.started_at));
-        let mut jobs = Vec::new();
         let mut heard = Vec::new();
 
         for AudioPacket {
@@ -1070,7 +1039,7 @@ impl AppState {
                 session.system_rms = level;
             }
 
-            if recording && live_sarvam {
+            if recording && live_sarvam && stream_id != STREAM_MIC {
                 if let Some(live) = session.live.as_ref() {
                     live.feed(stream_id, &pcm);
                 }
@@ -1078,7 +1047,7 @@ impl AppState {
 
             // Audio is metered whenever it arrives, but only a live meeting is
             // segmented and transcribed.
-            if let (true, Some((id, started_at))) = (recording, meeting.as_ref()) {
+            if let (true, Some((_id, started_at))) = (recording, meeting.as_ref()) {
                 let arrived = (timestamp_ms - started_at).max(0);
                 let epoch = if stream_id == STREAM_MIC {
                     *session.mic_epoch_ms.get_or_insert(arrived)
@@ -1093,6 +1062,18 @@ impl AppState {
                         session.echo.append_played(played_at, &pcm);
                     }
                     session.system_samples += pcm.len() as i64 / 2;
+                } else if live_sarvam {
+                    let heard_at = epoch + session.mic_samples * 1000 / dsp::SAMPLE_RATE as i64;
+                    session.mic_samples += pcm.len() as i64 / 2;
+                    if session.echo_suppression {
+                        for window in session.echo.gate_microphone(heard_at, &pcm) {
+                            if let Some(live) = session.live.as_ref() {
+                                live.feed(STREAM_MIC, &window);
+                            }
+                        }
+                    } else if let Some(live) = session.live.as_ref() {
+                        live.feed(STREAM_MIC, &pcm);
+                    }
                 }
 
                 let utterances = if stream_id == STREAM_MIC {
@@ -1126,13 +1107,7 @@ impl AppState {
                         ));
                     }
 
-                    if live_whisper {
-                        jobs.push(TranscriptionJob {
-                            meeting_id: id.clone(),
-                            stream_id,
-                            utterance,
-                        });
-                    }
+
                 }
             }
         }
@@ -1147,7 +1122,6 @@ impl AppState {
         )
         .await;
         self.learn_voices(heard).await;
-        self.queue_transcriptions(jobs).await;
     }
 
     async fn learn_voices(&self, heard: Vec<(i64, i64, Vec<u8>)>) {
@@ -1221,33 +1195,6 @@ impl AppState {
             "meetingId": meeting_id,
             "participants": names,
         })
-    }
-
-    async fn queue_transcriptions(&self, jobs: Vec<TranscriptionJob>) {
-        for job in jobs {
-            let channel = channel_name(job.stream_id);
-            let (start_ms, end_ms) = (job.utterance.start_ms, job.utterance.end_ms);
-
-            self.pending_transcriptions.fetch_add(1, Ordering::SeqCst);
-            if self.transcriptions.send(job).is_err() {
-                self.pending_transcriptions.fetch_sub(1, Ordering::SeqCst);
-                continue;
-            }
-
-            self.emit(
-                "speech_segment",
-                json!({"channel": channel, "startMs": start_ms, "endMs": end_ms}),
-            )
-            .await;
-        }
-    }
-
-    async fn drain_transcriptions(&self, budget: Duration) {
-        let deadline = SystemTime::now() + budget;
-        while self.pending_transcriptions.load(Ordering::SeqCst) > 0 && SystemTime::now() < deadline
-        {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
     }
 
     /// Attach a transcribed utterance to the meeting it belongs to and tell the
@@ -1332,18 +1279,6 @@ impl AppState {
             .map_err(|cause| cause.to_string())
     }
 
-    async fn commit_turn(&self, job: &TranscriptionJob, text: String, language: Option<String>) {
-        self.commit_live_turn(
-            &job.meeting_id,
-            job.stream_id,
-            job.utterance.start_ms,
-            job.utterance.end_ms,
-            text,
-            language,
-        )
-        .await;
-    }
-
     async fn commit_live_turn(
         &self,
         meeting_id: &str,
@@ -1415,6 +1350,19 @@ impl AppState {
         .await;
     }
 
+    async fn remember_meeting_partial(&self, meeting_id: &str, text: &str) {
+        let mut session = self.session.lock().await;
+        if !session.echo_suppression {
+            return;
+        }
+        let started_at = match session.current.as_ref() {
+            Some(meeting) if meeting.id == meeting_id => meeting.started_at,
+            _ => return,
+        };
+        let at_ms = (now_ms() - started_at).max(0);
+        session.echo.remember_partial(at_ms, text);
+    }
+
     async fn live_speaker(&self, stream_id: u32) -> String {
         if stream_id == STREAM_MIC {
             return speaker_name(stream_id).to_string();
@@ -1435,6 +1383,9 @@ impl AppState {
         while let Some(event) = events.recv().await {
             match event {
                 LiveEvent::Partial { stream_id, text } => {
+                    if stream_id != STREAM_MIC {
+                        self.remember_meeting_partial(&meeting_id, &text).await;
+                    }
                     let speaker = self.live_speaker(stream_id).await;
                     self.emit(
                         "transcript_interim",
@@ -1496,10 +1447,9 @@ async fn main() -> io::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT);
     let host = env::var("CORE_BACKEND_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let security = Arc::new(SecurityConfig::from_env(&host)?);
     let listener = TcpListener::bind((host.as_str(), port)).await?;
     let (events, _) = broadcast::channel(256);
-    let (transcriptions, mut transcription_queue) = mpsc::unbounded_channel::<TranscriptionJob>();
-    let stt = Arc::new(SttService::detect());
     let sarvam = Arc::new(SarvamService::detect());
     let summarizer = Arc::new(SummaryService::detect());
     let podcast = Arc::new(PodcastService::detect());
@@ -1508,16 +1458,6 @@ async fn main() -> io::Result<()> {
 
     // Saved choices have to be applied before the first request, or the engine
     // runs its defaults while the UI shows what the user picked last time.
-    if let Some(language) = settings.get_str("sttLanguage").await {
-        if let Err(cause) = stt.set_language(&language).await {
-            eprintln!("[Alpha Core Backend] stored sttLanguage ignored: {cause}");
-        }
-    }
-    if let Some(model) = settings.get_str("whisperModel").await {
-        if let Err(cause) = stt.set_model(&model).await {
-            eprintln!("[Alpha Core Backend] stored whisperModel ignored: {cause}");
-        }
-    }
     if let Some(model) = settings.get_str("aiModel").await {
         if let Err(cause) = summarizer.set_model(&model).await {
             eprintln!("[Alpha Core Backend] stored aiModel ignored: {cause}");
@@ -1556,61 +1496,18 @@ async fn main() -> io::Result<()> {
         store,
         chat,
         events,
-        stt: stt.clone(),
+        security,
         sarvam: sarvam.clone(),
         summarizer: summarizer.clone(),
-        transcriptions,
-        pending_transcriptions: Arc::new(AtomicUsize::new(0)),
         settings: settings.clone(),
         calendar: calendar.clone(),
         podcast: podcast.clone(),
     };
 
-    // One worker drains the queue, so a long utterance's parts are transcribed
-    // and emitted in the order they were spoken.
-    let worker_state = state.clone();
-    tokio::spawn(async move {
-        while let Some(job) = transcription_queue.recv().await {
-            let wav = audio::encode_wav(&job.utterance.pcm, 16_000);
-            match worker_state.stt.transcribe(wav).await {
-                Ok(transcription) => {
-                    if let Some(speech) = strip_non_speech(&transcription.text) {
-                        worker_state
-                            .commit_turn(&job, speech, transcription.language)
-                            .await;
-                    }
-                }
-                Err(cause) => eprintln!("[Alpha Core Backend] transcription failed: {cause}"),
-            }
-            worker_state
-                .pending_transcriptions
-                .fetch_sub(1, Ordering::SeqCst);
-        }
-    });
-
-    // Load the model at boot rather than on the first meeting, so the very first
-    // sentence of a recording is transcribed instead of being spent on warm-up.
-    if !settings
-        .get_str("transcriptionProvider")
-        .await
-        .is_some_and(|provider| provider.starts_with("sarvam"))
-    {
-        let warm_stt = stt.clone();
-        tokio::spawn(async move { warm_stt.ensure_ready().await });
-    }
-
-    let shutdown_stt = stt.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            shutdown_stt.shutdown().await;
-            std::process::exit(0);
-        }
-    });
-
     println!("[Alpha Core Backend] Rust API listening on http://{host}:{port}");
     println!(
         "[Alpha Core Backend] transcription engine: {}",
-        stt.status_value().await
+        state.stt_status(None).await
     );
     println!(
         "[Alpha Core Backend] summary engine: {}",
@@ -1758,7 +1655,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/health") => json_response(
             200,
-            json!({"status":"ok","version":VERSION,"uptimeSeconds":((now_ms()-state.started_at).max(0)/1000),"state":state.session.lock().await.state.as_str(),"stt":state.stt_status(None).await,"podcast":state.podcast.status_value().await}),
+            json!({"status":"ok","version":VERSION,"uptimeSeconds":((now_ms()-state.started_at).max(0)/1000)}),
         ),
         ("GET", "/api/folders") | ("POST", "/api/folders") => {
             match workspace::folders(&state.store, (req.method == "POST").then_some(&body)).await {
@@ -1818,20 +1715,14 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             json!({"success":false,"error":"License verification is not implemented in the Rust core yet."}),
         ),
         ("GET", "/api/settings") => {
-            // The stored settings are the answer; the live engine fills in the two
-            // it owns so a first run (nothing saved yet) still reports the truth.
-            let stt = state.stt.status_value().await;
             let mut settings = state.settings.public_value().await;
-            for (key, value) in [
-                ("whisperModel", &stt["model"]),
-                ("sttLanguage", &stt["language"]),
-            ] {
-                if settings.get(key).is_none() {
-                    settings[key] = value.clone();
-                }
-            }
-            if settings.get("transcriptionProvider").is_none() {
-                settings["transcriptionProvider"] = json!("whisper");
+            settings["deploymentMode"] = json!(if state.security.hosted { "hosted" } else { "local" });
+            settings["supportsLocalRecording"] = json!(!state.security.hosted);
+            settings["calendarConnectSupported"] = json!(!state.security.hosted);
+            settings["geminiApiKeySet"] = state.summarizer.status_value().await["geminiKeySet"].clone();
+            settings["sarvamApiKeySet"] = json!(state.sarvam.has_key().await);
+            if state.security.hosted {
+                settings["sarvamDiarizeAfterMeeting"] = json!(false);
             }
             if settings.get("sarvamLanguage").is_none() {
                 settings["sarvamLanguage"] = json!("unknown");
@@ -1857,7 +1748,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             if let Some(provider) = object.get("transcriptionProvider").and_then(Value::as_str) {
                 if !matches!(
                     provider.trim().to_ascii_lowercase().as_str(),
-                    "whisper" | "sarvam" | "sarvam-realtime"
+                    "sarvam" | "sarvam-realtime"
                 ) {
                     return json_response(
                         400,
@@ -1905,18 +1796,6 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 }
             }
 
-            // Apply to the running engine first: a value it rejects should not be
-            // stored, or the next restart would fail the same way with no warning.
-            if let Some(language) = object.get("sttLanguage").and_then(Value::as_str) {
-                if let Err(cause) = state.stt.set_language(language).await {
-                    warnings.push(cause);
-                }
-            }
-            if let Some(model) = object.get("whisperModel").and_then(Value::as_str) {
-                if let Err(cause) = state.stt.set_model(model).await {
-                    warnings.push(cause);
-                }
-            }
             if let Some(model) = object.get("aiModel").and_then(Value::as_str) {
                 if let Err(cause) = state.summarizer.set_model(model).await {
                     warnings.push(cause);
@@ -1996,22 +1875,9 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 }),
             )
         }
-        ("POST", "/api/stt/config") => {
-            if let Some(language) = body.get("language").and_then(Value::as_str) {
-                if let Err(cause) = state.stt.set_language(language).await {
-                    return json_response(400, json!({"error": cause}));
-                }
-            }
-            if let Some(model) = body.get("model").and_then(Value::as_str) {
-                if let Err(cause) = state.stt.set_model(model).await {
-                    return json_response(400, json!({"error": cause}));
-                }
-            }
-            json_response(
-                200,
-                json!({"success": true, "stt": state.stt.status_value().await}),
-            )
-        }
+        ("POST", "/api/stt/config") => json_response(410, json!({
+            "error": "Local Whisper has been removed. Configure Sarvam in Transcription settings.",
+        })),
         ("POST", "/api/summary/config") => {
             if let Some(model) = body.get("model").and_then(Value::as_str) {
                 if let Err(cause) = state.summarizer.set_model(model).await {
@@ -2028,6 +1894,9 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         }
         ("GET", "/api/calendar/status") => json_response(200, state.calendar.status().await),
         ("POST", "/api/calendar/connect") => {
+            if state.security.hosted {
+                return json_response(409, json!({"error": "Calendar sign-in requires the local backend. Hosted OAuth is not configured."}));
+            }
             let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
             match state.calendar.begin(provider).await {
                 Ok(value) => json_response(200, value),
@@ -2180,50 +2049,20 @@ async fn transcribe_podcast_asset(
     project_id: &str,
     source: &Path,
 ) -> Result<Vec<PodcastSourceTurn>, String> {
-    let scratch = env::temp_dir().join(format!("alpha-podcast-transcribe-{}", Uuid::new_v4()));
-    tokio::fs::create_dir_all(&scratch)
-        .await
-        .map_err(|cause| format!("could not create transcription workspace: {cause}"))?;
-    let pattern = scratch.join("chunk-%05d.wav");
-    let ffmpeg = env::var("ALPHA_FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".into());
-    let output = Command::new(ffmpeg)
-        .args(["-y", "-v", "error", "-i"])
-        .arg(source)
-        .args(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "segment", "-segment_time", "60", "-reset_timestamps", "1"])
-        .arg(&pattern)
-        .output()
-        .await
-        .map_err(|cause| format!("could not start FFmpeg for transcription: {cause}"))?;
-    if !output.status.success() {
-        let _ = tokio::fs::remove_dir_all(&scratch).await;
-        return Err(format!("FFmpeg could not prepare the podcast audio: {}", String::from_utf8_lossy(&output.stderr).trim()));
-    }
-    let mut entries = tokio::fs::read_dir(&scratch)
-        .await
-        .map_err(|cause| format!("could not read transcription chunks: {cause}"))?;
-    let mut chunks = Vec::new();
-    while let Some(entry) = entries.next_entry().await.map_err(|cause| cause.to_string())? {
-        if entry.path().extension().and_then(|value| value.to_str()) == Some("wav") {
-            chunks.push(entry.path());
-        }
-    }
-    chunks.sort();
-    let total = chunks.len().max(1);
-    let mut turns = Vec::new();
-    for (index, chunk) in chunks.iter().enumerate() {
-        let wav = tokio::fs::read(chunk).await.map_err(|cause| format!("could not read podcast audio chunk: {cause}"))?;
-        let result = state.stt.transcribe(wav).await?;
-        if let Some(text) = strip_non_speech(&result.text) {
-            turns.push(PodcastSourceTurn {
-                id: format!("import-{index:05}"),
-                speaker: "Speaker".into(),
-                start_ms: index as i64 * 60_000,
-                text,
-            });
-        }
-        state.emit("podcast_job_progress", json!({"projectId":project_id,"job":"transcribe","status":"running","progress":(index + 1) as f64 / total as f64})).await;
-    }
-    let _ = tokio::fs::remove_dir_all(&scratch).await;
+    let batch = state.sarvam.transcribe(source, BatchConfig {
+        language: state.settings.get_str("sarvamLanguage").await.unwrap_or_else(|| "unknown".into()),
+        mode: state.settings.get_str("sarvamMode").await.unwrap_or_else(|| "transcribe".into()),
+        ..Default::default()
+    }).await?;
+    let labels = label_speakers(&batch.turns, None);
+    let turns = batch.turns.into_iter().enumerate().filter_map(|(index, turn)| {
+        strip_non_speech(&turn.text).map(|text| PodcastSourceTurn {
+            id: format!("import-{index:05}"),
+            speaker: labels.get(&turn.speaker_id).cloned().unwrap_or_else(|| "Speaker 1".into()),
+            start_ms: turn.start_ms,
+            text,
+        })
+    }).collect::<Vec<_>>();
     state.podcast.save_transcript(project_id, &turns).await?;
     Ok(turns)
 }

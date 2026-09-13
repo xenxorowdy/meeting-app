@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cpu, Check, Award, CircleCheckBig, TriangleAlert } from 'lucide-react';
+import { Check, Award, CircleCheckBig, TriangleAlert, Server, ShieldCheck, UserRound, Loader2 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,34 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { languageName } from '@/lib/speakers';
+import { usePreferences } from '@/hooks/usePreferences';
+import { getBackendConnection, saveBackendConnection, testBackendConnection, isRemoteBackend } from '@/lib/connection';
 import { isRecordingSupported } from '@/lib/screenRecorder';
 
-// Whisper language codes, led by the ones this app is actually used in.
-const LANGUAGES = [
-    { value: 'auto', label: 'Detect automatically' },
-    { value: 'en', label: 'English' },
-    { value: 'hi', label: 'Hindi' },
-    { value: 'mr', label: 'Marathi' },
-    { value: 'bn', label: 'Bengali' },
-    { value: 'gu', label: 'Gujarati' },
-    { value: 'pa', label: 'Punjabi' },
-    { value: 'ta', label: 'Tamil' },
-    { value: 'te', label: 'Telugu' },
-    { value: 'ur', label: 'Urdu' },
-    { value: 'es', label: 'Spanish' },
-    { value: 'fr', label: 'French' },
-    { value: 'de', label: 'German' },
-];
-
-// base and tiny are English-first: they render other languages in the wrong
-// script, or translate them instead of transcribing.
-const ENGLISH_ONLY_MODELS = ['tiny', 'base'];
-
 const TRANSCRIPTION_PROVIDERS = [
-    { value: 'whisper', label: 'Whisper — live, on device' },
-    { value: 'sarvam', label: 'Sarvam Saaras — batch + speakers' },
-    { value: 'sarvam-realtime', label: 'Sarvam Saaras — live streaming' },
+    { value: 'sarvam-realtime', label: 'Live transcription · recommended' },
+    { value: 'sarvam', label: 'Process recording after the meeting' },
 ];
 
 const SARVAM_LANGUAGES = [
@@ -68,7 +47,7 @@ const SUMMARY_PROVIDERS = [
     { value: 'auto', label: 'Choose automatically' },
     { value: 'gemini', label: 'Google Gemini' },
     { value: 'claude-cli', label: 'Claude Code CLI' },
-    { value: 'heuristic', label: 'On device only (no AI)' },
+    { value: 'heuristic', label: 'Basic summary (no AI provider)' },
 ];
 
 const GEMINI_MODELS = [
@@ -126,8 +105,14 @@ export function SettingsModal({
     calendar,
     onUpdateSettings,
     onActivateLicense,
+    connectionLocked = false,
 }) {
-    const [activeTab, setActiveTab] = useState('audio');
+    const [activeTab, setActiveTab] = useState('personal');
+    const [preferences, setPreferences] = usePreferences();
+    const [connectionDraft, setConnectionDraft] = useState(getBackendConnection);
+    const [connectionState, setConnectionState] = useState(null);
+    const remoteBackend = isRemoteBackend() || settings?.deploymentMode === 'hosted';
+    const localMediaSupported = !remoteBackend && settings?.supportsLocalRecording !== false;
     const [formData, setFormData] = useState(settings);
     const [licenseKey, setLicenseKey] = useState('');
     const [activation, setActivation] = useState(null);
@@ -141,11 +126,13 @@ export function SettingsModal({
     // key field always starts blank — the backend never sends it back.
     useEffect(() => {
         if (isOpen) {
-            setFormData({ ...settings, geminiApiKey: '', sarvamApiKey: '', googleCalendarClientSecret: '' });
+            setFormData({ ...settings, transcriptionProvider: settings?.transcriptionProvider === 'sarvam' && localMediaSupported ? 'sarvam' : 'sarvam-realtime', sarvamDiarizeAfterMeeting: localMediaSupported && settings?.sarvamDiarizeAfterMeeting !== false, geminiApiKey: '', sarvamApiKey: '', googleCalendarClientSecret: '' });
+            setConnectionDraft(getBackendConnection());
+            setConnectionState(null);
             setSaveState(null);
             setActivation(null);
         }
-    }, [isOpen, settings]);
+    }, [isOpen, settings, localMediaSupported]);
 
     useEffect(() => {
         if (!isOpen || !globalThis.alphaRecorder) return;
@@ -167,13 +154,33 @@ export function SettingsModal({
         setActivation({ status: result.ok ? 'valid' : 'invalid', message: result.message });
     };
 
+    const handleConnection = async (save = false) => {
+        setConnectionState({ status: 'checking' });
+        try {
+            await testBackendConnection(connectionDraft);
+            if (save) {
+                await saveBackendConnection(connectionDraft);
+                globalThis.location?.reload();
+            } else {
+                setConnectionState({ status: 'success', message: 'Connected and authenticated. Your workspace is ready.' });
+            }
+        } catch (error) {
+            setConnectionState({ status: 'error', message: error.message });
+        }
+    };
+
     const handleSave = async () => {
         if (!onUpdateSettings) return;
         setSaveState({ status: 'saving' });
 
         // An untouched key field means "leave it alone". Sending the empty string
         // would clear a key the user never intended to remove.
-        const payload = { ...formData };
+        const payload = { ...formData, transcriptionProvider, sarvamDiarizeAfterMeeting: localMediaSupported && formData.sarvamDiarizeAfterMeeting !== false };
+        delete payload.whisperModel;
+        delete payload.sttLanguage;
+        delete payload.deploymentMode;
+        delete payload.supportsLocalRecording;
+        delete payload.calendarConnectSupported;
         if (!payload.geminiApiKey) delete payload.geminiApiKey;
         if (!payload.sarvamApiKey) delete payload.sarvamApiKey;
         delete payload.geminiApiKeySet;
@@ -211,16 +218,10 @@ export function SettingsModal({
     const resolvedProvider =
         (formData.summaryProvider && formData.summaryProvider !== 'auto' ? formData.summaryProvider : summary?.provider) || 'gemini';
     const summaryModels = resolvedProvider === 'claude-cli' ? CLAUDE_MODELS : resolvedProvider === 'gemini' ? GEMINI_MODELS : [];
-    const detectedLanguage = stt?.languageMode === 'auto' ? languageName(stt.detectedLanguage) : null;
-    const usableModels = (stt?.availableModels || []).filter(entry => entry.usable);
-    const brokenModels = (stt?.availableModels || []).filter(entry => !entry.usable).map(entry => entry.model);
-    const language = formData.sttLanguage || 'auto';
-    const englishOnlyModel = ENGLISH_ONLY_MODELS.includes(formData.whisperModel);
-    const nonEnglishSelected = language !== 'en' && language !== 'auto';
-    const transcriptionProvider = formData.transcriptionProvider || 'whisper';
+    const transcriptionProvider = formData.transcriptionProvider === 'sarvam' && localMediaSupported ? 'sarvam' : 'sarvam-realtime';
     const usesSarvam = transcriptionProvider.startsWith('sarvam');
     const usesSarvamBatch = transcriptionProvider === 'sarvam';
-    const diarizeAfterMeeting = formData.sarvamDiarizeAfterMeeting !== false;
+    const diarizeAfterMeeting = localMediaSupported && formData.sarvamDiarizeAfterMeeting !== false;
     const diarizes = usesSarvamBatch || diarizeAfterMeeting;
 
     const tier = license?.tier ? license.tier.charAt(0).toUpperCase() + license.tier.slice(1) : 'Unknown';
@@ -228,36 +229,85 @@ export function SettingsModal({
 
     return (
         <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
-            <DialogContent className="flex max-h-[86vh] flex-col gap-0 p-0 sm:max-w-2xl">
+            <DialogContent className="flex max-h-[86vh] flex-col gap-0 p-0 sm:max-w-3xl">
                 <DialogHeader className="space-y-1 p-4 pb-4 pr-12 text-left hairline-bottom">
                     <DialogTitle className="text-title2 font-semibold">Settings</DialogTitle>
                     <DialogDescription className="text-callout text-muted-foreground">
-                        Choose your audio sources, transcription engine, and license.
+                        Make Alpha work the way you do.
                     </DialogDescription>
                 </DialogHeader>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
                     <div className="px-4 pt-4">
-                        <TabsList className="w-full">
-                            <TabsTrigger value="audio" className="flex-1">
+                        <TabsList className="h-auto w-full justify-start overflow-x-auto p-1">
+                            <TabsTrigger value="personal" className="h-9 flex-1">Personal</TabsTrigger>
+                            <TabsTrigger value="audio" className="h-9 flex-1">
                                 Audio
                             </TabsTrigger>
-                            <TabsTrigger value="ai" className="flex-1">
+                            <TabsTrigger value="ai" className="h-9 flex-1">
                                 Transcription
                             </TabsTrigger>
-                            <TabsTrigger value="calendar" className="flex-1">
+                            <TabsTrigger value="calendar" className="h-9 flex-1">
                                 Calendar
                             </TabsTrigger>
-                            <TabsTrigger value="recording" className="flex-1">
+                            <TabsTrigger value="recording" className="h-9 flex-1">
                                 Recording
                             </TabsTrigger>
-                            <TabsTrigger value="license" className="flex-1">
+                            <TabsTrigger value="connection" className="h-9 flex-1">Connection</TabsTrigger>
+                            <TabsTrigger value="license" className="h-9 flex-1">
                                 License
                             </TabsTrigger>
                         </TabsList>
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                        <TabsContent value="personal" className="space-y-5">
+                            <div className="flex items-center gap-3 rounded-xl border bg-primary/5 p-4">
+                                <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><UserRound className="size-5" aria-hidden="true" /></div>
+                                <div><h3 className="text-body font-semibold">Your workspace, your way</h3><p className="text-callout text-muted-foreground">Personal preferences save automatically on this device.</p></div>
+                            </div>
+                            <SettingGroup>
+                                <SettingRow id="display-name" label="Your name" description="Used to personalize your workspace." stacked>
+                                    <Input id="display-name" autoComplete="given-name" maxLength={80} placeholder="How should Alpha greet you?" value={preferences.displayName} onChange={event => setPreferences({ displayName: event.target.value })} />
+                                </SettingRow>
+                                <SettingRow id="workspace-name" label="Workspace name" stacked>
+                                    <Input id="workspace-name" maxLength={80} placeholder="My workspace" value={preferences.workspaceName} onChange={event => setPreferences({ workspaceName: event.target.value })} />
+                                </SettingRow>
+                                <SettingRow id="text-size" label="Text size" description="Comfortable reading across notes, transcripts, and chat." stacked>
+                                    <Select value={preferences.textSize} onValueChange={value => setPreferences({ textSize: value })}>
+                                        <SelectTrigger id="text-size"><SelectValue /></SelectTrigger>
+                                        <SelectContent><SelectItem value="comfortable">Comfortable</SelectItem><SelectItem value="large">Large</SelectItem></SelectContent>
+                                    </Select>
+                                </SettingRow>
+                                <SettingRow id="reduced-motion" label="Reduce motion" description="Keep transitions and live effects subtle. Your system preference is also respected.">
+                                    <Switch id="reduced-motion" checked={preferences.reducedMotion} onCheckedChange={value => setPreferences({ reducedMotion: value })} />
+                                </SettingRow>
+                            </SettingGroup>
+                        </TabsContent>
+
+                        <TabsContent value="connection" className="space-y-5">
+                            <div className="flex items-start gap-3 rounded-xl border bg-muted p-4">
+                                <Server className="mt-1 size-5 shrink-0 text-primary" aria-hidden="true" />
+                                <div className="space-y-1"><h3 className="text-body font-semibold">{remoteBackend ? 'Hosted backend' : 'Local backend'}</h3><p className="text-callout leading-relaxed text-muted-foreground">Connect your app to a dedicated Alpha workspace. Transcripts, AI requests, and workspace settings are handled by the connected backend.</p></div>
+                                <Badge className="ml-auto shrink-0" variant={isConnected ? 'success' : 'muted'}>{isConnected ? 'Connected' : 'Offline'}</Badge>
+                            </div>
+                            <SettingGroup>
+                                <SettingRow id="backend-url" label="Backend address" description="Use an HTTPS address for a hosted service, or http://127.0.0.1:48900 for a local backend." stacked>
+                                    <Input id="backend-url" type="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={connectionLocked} value={connectionDraft.url} onChange={event => { setConnectionDraft({ ...connectionDraft, url: event.target.value }); setConnectionState(null); }} placeholder="https://meetings.example.com" />
+                                </SettingRow>
+                                <SettingRow id="backend-token" label="Access token" description="Provided by your backend administrator. Kept for this app session; enter it again after quitting. Local backends may not require one." stacked>
+                                    <Input id="backend-token" type="password" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={connectionLocked} value={connectionDraft.token} onChange={event => { setConnectionDraft({ ...connectionDraft, token: event.target.value }); setConnectionState(null); }} placeholder="Enter workspace access token" />
+                                </SettingRow>
+                            </SettingGroup>
+                            {connectionLocked && <p className="text-callout text-warning">Finish the current meeting before changing your connection.</p>}
+                            <div className="flex flex-wrap items-center gap-3">
+                                <Button variant="outline" disabled={connectionLocked || connectionState?.status === 'checking'} onClick={() => handleConnection(false)}>{connectionState?.status === 'checking' && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}Test connection</Button>
+                                <Button disabled={connectionLocked || connectionState?.status === 'checking'} onClick={() => handleConnection(true)}>Connect &amp; reload</Button>
+                            </div>
+                            {connectionState?.message && <p role={connectionState.status === 'error' ? 'alert' : 'status'} className={cn('flex items-start gap-2 text-callout', connectionState.status === 'error' ? 'text-destructive' : 'text-success')}><ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{connectionState.message}</p>}
+                            <p className="text-footnote leading-relaxed text-muted-foreground">Changing the connection reloads Alpha. Hosted mode streams audio securely while video recordings stay on this device. Use a dedicated backend for each private workspace.</p>
+                        </TabsContent>
+
                         <TabsContent value="audio" className="space-y-4">
                             <SettingGroup>
                                 <SettingRow
@@ -326,17 +376,8 @@ export function SettingsModal({
                                 <SettingRow
                                     id="transcription-provider"
                                     label="Transcription engine"
-                                    description="Whisper writes live turns locally. Sarvam either streams turns as they are spoken, or processes the complete recording in one batch. Speakers are separated from the finished recording either way."
-                                    badge={
-                                        transcriptionProvider === 'whisper' ? (
-                                            <Badge variant="success">
-                                                <Cpu aria-hidden="true" />
-                                                On device
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="tinted">{usesSarvamBatch ? 'Batch cloud' : 'Live cloud'}</Badge>
-                                        )
-                                    }
+                                    description="Audio is sent securely to Sarvam for transcription. Live mode works with your local or hosted Alpha backend."
+                                    badge={<Badge variant="tinted">{usesSarvamBatch ? 'Cloud processing' : 'Live streaming'}</Badge>}
                                     stacked
                                 >
                                     <Select
@@ -356,7 +397,7 @@ export function SettingsModal({
                                                 <SelectItem
                                                     key={provider.value}
                                                     value={provider.value}
-                                                    disabled={provider.value === 'sarvam' && !recordingSupported}
+                                                    disabled={provider.value === 'sarvam' && (!recordingSupported || !localMediaSupported)}
                                                 >
                                                     {provider.label}
                                                 </SelectItem>
@@ -372,8 +413,8 @@ export function SettingsModal({
                                             label="Sarvam API key"
                                             description={
                                                 usesSarvamBatch
-                                                    ? 'Stored privately on this Mac. The completed meeting recording is uploaded to Sarvam for batch transcription and speaker diarization.'
-                                                    : 'Stored privately on this Mac. Meeting audio is streamed to Sarvam while the meeting runs, and turns come back as they are spoken.'
+                                                    ? 'Stored privately on your Alpha backend. The completed recording is sent to Sarvam for transcription and speaker separation.'
+                                                    : 'Stored privately on your Alpha backend. Audio is sent to Sarvam during the meeting and transcribed as people speak.'
                                             }
                                             badge={
                                                 stt?.sarvam?.apiKeySet || formData.sarvamApiKeySet ? (
@@ -436,10 +477,11 @@ export function SettingsModal({
                                             <SettingRow
                                                 id="sarvam-diarize-after"
                                                 label="Separate speakers after the meeting"
-                                                description="Your microphone is labelled You. Meeting audio is separated by voice as it is spoken, into Speaker 1, Speaker 2 and so on, and the completed recording is separated again once the meeting ends."
+                                                description={localMediaSupported ? "Refines speaker labels using the completed recording. Requires desktop recording on the same machine as the backend." : "Available when the desktop app and backend share local recording storage. Live speaker labels still work with your hosted backend."}
                                             >
                                                 <Switch
                                                     id="sarvam-diarize-after"
+                                                    disabled={!localMediaSupported}
                                                     checked={diarizeAfterMeeting}
                                                     onCheckedChange={checked => setFormData({ ...formData, sarvamDiarizeAfterMeeting: checked })}
                                                 />
@@ -498,7 +540,7 @@ export function SettingsModal({
                                         </SelectTrigger>
                                         <SelectContent>
                                             {SUMMARY_PROVIDERS.map(provider => (
-                                                <SelectItem key={provider.value} value={provider.value}>
+                                                <SelectItem key={provider.value} value={provider.value} disabled={remoteBackend && provider.value === 'claude-cli'}>
                                                     {provider.label}
                                                 </SelectItem>
                                             ))}
@@ -526,7 +568,7 @@ export function SettingsModal({
                                 <SettingRow
                                     id="gemini-key"
                                     label="Google Gemini API key"
-                                    description="Stored on this Mac, readable only by your user account. The transcript is sent to Google when a summary is written."
+                                    description="Stored privately on your Alpha backend. Meeting transcripts and chat questions are sent to Google when you use Gemini."
                                     badge={
                                         summary?.geminiKeySet ? (
                                             <Badge variant="success">
@@ -550,73 +592,13 @@ export function SettingsModal({
                                     />
                                 </SettingRow>
 
-                                {transcriptionProvider === 'whisper' && (
-                                    <>
-                                        <SettingRow
-                                            id="whisper-model"
-                                            label="Whisper model"
-                                            description="Runs on this device. Audio never leaves your Mac for transcription."
-                                            badge={
-                                                <Badge variant="success">
-                                                    <Cpu aria-hidden="true" />
-                                                    On device
-                                                </Badge>
-                                            }
-                                            stacked
-                                        >
-                                            <Select
-                                                value={formData.whisperModel}
-                                                onValueChange={value => setFormData({ ...formData, whisperModel: value })}
-                                            >
-                                                <SelectTrigger id="whisper-model" className="w-full">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {usableModels.length === 0 ? (
-                                                        <SelectItem value={formData.whisperModel}>{formData.whisperModel}</SelectItem>
-                                                    ) : (
-                                                        usableModels.map(entry => (
-                                                            <SelectItem key={entry.model} value={entry.alias || entry.model}>
-                                                                Whisper {entry.alias || entry.model}
-                                                            </SelectItem>
-                                                        ))
-                                                    )}
-                                                </SelectContent>
-                                            </Select>
-                                        </SettingRow>
-
-                                        <SettingRow
-                                            id="stt-language"
-                                            label="Spoken language"
-                                            description="Whisper decodes with this language. Detection handles a meeting that switches between languages."
-                                            stacked
-                                        >
-                                            <Select
-                                                value={formData.sttLanguage || 'auto'}
-                                                onValueChange={value => setFormData({ ...formData, sttLanguage: value })}
-                                            >
-                                                <SelectTrigger id="stt-language" className="w-full">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {LANGUAGES.map(language => (
-                                                        <SelectItem key={language.value} value={language.value}>
-                                                            {language.label}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </SettingRow>
-                                    </>
-                                )}
-
                                 <SettingRow
                                     id="auto-summarize"
                                     label="Summarize when a recording ends"
                                     description={
                                         transcriptionProvider === 'sarvam'
                                             ? 'Runs the selected summary engine after Sarvam returns the diarized batch transcript.'
-                                            : 'Sends the transcript to the summary model. Turn this off to keep everything on device.'
+                                            : 'Creates a summary and action items from your transcript when the meeting ends.'
                                     }
                                 >
                                     <Switch
@@ -627,51 +609,10 @@ export function SettingsModal({
                                 </SettingRow>
                             </SettingGroup>
 
-                            {stt && (
-                                <div className="space-y-2 text-footnote">
-                                    <p className="text-muted-foreground">
-                                        Engine:{' '}
-                                        {usesSarvam
-                                            ? `Sarvam ${stt.sarvam?.model || (usesSarvamBatch ? 'saaras:v3' : 'saaras:v3-realtime')} · ${
-                                                  usesSarvamBatch
-                                                      ? 'batch with speaker diarization'
-                                                      : diarizeAfterMeeting
-                                                        ? 'live streaming, speakers separated after the meeting'
-                                                        : 'live streaming'
-                                              }`
-                                            : stt.engine === 'unavailable'
-                                              ? 'Whisper is not installed'
-                                              : `${stt.engine} · ${stt.status}`}
-                                        {transcriptionProvider === 'whisper' &&
-                                            stt.status === 'starting' &&
-                                            ' — a large model can take a few minutes to compile the first time'}
-                                        {transcriptionProvider === 'whisper' && detectedLanguage && ` · detected ${detectedLanguage} so far`}
-                                    </p>
-
-                                    {transcriptionProvider === 'whisper' && stt.scriptDriftTurns > 0 && (
-                                        <p className="flex items-start gap-1 text-warning">
-                                            <TriangleAlert className="mt-[1px] size-4 shrink-0" aria-hidden="true" />
-                                            {stt.scriptDriftTurns} {stt.scriptDriftTurns === 1 ? 'line was' : 'lines were'} written in Arabic script
-                                            instead of Devanagari. Whisper does this to Hindi occasionally; picking Hindi above instead of detection
-                                            avoids it, at the cost of transcribing English badly.
-                                        </p>
-                                    )}
-
-                                    {transcriptionProvider === 'whisper' && englishOnlyModel && nonEnglishSelected && (
-                                        <p className="flex items-start gap-1 text-warning">
-                                            <TriangleAlert className="mt-[1px] size-4 shrink-0" aria-hidden="true" />
-                                            Whisper {formData.whisperModel} is English-first and will render this language in the wrong script, or
-                                            translate it. Choose small or larger for accurate non-English transcription.
-                                        </p>
-                                    )}
-
-                                    {transcriptionProvider === 'whisper' && brokenModels.length > 0 && (
-                                        <p className="text-muted-foreground">
-                                            Incomplete on this machine, so not offered: {brokenModels.join(', ')}. Re-download to use them.
-                                        </p>
-                                    )}
-                                </div>
-                            )}
+                            <p className="text-footnote leading-relaxed text-muted-foreground">
+                                Live transcription uses Sarvam Saaras. Provider keys are stored on the connected backend and are never returned to this screen.
+                                {remoteBackend && ' Hosted connections use live audio streaming; recording files stay on this device.'}
+                            </p>
                         </TabsContent>
 
                         <TabsContent value="calendar" className="space-y-4">
@@ -812,7 +753,7 @@ export function SettingsModal({
                                     description={
                                         transcriptionProvider === 'sarvam'
                                             ? 'Required for Sarvam: the recording carries the complete mixed audio that is uploaded after the meeting ends.'
-                                            : 'Saves a video of each meeting on this Mac so you can replay it with the transcript. Nothing is uploaded.'
+                                            : 'Keeps a video on this device for replay. Audio is sent to your selected transcription provider.'
                                     }
                                 >
                                     <Switch
@@ -863,7 +804,7 @@ export function SettingsModal({
                             </SettingGroup>
 
                             <p className="text-footnote text-muted-foreground">
-                                {usageBytes === null ? 'Measuring what recordings are using…' : `Recordings are using ${formatBytes(usageBytes)}.`}
+                                {!recordingSupported ? 'Recordings are available in the desktop app.' : usageBytes === null ? 'Measuring recording storage…' : `Recordings are using ${formatBytes(usageBytes)}.`}
                                 {' Deleting a meeting from History deletes its recording too.'}
                             </p>
 
@@ -965,12 +906,12 @@ export function SettingsModal({
 
                     <div className="flex items-center gap-2">
                         <Button variant="ghost" onClick={onClose}>
-                            Cancel
+                            Close
                         </Button>
-                        <Button onClick={handleSave} disabled={!isConnected || saveState?.status === 'saving'}>
+                        {!['personal', 'connection'].includes(activeTab) && <Button onClick={handleSave} disabled={!isConnected || saveState?.status === 'saving'}>
                             {saveState?.status === 'saved' && <Check aria-hidden="true" />}
-                            {saveState?.status === 'saving' ? 'Saving' : saveState?.status === 'saved' ? 'Saved' : 'Save'}
-                        </Button>
+                            {saveState?.status === 'saving' ? 'Saving…' : saveState?.status === 'saved' ? 'Saved' : 'Save changes'}
+                        </Button>}
                     </div>
                 </DialogFooter>
             </DialogContent>

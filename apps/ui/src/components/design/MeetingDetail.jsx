@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowLeft,
     Check,
@@ -21,11 +21,14 @@ import {
 import { formatMs, initialsFor } from '@/lib/speakers';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 import { ResizableChatPanel } from '@/components/ResizableChatPanel';
-import { RecordingPlayer } from '@/components/RecordingPlayer';
-import { SummaryEditor } from '@/components/SummaryEditor';
+
+const RecordingPlayer = lazy(() => import('@/components/RecordingPlayer').then(module => ({ default: module.RecordingPlayer })));
+const SummaryEditor = lazy(() => import('@/components/SummaryEditor').then(module => ({ default: module.SummaryEditor })));
 import { LiveNotes } from '@/components/LiveNotes';
 import { MarkdownText } from '@/components/MarkdownText';
-import { dateLabel, durationLabel, leadParagraph, speakerColor, taskValue, turnsForIds } from './designHelpers';
+import { JumpingBalls } from '@/components/JumpingBalls';
+import { StreamingText } from '@/components/StreamingText';
+import { dateLabel, durationLabel, leadParagraph, speakerColor, taskValue, turnIndex, turnsForIds } from './designHelpers';
 
 export function Avatar({ name }) {
     return (
@@ -34,6 +37,60 @@ export function Avatar({ name }) {
         </span>
     );
 }
+
+const EMPTY_TURNS = [];
+
+const TurnRow = memo(function TurnRow({
+    turn,
+    cited,
+    renaming,
+    name,
+    copied,
+    isConnected,
+    onName,
+    onStartRename,
+    onCancelRename,
+    onSubmitRename,
+    onCopy,
+}) {
+    return (
+        <article data-turn-id={turn.id} className={`ks-turn ${cited ? 'ks-cited' : ''}`}>
+            <Avatar name={turn.speaker} />
+            <div>
+                <div className="ks-turn-heading">
+                    {renaming ? (
+                        <form
+                            className="ks-rename"
+                            onSubmit={event => {
+                                event.preventDefault();
+                                onSubmitRename(turn.speaker, name);
+                            }}
+                        >
+                            <input aria-label="Speaker name" autoFocus value={name} onChange={event => onName(event.target.value)} />
+                            <button aria-label="Save speaker name">
+                                <Check />
+                            </button>
+                            <button type="button" aria-label="Cancel speaker rename" onClick={onCancelRename}>
+                                <X />
+                            </button>
+                        </form>
+                    ) : (
+                        <button className="ks-speaker-name" disabled={!isConnected} title="Rename speaker" onClick={() => onStartRename(turn.speaker)}>
+                            {turn.speaker}
+                        </button>
+                    )}
+                    <time>{formatMs(turn.startMs)}</time>
+                    <button className="ks-copy-turn" aria-label={`Copy what ${turn.speaker} said`} onClick={() => onCopy(turn)}>
+                        {copied ? <Check /> : <Copy />}
+                    </button>
+                </div>
+                <p>
+                    <StreamingText text={turn.text} stream={Boolean(turn.live)} />
+                </p>
+            </div>
+        </article>
+    );
+});
 
 function Transcript({ turns, interimTurns = [], isRecording, citationFocus, onRenameSpeaker, isConnected }) {
     const [query, setQuery] = useState('');
@@ -53,8 +110,34 @@ function Transcript({ turns, interimTurns = [], isRecording, citationFocus, onRe
         const target = [...(list.current?.querySelectorAll('[data-turn-id]') || [])].find(node => ids.includes(node.dataset.turnId));
         target?.scrollIntoView({ block: 'center' });
     }, [citationFocus]);
-    const filtered = turns.filter(turn => !query.trim() || `${turn.speaker} ${turn.text}`.toLowerCase().includes(query.trim().toLowerCase()));
-    const pending = query.trim() ? [] : interimTurns.filter(turn => turn.text);
+    const needle = query.trim().toLowerCase();
+    const filtered = useMemo(
+        () => (needle ? turns.filter(turn => `${turn.speaker} ${turn.text}`.toLowerCase().includes(needle)) : turns),
+        [turns, needle]
+    );
+    const pending = needle ? EMPTY_TURNS : interimTurns.filter(turn => turn.text);
+
+    const startRename = useCallback(speaker => {
+        setRenaming(speaker);
+        setName(speaker);
+    }, []);
+    const cancelRename = useCallback(() => setRenaming(null), []);
+    const submitRename = useCallback(
+        async (speaker, next) => {
+            const result = await onRenameSpeaker(speaker, next);
+            if (result?.ok) setRenaming(null);
+            else setError(result?.message || 'Could not rename speaker.');
+        },
+        [onRenameSpeaker]
+    );
+    const copyTurn = useCallback(async turn => {
+        try {
+            await navigator.clipboard.writeText(turn.text);
+            setCopied(turn.id);
+        } catch {
+            setError('Could not copy this passage.');
+        }
+    }, []);
     return (
         <div
             className="ks-transcript"
@@ -91,64 +174,20 @@ function Transcript({ turns, interimTurns = [], isRecording, citationFocus, onRe
                 </p>
             )}
             {filtered.map((turn, index) => (
-                <article
+                <TurnRow
                     key={turn.id || index}
-                    data-turn-id={turn.id}
-                    className={`ks-turn ${citationFocus?.turnIds?.includes(turn.id) ? 'ks-cited' : ''}`}
-                >
-                    <Avatar name={turn.speaker} />
-                    <div>
-                        <div className="ks-turn-heading">
-                            {renaming === turn.speaker ? (
-                                <form
-                                    className="ks-rename"
-                                    onSubmit={async event => {
-                                        event.preventDefault();
-                                        const result = await onRenameSpeaker(turn.speaker, name);
-                                        if (result?.ok) setRenaming(null);
-                                        else setError(result?.message || 'Could not rename speaker.');
-                                    }}
-                                >
-                                    <input aria-label="Speaker name" autoFocus value={name} onChange={event => setName(event.target.value)} />
-                                    <button aria-label="Save speaker name">
-                                        <Check />
-                                    </button>
-                                    <button type="button" aria-label="Cancel speaker rename" onClick={() => setRenaming(null)}>
-                                        <X />
-                                    </button>
-                                </form>
-                            ) : (
-                                <button
-                                    className="ks-speaker-name"
-                                    disabled={!isConnected}
-                                    title="Rename speaker"
-                                    onClick={() => {
-                                        setRenaming(turn.speaker);
-                                        setName(turn.speaker);
-                                    }}
-                                >
-                                    {turn.speaker}
-                                </button>
-                            )}
-                            <time>{formatMs(turn.startMs)}</time>
-                            <button
-                                className="ks-copy-turn"
-                                aria-label={`Copy what ${turn.speaker} said`}
-                                onClick={async () => {
-                                    try {
-                                        await navigator.clipboard.writeText(turn.text);
-                                        setCopied(turn.id);
-                                    } catch {
-                                        setError('Could not copy this passage.');
-                                    }
-                                }}
-                            >
-                                {copied === turn.id ? <Check /> : <Copy />}
-                            </button>
-                        </div>
-                        <p>{turn.text}</p>
-                    </div>
-                </article>
+                    turn={turn}
+                    cited={Boolean(citationFocus?.turnIds?.includes(turn.id))}
+                    renaming={renaming === turn.speaker}
+                    name={name}
+                    copied={copied === turn.id}
+                    isConnected={isConnected}
+                    onName={setName}
+                    onStartRename={startRename}
+                    onCancelRename={cancelRename}
+                    onSubmitRename={submitRename}
+                    onCopy={copyTurn}
+                />
             ))}
             {pending.map(turn => (
                 <article key={turn.id} className="ks-turn ks-turn-interim" aria-live="polite">
@@ -156,9 +195,14 @@ function Transcript({ turns, interimTurns = [], isRecording, citationFocus, onRe
                     <div>
                         <div className="ks-turn-heading">
                             <span className="ks-speaker-name">{turn.speaker}</span>
-                            <span className="ks-interim-tag">speaking…</span>
+                            <span className="ks-interim-tag">
+                                <JumpingBalls size="sm" />
+                                speaking
+                            </span>
                         </div>
-                        <p>{turn.text}</p>
+                        <p>
+                            <StreamingText text={turn.text} stream />
+                        </p>
                     </div>
                 </article>
             ))}
@@ -169,15 +213,9 @@ function Transcript({ turns, interimTurns = [], isRecording, citationFocus, onRe
                 </div>
             )}
             {isRecording && !pending.length && (
-                <div className="ks-listening">
-                    <span className="ks-avatar" style={{ '--speaker': '#0047ab' }}>
-                        ●
-                    </span>
-                    <span>
-                        <i />
-                        <i />
-                        <i />
-                    </span>
+                <div className="ks-listening" role="status">
+                    <JumpingBalls />
+                    <span>Listening</span>
                 </div>
             )}
             <div ref={end} />
@@ -247,7 +285,7 @@ function SourceCitation({ label, turns, onJump }) {
     );
 }
 
-function Sections({ sections, transcript, onJump }) {
+function Sections({ sections, index, onJump }) {
     if (!sections?.length) return null;
     return (
         <div className="ks-sections">
@@ -259,7 +297,7 @@ function Sections({ sections, transcript, onJump }) {
                             <li key={bulletIndex} className="ks-bullet">
                                 <div className="ks-bullet-row">
                                     <span>{bullet.text}</span>
-                                    <SourceCitation label={bullet.text} turns={turnsForIds(transcript, bullet.sourceTurnIds)} onJump={onJump} />
+                                    <SourceCitation label={bullet.text} turns={turnsForIds(index, bullet.sourceTurnIds)} onJump={onJump} />
                                 </div>
                                 {bullet.subBullets?.length > 0 && (
                                     <ul className="ks-sub-bullets">
@@ -277,7 +315,7 @@ function Sections({ sections, transcript, onJump }) {
     );
 }
 
-function NextSteps({ items, transcript, onJump }) {
+function NextSteps({ items, index, onJump }) {
     if (!items?.length) return null;
     return (
         <div className="ks-next-steps">
@@ -292,7 +330,7 @@ function NextSteps({ items, transcript, onJump }) {
                                     <strong>{item.task}</strong>
                                     {item.owner && item.owner !== 'Unassigned' ? ` (${item.owner})` : ''}
                                 </span>
-                                <SourceCitation label={item.task} turns={turnsForIds(transcript, item.sourceTurnIds)} onJump={onJump} />
+                                <SourceCitation label={item.task} turns={turnsForIds(index, item.sourceTurnIds)} onJump={onJump} />
                             </div>
                         </li>
                     );
@@ -344,7 +382,7 @@ function Tasks({ meeting, onUpdate }) {
                     }}
                 >
                     <input aria-label="New task" placeholder="Add a task…" value={newTask} onChange={event => setNewTask(event.target.value)} />
-                    <button className="ks-button ks-orange" disabled={!newTask.trim()}>
+                    <button className="ks-button ks-primary" disabled={!newTask.trim()}>
                         Add
                     </button>
                 </form>
@@ -363,6 +401,39 @@ const MEETING_TABS = [
 ];
 
 const LIVE_TABS = ['transcript', 'notes'];
+
+const WAVE_BARS = 36;
+
+const WAVE_FACTORS = Array.from({ length: WAVE_BARS }, (_, index) => {
+    const position = index / (WAVE_BARS - 1);
+    const envelope = 0.35 + 0.65 * Math.sin(Math.PI * position);
+    const jitter = 0.68 + 0.32 * (((index * 37) % 13) / 12);
+    return Math.round(envelope * jitter * 1000) / 1000;
+});
+
+const WAVE_BAR_ELEMENTS = WAVE_FACTORS.map((factor, index) => <i key={index} style={{ '--factor': factor }} />);
+
+function LevelMeter({ subscribe, paused }) {
+    const node = useRef(null);
+
+    useEffect(() => {
+        const element = node.current;
+        if (!element) return undefined;
+        if (paused || !subscribe) {
+            element.style.setProperty('--level', '0');
+            return undefined;
+        }
+        return subscribe(({ mic, system }) => {
+            element.style.setProperty('--level', String(Math.max(mic, system) / 100));
+        });
+    }, [subscribe, paused]);
+
+    return (
+        <div className="ks-wave" ref={node} role="img" aria-label="Live audio input level">
+            {WAVE_BAR_ELEMENTS}
+        </div>
+    );
+}
 
 export function MeetingDetail({
     meeting,
@@ -399,8 +470,9 @@ export function MeetingDetail({
     const participants = [...new Set(turns.map(turn => turn.speaker))];
     const elapsed = recording ? session.durationSeconds : meeting?.durationSeconds || 0;
     const tasks = meeting?.actionItems || [];
-    const level = Math.max(session.audioLevels?.mic || 0, session.audioLevels?.system || 0);
+    const screenCapture = Boolean(session.recordingState?.active) && session.recordingState.mode !== 'audio';
     const jumpToTurn = turn => onSelectMeeting?.(meeting, { meetingId: meeting.id, turnIds: [turn.id], startMs: turn.startMs });
+    const sourceIndex = useMemo(() => turnIndex(meeting?.transcript), [meeting?.transcript]);
 
     if (!meeting && !recording)
         return (
@@ -408,7 +480,7 @@ export function MeetingDetail({
                 <Mic />
                 <h2>Every meeting, remembered.</h2>
                 <p>Record a new meeting or open one from your library.</p>
-                <button className="ks-button ks-orange" disabled={!isConnected || session.isProcessing} onClick={() => session.onStart()}>
+                <button className="ks-button ks-primary" disabled={!isConnected || session.isProcessing} onClick={() => session.onStart()}>
                     New Meeting
                 </button>
             </div>
@@ -421,35 +493,46 @@ export function MeetingDetail({
                     <section className="ks-recording-hud" aria-label="Recording controls">
                         <span className={`ks-rec ${session.isPaused ? 'is-paused' : ''}`}>
                             <i />
-                            {session.isPaused ? 'PAUSED' : 'REC'}
+                            {session.isPaused ? 'Paused' : 'Recording'}
                         </span>
-                        <time>{formatMs(elapsed * 1000)}</time>
-                        <div className="ks-wave" aria-label={`Audio input ${Math.round(level)} percent`}>
-                            {Array.from({ length: 28 }, (_, i) => (
-                                <i key={i} style={{ height: `${session.isPaused ? 3 : 3 + (level / 100) * (6 + ((i * 7) % 16))}px` }} />
-                            ))}
+                        <time aria-label="Elapsed recording time">{formatMs(elapsed * 1000)}</time>
+                        <LevelMeter subscribe={session.subscribeAudioLevels} paused={session.isPaused} />
+                        {screenCapture && (
+                            <span className="ks-hud-chip">
+                                <Monitor />
+                                Screen
+                            </span>
+                        )}
+                        <div className="ks-hud-controls">
+                            <button
+                                className="ks-icon-button"
+                                aria-label={session.micMuted ? 'Unmute microphone' : 'Mute microphone'}
+                                aria-pressed={session.micMuted}
+                                onClick={session.onToggleMic}
+                            >
+                                {session.micMuted ? <MicOff /> : <Mic />}
+                            </button>
+                            <button
+                                className="ks-icon-button"
+                                title={!session.systemAudioSeen ? 'No meeting audio detected yet' : 'Meeting audio'}
+                                aria-label={session.systemAudioMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
+                                aria-pressed={session.systemAudioMuted}
+                                onClick={session.onToggleSystem}
+                            >
+                                {session.systemAudioMuted ? <VolumeX /> : <Volume2 />}
+                            </button>
+                            <button
+                                className="ks-icon-button"
+                                onClick={session.isPaused ? session.onResume : session.onPause}
+                                aria-label={session.isPaused ? 'Resume recording' : 'Pause recording'}
+                            >
+                                {session.isPaused ? <Play /> : <Pause />}
+                            </button>
+                            <button className="ks-button ks-red" onClick={session.onStop}>
+                                <Square />
+                                Stop
+                            </button>
                         </div>
-                        <div className="ks-hud-caption">
-                            <span>{meeting?.title || 'New meeting'}</span>
-                            <div>
-                                <span className="ks-hud-line" />
-                                <span>
-                                    {session.isPaused ? 'paused' : 'recording'}
-                                    {session.recordingState?.active && session.recordingState.mode !== 'audio' ? ' · screen' : ''}
-                                </span>
-                            </div>
-                        </div>
-                        <button
-                            className="ks-icon-button"
-                            onClick={session.isPaused ? session.onResume : session.onPause}
-                            aria-label={session.isPaused ? 'Resume recording' : 'Pause recording'}
-                        >
-                            {session.isPaused ? <Play /> : <Pause />}
-                        </button>
-                        <button className="ks-button ks-red" onClick={session.onStop}>
-                            <Square />
-                            Stop
-                        </button>
                     </section>
                 )}
                 <header className="ks-meeting-header">
@@ -497,27 +580,6 @@ export function MeetingDetail({
                         </div>
                     </div>
                     <div className="ks-meeting-actions">
-                        {recording && (
-                            <>
-                                <button
-                                    className="ks-icon-button"
-                                    aria-label={session.micMuted ? 'Unmute microphone' : 'Mute microphone'}
-                                    aria-pressed={session.micMuted}
-                                    onClick={session.onToggleMic}
-                                >
-                                    {session.micMuted ? <MicOff /> : <Mic />}
-                                </button>
-                                <button
-                                    className="ks-icon-button"
-                                    title={!session.systemAudioSeen ? 'No system audio detected' : 'Meeting audio'}
-                                    aria-label={session.systemAudioMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
-                                    aria-pressed={session.systemAudioMuted}
-                                    onClick={session.onToggleSystem}
-                                >
-                                    {session.systemAudioMuted ? <VolumeX /> : <Volume2 />}
-                                </button>
-                            </>
-                        )}
                         {!recording && (
                             <>
                                 <button className="ks-button" onClick={onExport} disabled={!meeting}>
@@ -531,7 +593,7 @@ export function MeetingDetail({
                             </>
                         )}
                         <button
-                            className={`ks-button ${chatOpen ? 'ks-orange' : ''}`}
+                            className={`ks-button ${chatOpen ? 'ks-primary' : ''}`}
                             onClick={() => setChatOpen(!chatOpen)}
                             disabled={!meeting?.id || !isConnected}
                         >
@@ -575,12 +637,14 @@ export function MeetingDetail({
                                     <button className="ks-text-button" onClick={() => setAdvanced(false)}>
                                         ← Back to summary
                                     </button>
-                                    <SummaryEditor
-                                        key={meeting?.id}
-                                        meeting={meeting}
-                                        onUpdateMeeting={onUpdate}
-                                        isGenerating={session.isProcessing}
-                                    />
+                                    <Suspense fallback={<p className="ks-chat-note">Opening the editor…</p>}>
+                                        <SummaryEditor
+                                            key={meeting?.id}
+                                            meeting={meeting}
+                                            onUpdateMeeting={onUpdate}
+                                            isGenerating={session.isProcessing}
+                                        />
+                                    </Suspense>
                                 </div>
                             ) : (
                                 <div className="ks-summary">
@@ -597,7 +661,7 @@ export function MeetingDetail({
                                         {meeting?.summarySections?.length > 0 ? (
                                             <>
                                                 <MarkdownText markdown={leadParagraph(meeting.summaryMarkdown)} />
-                                                <Sections sections={meeting.summarySections} transcript={meeting.transcript} onJump={jumpToTurn} />
+                                                <Sections sections={meeting.summarySections} index={sourceIndex} onJump={jumpToTurn} />
                                             </>
                                         ) : (
                                             <MarkdownText
@@ -618,7 +682,7 @@ export function MeetingDetail({
                                             ))}
                                         </div>
                                     )}
-                                    <NextSteps items={meeting?.actionItems} transcript={meeting?.transcript} onJump={jumpToTurn} />
+                                    <NextSteps items={meeting?.actionItems} index={sourceIndex} onJump={jumpToTurn} />
                                     <button className="ks-text-button" onClick={() => setAdvanced(true)}>
                                         Edit notes & follow-up email
                                     </button>
@@ -627,14 +691,16 @@ export function MeetingDetail({
                         </div>
                     )}
                     {tab === 'replay' && (
-                        <RecordingPlayer
-                            key={meeting?.id}
-                            meeting={meeting}
-                            citationFocus={citationFocus}
-                            isConnected={isConnected}
-                            onRenameSpeaker={onRenameSpeaker}
-                            nameSuggestions={session.nameSuggestions}
-                        />
+                        <Suspense fallback={<p className="ks-chat-note">Opening the recording…</p>}>
+                            <RecordingPlayer
+                                key={meeting?.id}
+                                meeting={meeting}
+                                citationFocus={citationFocus}
+                                isConnected={isConnected}
+                                onRenameSpeaker={onRenameSpeaker}
+                                nameSuggestions={session.nameSuggestions}
+                            />
+                        </Suspense>
                     )}
                     {tab === 'notes' && (
                         <div className="ks-detail-scroll">

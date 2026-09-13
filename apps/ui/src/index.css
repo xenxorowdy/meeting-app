@@ -4,51 +4,51 @@
 
 @layer base {
     :root {
-        --background: 240 3% 6%;
-        --foreground: 240 5% 91%;
+        --background: 60 9% 96%;
+        --foreground: 220 6% 13%;
 
-        --card: 240 4% 9%;
-        --card-foreground: 240 5% 91%;
+        --card: 0 0% 100%;
+        --card-foreground: 220 6% 13%;
 
-        --popover: 240 4% 9%;
-        --popover-foreground: 240 5% 91%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 220 6% 13%;
 
         --primary: 215 100% 33.5%;
-        --primary-foreground: 240 3% 6%;
+        --primary-foreground: 0 0% 100%;
 
-        --secondary: 240 5% 12%;
-        --secondary-foreground: 240 5% 91%;
+        --secondary: 60 5% 93%;
+        --secondary-foreground: 220 6% 13%;
 
-        --muted: 240 5% 12%;
-        --muted-foreground: 240 4% 44%;
+        --muted: 60 5% 93%;
+        --muted-foreground: 228 4% 41%;
 
-        --accent: 240 5% 12%;
-        --accent-foreground: 240 5% 91%;
+        --accent: 60 5% 93%;
+        --accent-foreground: 220 6% 13%;
 
-        --destructive: 354 100% 42%;
+        --destructive: 3 64% 48%;
         --destructive-foreground: 0 0% 100%;
 
-        --success: 142 72% 29%;
+        --success: 145 66% 30%;
         --success-foreground: 0 0% 100%;
 
-        --warning: 32 100% 35%;
+        --warning: 39 100% 27%;
         --warning-foreground: 0 0% 100%;
 
-        --border: 240 5% 17%;
-        --input: 240 5% 22%;
+        --border: 51 8% 84%;
+        --input: 51 8% 78%;
         --ring: 215 100% 33.5%;
 
-        --elevated: 240 5% 12%;
-        --segment: 240 5% 17%;
+        --elevated: 0 0% 100%;
+        --segment: 51 8% 88%;
 
-        --speaker-1: 241 45% 51%;
-        --speaker-2: 187 100% 24%;
-        --speaker-3: 32 100% 35%;
-        --speaker-4: 279 55% 51%;
-        --material: 240 4% 9%;
-        --material-opacity: 0.72;
-        --scrim: 0 0% 0%;
-        --scrim-opacity: 0.28;
+        --speaker-1: 224 76% 48%;
+        --speaker-2: 166 92% 22%;
+        --speaker-3: 263 70% 50%;
+        --speaker-4: 32 86% 31%;
+        --material: 0 0% 100%;
+        --material-opacity: 0.86;
+        --scrim: 220 6% 13%;
+        --scrim-opacity: 0.16;
 
         --radius: 10px;
     }
@@ -63,22 +63,22 @@
         --popover: 240 4% 9%;
         --popover-foreground: 240 5% 91%;
 
-        --primary: 215 100% 33.5%;
-        --primary-foreground: 240 3% 6%;
+        --primary: 217 100% 68%;
+        --primary-foreground: 216 55% 10%;
 
         --secondary: 240 5% 12%;
         --secondary-foreground: 240 5% 91%;
 
         --muted: 240 5% 12%;
-        --muted-foreground: 240 4% 44%;
+        --muted-foreground: 240 5% 57%;
 
         --accent: 240 5% 12%;
         --accent-foreground: 240 5% 91%;
 
-        --destructive: 3 100% 61%;
+        --destructive: 3 100% 69%;
         --destructive-foreground: 0 0% 8%;
 
-        --success: 135 64% 50%;
+        --success: 135 64% 51%;
         --success-foreground: 0 0% 8%;
 
         --warning: 36 100% 52%;
@@ -86,15 +86,15 @@
 
         --border: 240 5% 17%;
         --input: 240 5% 22%;
-        --ring: 215 100% 33.5%;
+        --ring: 217 100% 68%;
 
         --elevated: 240 5% 12%;
         --segment: 240 5% 17%;
 
-        --speaker-1: 241 100% 78%;
-        --speaker-2: 187 70% 62%;
-        --speaker-3: 36 100% 63%;
-        --speaker-4: 274 100% 78%;
+        --speaker-1: 217 100% 68%;
+        --speaker-2: 158 64% 67%;
+        --speaker-3: 255 92% 85%;
+        --speaker-4: 45 96% 64%;
         --material: 240 4% 9%;
         --material-opacity: 0.76;
         --scrim: 0 0% 0%;
@@ -103,9 +103,9 @@
 
     @media (prefers-contrast: more) {
         :root {
-            --muted-foreground: 240 3% 30%;
-            --border: 240 5% 70%;
-            --material-opacity: 0.95;
+            --muted-foreground: 228 6% 28%;
+            --border: 228 6% 45%;
+            --material-opacity: 0.98;
         }
 
         .dark {
@@ -191,6 +191,68 @@
     body.transparent-shell {
         background-color: transparent;
     }
+
+    .ks-balls {
+        display: inline-flex;
+        align-items: flex-end;
+        gap: 4px;
+        line-height: 0;
+        color: currentColor;
+    }
+
+    .ks-balls i {
+        display: block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        transform-origin: center bottom;
+        animation: ks-ball-bounce 1.05s cubic-bezier(0.33, 0, 0.35, 1) infinite;
+    }
+
+    .ks-balls i:nth-child(2) {
+        animation-delay: 0.13s;
+    }
+
+    .ks-balls i:nth-child(3) {
+        animation-delay: 0.26s;
+    }
+
+    .ks-balls-sm i {
+        width: 4px;
+        height: 4px;
+    }
+
+    .ks-balls-lg i {
+        width: 8px;
+        height: 8px;
+    }
+}
+
+@keyframes ks-ball-bounce {
+    0%,
+    72%,
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 0.45;
+    }
+
+    36% {
+        transform: translateY(-7px) scale(1.08);
+        opacity: 1;
+    }
+}
+
+@keyframes ks-word-in {
+    from {
+        opacity: 0;
+        filter: blur(2px);
+    }
+
+    to {
+        opacity: 1;
+        filter: blur(0);
+    }
 }
 
 @layer utilities {
@@ -210,12 +272,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-    background-color: #38383e;
+    background-color: hsl(var(--border));
     border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background-color: #6b6b74;
+    background-color: hsl(var(--muted-foreground));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -225,5 +287,12 @@
         animation-duration: 0.001ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.001ms !important;
+    }
+
+    /* With the bounce gone the dots still have to read as "in progress", so they
+       hold the lit state rather than freezing mid-keyframe at 45% opacity. */
+    .ks-balls i {
+        opacity: 1;
+        transform: none;
     }
 }

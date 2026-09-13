@@ -36,7 +36,7 @@ export function initialsFor(speaker = '') {
     return (words[0][0] + words[1][0]).toUpperCase();
 }
 
-// Whisper reports ISO 639-1; only the languages the app offers need a name, and
+// Older transcripts report ISO 639-1; only the languages the app offers need a name, and
 // anything else falls back to the code itself rather than showing nothing.
 const LANGUAGE_NAMES = {
     en: 'English',

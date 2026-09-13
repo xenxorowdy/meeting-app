@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
-const DEFAULT_WIDTH = 380;
+const DEFAULT_WIDTH = 420;
 
 export function ResizableChatPanel({ open, onClose, children }) {
     const panel = useRef(null);
@@ -9,7 +9,7 @@ export function ResizableChatPanel({ open, onClose, children }) {
     const [preferredWidth, setPreferredWidth] = useState(DEFAULT_WIDTH);
     const [maximum, setMaximum] = useState(800);
     const [dragging, setDragging] = useState(false);
-    const minimum = Math.min(280, maximum);
+    const minimum = Math.min(320, maximum);
     const width = Math.max(minimum, Math.min(maximum, preferredWidth));
     const clamp = value => Math.max(minimum, Math.min(maximum, value));
 
@@ -19,7 +19,7 @@ export function ResizableChatPanel({ open, onClose, children }) {
         const measure = () => {
             const available = host.getBoundingClientRect().width;
             const overlay = window.matchMedia('(max-width: 700px)').matches;
-            setMaximum(Math.max(0, Math.min(800, overlay ? available : Math.max(280, available - 320))));
+            setMaximum(Math.max(0, Math.min(800, overlay ? available : Math.max(320, available - 320))));
         };
         measure();
         const observer = new ResizeObserver(measure);
@@ -27,9 +27,39 @@ export function ResizableChatPanel({ open, onClose, children }) {
         return () => { observer.disconnect(); drag.current = null; setDragging(false); };
     }, [open]);
 
+    useEffect(() => {
+        if (!dragging) return undefined;
+        const move = event => {
+            if (drag.current) setPreferredWidth(Math.max(minimum, Math.min(maximum, drag.current.width + drag.current.x - event.clientX)));
+        };
+        const end = () => {
+            drag.current = null;
+            setDragging(false);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+        window.addEventListener('blur', end);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+            window.removeEventListener('pointercancel', end);
+            window.removeEventListener('blur', end);
+        };
+    }, [dragging, minimum, maximum]);
+
+    useEffect(() => {
+        if (!open) return;
+        const closeOnEscape = event => {
+            if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"]')) onClose();
+        };
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [open, onClose]);
+
     if (!open) return null;
     return (
-        <aside ref={panel} className={`ks-meeting-chat${dragging ? ' is-resizing' : ''}`} style={{ '--ks-chat-width': `${width}px` }}>
+        <aside aria-label="Ask AI panel" ref={panel} className={`ks-meeting-chat${dragging ? ' is-resizing' : ''}`} style={{ '--ks-chat-width': `${width}px` }}>
             <div
                 className="ks-chat-resize"
                 role="separator"
@@ -45,20 +75,9 @@ export function ResizableChatPanel({ open, onClose, children }) {
                     if (event.button !== 0) return;
                     event.preventDefault();
                     event.currentTarget.focus();
-                    event.currentTarget.setPointerCapture(event.pointerId);
                     drag.current = { x: event.clientX, width };
                     setDragging(true);
                 }}
-                onPointerMove={event => {
-                    if (drag.current) setPreferredWidth(clamp(drag.current.width + drag.current.x - event.clientX));
-                }}
-                onPointerUp={event => {
-                    drag.current = null;
-                    setDragging(false);
-                    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-                }}
-                onPointerCancel={() => { drag.current = null; setDragging(false); }}
-                onLostPointerCapture={() => { drag.current = null; setDragging(false); }}
                 onDoubleClick={() => setPreferredWidth(DEFAULT_WIDTH)}
                 onKeyDown={event => {
                     const next = { ArrowLeft: width + 20, ArrowRight: width - 20, Home: minimum, End: maximum, Enter: DEFAULT_WIDTH }[event.key];

@@ -1,6 +1,6 @@
-const DEFAULT_BACKEND_URL = 'http://127.0.0.1:48900';
+import { getBackendUrl, backendHeaders, backendSocketProtocols } from './connection.js';
 
-export const BACKEND_URL = (import.meta.env?.VITE_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, '');
+export const BACKEND_URL = getBackendUrl();
 export const BACKEND_WS_URL = `${BACKEND_URL.replace(/^http/, 'ws')}/ws`;
 
 export const STREAM_MIC = 0;
@@ -29,14 +29,14 @@ async function parseResponse(response) {
 export async function apiRequest(path, { method = 'GET', body, signal } = {}) {
     let response;
     try {
-        response = await fetch(`${BACKEND_URL}${path}`, {
+        response = await fetch(`${getBackendUrl()}${path}`, {
             method,
-            headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+            headers: backendHeaders(body === undefined ? {} : { 'Content-Type': 'application/json' }),
             body: body === undefined ? undefined : JSON.stringify(body),
             signal,
         });
     } catch (cause) {
-        throw new BackendError(`Cannot reach the backend at ${BACKEND_URL}`, 0);
+        throw new BackendError(`Cannot reach the backend at ${getBackendUrl()}`, 0);
     }
 
     const data = await parseResponse(response);
@@ -47,7 +47,7 @@ export async function apiRequest(path, { method = 'GET', body, signal } = {}) {
 }
 
 export async function apiText(path, { signal } = {}) {
-    const response = await fetch(`${BACKEND_URL}${path}`, { signal });
+    const response = await fetch(`${getBackendUrl()}${path}`, { signal, headers: backendHeaders() });
     if (!response.ok) {
         throw new BackendError(`GET ${path} failed with ${response.status}`, response.status);
     }
@@ -99,7 +99,7 @@ export function createBackendSocket({ onEvent, onConnectionChange } = {}) {
         notify('connecting');
 
         try {
-            socket = new WebSocket(BACKEND_WS_URL);
+            socket = new WebSocket(`${getBackendUrl().replace(/^http/, 'ws')}/ws`, backendSocketProtocols());
         } catch {
             scheduleReconnect();
             return;

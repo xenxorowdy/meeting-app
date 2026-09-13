@@ -1,123 +1,44 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { ArrowRight, AudioLines, Check, MessageSquareText, Settings2, Sparkles } from 'lucide-react';
 
 export function SignInView({ onContinue }) {
-    const [mode, setMode] = useState('login');
-    const [message, setMessage] = useState('');
-    const unavailable = () => setMessage('Account sign-in is not connected in this desktop build. Continue locally to open your meetings.');
-
     return (
         <main className="ks-login">
-            <section className="ks-login-story">
-                <div>
-                    <div className="ks-brand">
-                        <span className="ks-brand-mark">
-                            <i />
-                        </span>
-                        KESAMI
-                    </div>
-                    <div className="ks-login-intro">
-                        <h1>
-                            Every meeting,
-                            <br />
-                            remembered.
-                        </h1>
-                        <p>AI transcription, noise cancellation, task tracking, and a searchable archive of every conversation you've ever had.</p>
+            <section className="ks-login-story" aria-label="About Kesami">
+                <div className="ks-brand">
+                    <span className="ks-brand-mark"><AudioLines aria-hidden="true" /></span>
+                    KESAMI
+                </div>
+                <div className="ks-login-intro">
+                    <span className="ks-eyebrow">YOUR MEETING WORKSPACE</span>
+                    <h1>Be in the conversation.<br /><span>Keep the clarity.</span></h1>
+                    <p>Turn conversations into a transcript you can search, notes you can use, and answers you can trace back to the meeting.</p>
+                    <div className="ks-welcome-preview" aria-hidden="true">
+                        <div className="ks-welcome-preview-head"><AudioLines /><span>From conversation to clarity</span><span className="ks-tag">WORKFLOW</span></div>
+                        <div className="ks-welcome-flow"><span><Check />Capture</span><i /><span><Check />Understand</span><i /><span><Check />Follow through</span></div>
+                        <div className="ks-welcome-preview-question"><MessageSquareText />What did we decide?</div>
+                        <p>Review decisions and action items, with links to the conversation behind them.</p>
                     </div>
                 </div>
-                <div className="ks-testimonial">
-                    <p>“I haven't taken notes in three months. KESAMI captures everything and tells me exactly what I need to do next.”</p>
-                    <div>
-                        <span className="ks-avatar" style={{ '--speaker': '#5b9bff' }}>
-                            JK
-                        </span>
-                        <div>
-                            <strong>Jamie Kim</strong>
-                            <small>Head of Product, Vercel</small>
-                        </div>
-                    </div>
-                </div>
+                <p className="ks-welcome-footer">Less note taking. More attention to what matters.</p>
             </section>
-            <section className="ks-login-form" aria-label="Sign in">
-                <div className="ks-auth-tabs" role="tablist" aria-label="Account access">
-                    <button
-                        role="tab"
-                        aria-selected={mode === 'login'}
-                        onClick={() => {
-                            setMode('login');
-                            setMessage('');
-                        }}
-                    >
-                        Sign In
-                    </button>
-                    <button
-                        role="tab"
-                        aria-selected={mode === 'signup'}
-                        onClick={() => {
-                            setMode('signup');
-                            setMessage('');
-                        }}
-                    >
-                        Create Account
-                    </button>
-                </div>
-                <form
-                    onSubmit={event => {
-                        event.preventDefault();
-                        unavailable();
-                    }}
-                >
-                    {mode === 'signup' && (
-                        <label className="ks-field">
-                            FULL NAME
-                            <input autoComplete="name" placeholder="Maya Chen" />
-                        </label>
-                    )}
-                    <label className="ks-field">
-                        EMAIL
-                        <input type="email" autoComplete="email" placeholder="maya@company.com" required />
-                    </label>
-                    <div className="ks-password-label">
-                        <label htmlFor="ks-password">PASSWORD</label>
-                        {mode === 'login' && (
-                            <button type="button" onClick={unavailable}>
-                                Forgot?
-                            </button>
-                        )}
-                    </div>
-                    <input
-                        id="ks-password"
-                        type="password"
-                        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                        placeholder="••••••••"
-                        required
-                    />
-                    <button type="submit" className="ks-auth-submit">
-                        {mode === 'login' ? 'Sign in' : 'Create account'}
-                    </button>
-                </form>
-                <div className="ks-auth-divider">
-                    <span />
-                    OR
-                    <span />
-                </div>
-                <div className="ks-oauth">
-                    <button onClick={unavailable}>
-                        <span>G</span>Continue with Google
-                    </button>
-                    <button onClick={unavailable}>
-                        <span aria-hidden="true" />
-                        Continue with Apple
-                    </button>
-                </div>
-                <p className="ks-auth-terms">Account services are not connected in this build.</p>
-                {message && (
-                    <p className="ks-auth-message" role="status">
-                        {message}
-                    </p>
-                )}
-                <button className="ks-local-entry" onClick={onContinue}>
-                    Continue locally <span aria-hidden="true">↗</span>
+            <section className="ks-login-form" aria-labelledby="welcome-title">
+                <div className="ks-welcome-icon"><Sparkles aria-hidden="true" /></div>
+                <span className="ks-eyebrow">WELCOME TO KESAMI</span>
+                <h2 id="welcome-title">Make room for<br />a better meeting.</h2>
+                <p>Set up your workspace, connect your AI providers, and start your first conversation.</p>
+                <ol className="ks-welcome-steps">
+                    <li><span>01</span><div><strong>Choose your setup</strong><p>Use the service on this device or connect to your hosted backend.</p></div></li>
+                    <li><span>02</span><div><strong>Make it yours</strong><p>Adjust text size, appearance, audio, and AI preferences.</p></div></li>
+                    <li><span>03</span><div><strong>Keep the useful parts</strong><p>Record a meeting, review its notes, and ask a follow-up.</p></div></li>
+                </ol>
+                <button type="button" className="ks-auth-submit" onClick={() => onContinue()}>
+                    Open workspace <ArrowRight aria-hidden="true" />
                 </button>
+                <button type="button" className="ks-local-entry" onClick={() => onContinue('settings')}>
+                    <Settings2 aria-hidden="true" /> Configure connection & preferences
+                </button>
+                <p className="ks-auth-terms">No account is created here. Your connected service stores meeting data; your selected AI providers process transcription and answers.</p>
             </section>
         </main>
     );

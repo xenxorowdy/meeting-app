@@ -66,7 +66,7 @@ export function TranscriptView({
                 variant: 'warning',
                 icon: TriangleAlert,
                 label: 'No transcription engine',
-                hint: 'Install whisperkit-cli so the backend can transcribe speech on the Neural Engine.',
+                hint: 'Add your transcription API key in Settings to start live transcription.',
             }
           : stt.status === 'ready'
             ? {
@@ -74,11 +74,11 @@ export function TranscriptView({
                   icon: Cpu,
                   // Naming the language it settled on is the only way to tell a
                   // correct auto-detection from a wrong one at a glance.
-                  label: detected ? `On device · ${detected}` : 'On device',
-                  hint: detected ? `Whisper ${stt.model} on the Neural Engine, detected ${detected}` : `Whisper ${stt.model} on the Neural Engine`,
+                  label: detected ? `Cloud transcription · ${detected}` : 'Cloud transcription',
+                  hint: stt.provider === 'sarvam' ? 'The completed recording is transcribed after the meeting.' : 'Speech is streamed to Sarvam while the meeting is running.',
               }
             : stt.status === 'starting'
-              ? { variant: 'muted', icon: Cpu, label: 'Loading model', hint: `Loading Whisper ${stt.model}` }
+              ? { variant: 'muted', icon: Cpu, label: 'Connecting', hint: 'Connecting to your transcription service.' }
               : stt.status === 'failed'
                 ? {
                       variant: 'destructive',
@@ -86,7 +86,7 @@ export function TranscriptView({
                       label: 'Engine failed',
                       hint: stt.error || 'The transcription engine failed to start.',
                   }
-                : { variant: 'muted', icon: Cpu, label: 'Engine idle', hint: `Whisper ${stt.model} is not loaded yet` };
+                : { variant: 'muted', icon: Cpu, label: 'Ready when you are', hint: 'Start a meeting to begin transcription.' };
 
     return (
         <section aria-label="Transcript" className="flex h-full flex-col overflow-hidden rounded-xl border">

@@ -6,11 +6,12 @@ import {
     mergeInterim,
     normalizeMeeting,
     normalizeTurn,
-    BACKEND_URL,
     STREAM_MIC,
     STREAM_SYSTEM,
 } from '@/lib/backend';
 import { calendarEventMetadata } from '@/lib/calendarEvents';
+import { getBackendUrl, isRemoteBackend } from '@/lib/connection';
+import { createLevelChannel } from '@/lib/levels';
 import { startMicCapture } from '@/lib/micCapture';
 import { DEFAULT_BITS_PER_SECOND, isRecordingSupported, startScreenRecording } from '@/lib/screenRecorder';
 
@@ -27,9 +28,7 @@ const DEFAULT_SETTINGS = {
     micDeviceId: 'default',
     systemDeviceId: 'default',
     aiModel: 'gemini-2.5-flash',
-    transcriptionProvider: 'whisper',
-    whisperModel: 'large-v3-turbo',
-    sttLanguage: 'auto',
+    transcriptionProvider: 'sarvam-realtime',
     sarvamLanguage: 'unknown',
     sarvamMode: 'transcribe',
     sarvamNumSpeakers: null,
@@ -61,7 +60,6 @@ export function useMeetingSession() {
     const [sessionState, setSessionState] = useState(SESSION_STATES.IDLE);
     const [activeMeeting, setActiveMeeting] = useState(null);
     const [durationSeconds, setDurationSeconds] = useState(0);
-    const [audioLevels, setAudioLevels] = useState({ mic: 0, system: 0 });
     const [systemAudioSeen, setSystemAudioSeen] = useState(false);
     const [interimTurns, setInterimTurns] = useState([]);
     const [micMuted, setMicMuted] = useState(false);
@@ -76,6 +74,11 @@ export function useMeetingSession() {
     // The mic stream has to be state, not just a ref: the screen recording mixes it
     // in, and it only exists once the capture effect below has run.
     const [micStream, setMicStream] = useState(null);
+
+    const levelsRef = useRef(null);
+    if (!levelsRef.current) levelsRef.current = createLevelChannel();
+    const levels = levelsRef.current;
+    const systemAudioSeenRef = useRef(false);
 
     const socketRef = useRef(null);
     const captureRef = useRef(null);
@@ -126,7 +129,7 @@ export function useMeetingSession() {
             setSessionState(mapBackendState(status.state));
             if (typeof status.durationSeconds === 'number') setDurationSeconds(status.durationSeconds);
             if (status.audioLevels) {
-                setAudioLevels({ mic: clampLevel(status.audioLevels.mic), system: clampLevel(status.audioLevels.system) });
+                levels.publish({ mic: clampLevel(status.audioLevels.mic), system: clampLevel(status.audioLevels.system) });
             }
 
             const meetingId = status.meetingId || status.currentMeeting?.id || null;
@@ -139,7 +142,7 @@ export function useMeetingSession() {
                 }
             }
         },
-        [adoptMeeting]
+        [adoptMeeting, levels]
     );
 
     const applyInterim = useCallback(data => {
@@ -220,8 +223,11 @@ export function useMeetingSession() {
                 case 'audio_level': {
                     const mic = clampLevel(data?.mic);
                     const system = clampLevel(data?.system);
-                    setAudioLevels({ mic, system });
-                    if (system > 0) setSystemAudioSeen(true);
+                    levels.publish({ mic, system });
+                    if (system > 0 && !systemAudioSeenRef.current) {
+                        systemAudioSeenRef.current = true;
+                        setSystemAudioSeen(true);
+                    }
                     break;
                 }
 
@@ -234,7 +240,7 @@ export function useMeetingSession() {
                     break;
             }
         },
-        [adoptMeeting, applyInterim, applyStatus]
+        [adoptMeeting, applyInterim, applyStatus, levels]
     );
 
     // Backend socket: one connection for the lifetime of the window.
@@ -250,17 +256,16 @@ export function useMeetingSession() {
     // Everything the UI needs that isn't pushed over the socket.
     const refresh = useCallback(async () => {
         try {
-            const [status, storedSettings, licenseStatus, health] = await Promise.all([
+            const [status, storedSettings, licenseStatus] = await Promise.all([
                 apiRequest('/api/status'),
                 apiRequest('/api/settings').catch(() => ({ settings: {} })),
                 apiRequest('/api/license/status').catch(() => null),
-                apiRequest('/health').catch(() => null),
             ]);
 
             await applyStatus(status);
             setSettings(prev => ({ ...prev, ...(storedSettings?.settings || {}) }));
             setLicense(licenseStatus);
-            setEngine(health);
+            setEngine(status);
             setError(null);
         } catch (cause) {
             setError(cause.message);
@@ -319,13 +324,13 @@ export function useMeetingSession() {
             captureRef.current.stop();
             captureRef.current = null;
             setMicStream(null);
-            setAudioLevels({ mic: 0, system: 0 });
+            levels.reset();
         }
 
         return () => {
             cancelled = true;
         };
-    }, [sessionState, settings.micDeviceId, micMuted]);
+    }, [sessionState, settings.micDeviceId, micMuted, levels]);
 
     useEffect(() => {
         const capture = captureRef.current;
@@ -412,6 +417,10 @@ export function useMeetingSession() {
             setError(null);
             setMicError(null);
             setRecordingState({ active: false, mode, hasSystemAudio: false, error: null });
+            if (settingsRef.current.transcriptionProvider === 'sarvam' && (isRemoteBackend() || settingsRef.current.supportsLocalRecording === false)) {
+                setError('Choose live transcription in Settings to record with a hosted workspace.');
+                return null;
+            }
             if (settingsRef.current.transcriptionProvider === 'sarvam' && !isRecordingSupported(mode)) {
                 setError('Sarvam batch transcription needs the Alpha desktop app so it can capture the complete meeting audio.');
                 return null;
@@ -496,7 +505,7 @@ export function useMeetingSession() {
                 const response = await apiRequest('/api/meetings/stop', {
                     method: 'POST',
                     body: {
-                        recording,
+                        recording: isRemoteBackend() || settingsRef.current.supportsLocalRecording === false ? null : recording,
                         transcript: turns.map(turn => ({
                             id: turn.id,
                             channel: turn.stream || turn.channel || 'system',
@@ -671,14 +680,14 @@ export function useMeetingSession() {
         setOnCalendarConnection,
         addNote,
         deleteNote,
-        backendUrl: BACKEND_URL,
+        backendUrl: getBackendUrl(),
         connection,
         isConnected: connection === 'online',
         sessionState,
         activeMeeting,
         interimTurns,
         durationSeconds,
-        audioLevels,
+        subscribeAudioLevels: levels.subscribe,
         systemAudioSeen,
         micMuted,
         systemAudioMuted,

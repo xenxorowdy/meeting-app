@@ -1,12 +1,23 @@
-import React, { useEffect, useState } from 'react';
-import { ExternalLink, HelpCircle, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Podcast, Settings, Star, Sun, X } from 'lucide-react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { AudioLines, ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Podcast, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
-import { PodcastStudio } from '@/components/PodcastStudio';
+
+const PodcastStudio = lazy(() => import('@/components/PodcastStudio').then(module => ({ default: module.PodcastStudio })));
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { calendarEventLink, countdownLabel, eventsForTodayAndTomorrow } from '@/lib/calendarEvents';
 import { MeetingDetail, Avatar } from './MeetingDetail';
 import { dateLabel, durationLabel, FOLDER_COLORS } from './designHelpers';
+
+const FOLDER_COLOR_KEY = 'kesami.folder-colors';
+
+function readFolderColors() {
+    try {
+        return JSON.parse(localStorage.getItem(FOLDER_COLOR_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
 
 function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled }) {
     const [menu, setMenu] = useState(false);
@@ -24,7 +35,9 @@ function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled }) {
                     {meeting.metadata?.noiseLevel && (
                         <span
                             className="ks-noise"
-                            style={{ color: { low: '#0047ab', medium: '#ffbd2e', high: '#ff5f57' }[meeting.metadata.noiseLevel] }}
+                            style={{
+                                color: { low: 'var(--ks-accent)', medium: 'var(--ks-warn)', high: 'var(--ks-danger)' }[meeting.metadata.noiseLevel],
+                            }}
                         >
                             <i />
                             {meeting.metadata.noiseLevel} noise
@@ -127,6 +140,7 @@ export function DesignWorkspace({
     isDesktop,
     theme = 'dark',
     onToggleTheme,
+    workspaceName = 'My workspace',
     noiseSuppression = true,
     onUpdateSettings,
 }) {
@@ -142,6 +156,7 @@ export function DesignWorkspace({
     const [scope, setScope] = useState('all');
     const [toolsOpen, setToolsOpen] = useState(false);
     const [updatingNoise, setUpdatingNoise] = useState(false);
+    const [savedColors, setSavedColors] = useState(readFolderColors);
     const isMeeting = ['live', 'notes', 'replay'].includes(activeTab);
     const canRecord = isConnected && !session.isRecording && !session.isPaused && !session.isProcessing;
     const locked = session.isRecording || session.isPaused || session.isProcessing;
@@ -159,16 +174,14 @@ export function DesignWorkspace({
             cancelled = true;
         };
     }, [isConnected]);
-    let savedColors = {};
-    try {
-        savedColors = JSON.parse(localStorage.getItem('kesami.folder-colors') || '{}');
-    } catch {
-        /* Default palette works without local storage. */
-    }
-    const coloredFolders = folders.map((folder, index) => ({
-        ...folder,
-        color: savedColors[folder.id] || FOLDER_COLORS[index % FOLDER_COLORS.length],
-    }));
+    const coloredFolders = useMemo(
+        () =>
+            folders.map((folder, index) => ({
+                ...folder,
+                color: savedColors[folder.id] || FOLDER_COLORS[index % FOLDER_COLORS.length],
+            })),
+        [folders, savedColors]
+    );
     const openFolder = id => {
         setFolderId(id);
         setQuery('');
@@ -192,8 +205,10 @@ export function DesignWorkspace({
             const result = await apiRequest('/api/folders', { method: 'POST', body: { name: folderName.trim() } });
             const added = result.folders.find(folder => !folders.some(old => old.id === folder.id));
             if (added) {
+                const next = { ...savedColors, [added.id]: folderColor };
+                setSavedColors(next);
                 try {
-                    localStorage.setItem('kesami.folder-colors', JSON.stringify({ ...savedColors, [added.id]: folderColor }));
+                    localStorage.setItem(FOLDER_COLOR_KEY, JSON.stringify(next));
                 } catch {
                     /* Color still has a fallback. */
                 }
@@ -218,23 +233,17 @@ export function DesignWorkspace({
     );
     const list = activeTab === 'home' ? history.meetings.slice(0, 8) : visible;
     const folder = coloredFolders.find(item => item.id === folderId);
-    const plan = license?.tier ? `${license.tier[0].toUpperCase()}${license.tier.slice(1)} Plan` : 'Local workspace';
+    const plan = license?.tier ? `${license.tier[0].toUpperCase()}${license.tier.slice(1)} Plan` : 'Meeting workspace';
 
     return (
         <div className="ks-workspace">
             <aside className="ks-sidebar" aria-label="Workspace navigation">
                 <div className="ks-traffic drag-region">
-                    {!isDesktop && (
-                        <>
-                            <i />
-                            <i />
-                            <i />
-                        </>
-                    )}
+                    {!isDesktop && <span className="ks-sidebar-brand"><AudioLines aria-hidden="true" /> KESAMI</span>}
                 </div>
                 <div className="ks-new-meeting">
                     <button
-                        className={`ks-button ${locked ? 'ks-red' : 'ks-orange'}`}
+                        className={`ks-button ${locked ? 'ks-red' : 'ks-primary'}`}
                         disabled={!isConnected || session.isProcessing}
                         onClick={() => (locked ? setActiveTab('live') : session.onStart())}
                     >
@@ -249,12 +258,16 @@ export function DesignWorkspace({
                     </button>
                 </div>
                 <nav className="ks-sidebar-nav">
-                    <button className={activeTab === 'home' ? 'is-active' : ''} onClick={() => setActiveTab('home')}>
+                    <button aria-current={activeTab === 'home' ? 'page' : undefined} className={activeTab === 'home' ? 'is-active' : ''} onClick={() => setActiveTab('home')}>
                         <Home className="ks-home-icon" />
                         Home
                     </button>
-                    <button className={activeTab === 'ask' ? 'is-active' : ''} onClick={() => setActiveTab('ask')}>
-                        <HelpCircle />
+                    <button aria-current={activeTab === 'history' && folderId === 'all' ? 'page' : undefined} className={activeTab === 'history' && folderId === 'all' ? 'is-active' : ''} onClick={() => openFolder('all')}>
+                        <Library />
+                        All meetings
+                    </button>
+                    <button aria-current={activeTab === 'ask' ? 'page' : undefined} className={activeTab === 'ask' ? 'is-active' : ''} onClick={() => setActiveTab('ask')}>
+                        <Sparkles />
                         Ask AI
                     </button>
                     <div className="ks-folder-heading">
@@ -331,9 +344,9 @@ export function DesignWorkspace({
                         </span>
                     </button>
                     <div className="ks-footer-utility">
-                        <button onClick={() => setActiveTab('pricing')}>
-                            <Star />
-                            Upgrade
+                        <button onClick={onSettings}>
+                            <Settings />
+                            Settings
                         </button>
                         <button aria-label="Workspace tools" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}>
                             <MoreHorizontal />
@@ -354,14 +367,14 @@ export function DesignWorkspace({
                                 Podcast studio
                             </button>
                             <button disabled={locked} onClick={onSignOut}>
-                                Back to sign in
+                                Back to welcome
                             </button>
                         </div>
                     )}
                     <button className={`ks-profile ${activeTab === 'profile' ? 'is-active' : ''}`} onClick={() => setActiveTab('profile')}>
-                        <Avatar name="Local workspace" />
+                        <Avatar name={workspaceName} />
                         <span>
-                            My workspace<small>{plan}</small>
+                            {workspaceName}<small>{plan}</small>
                         </span>
                         <i className={isConnected ? 'online' : ''} title={connection} />
                     </button>
@@ -369,6 +382,10 @@ export function DesignWorkspace({
             </aside>
             <main className="ks-main">
                 <div className="ks-main-toolbar">
+                    <span className="ks-toolbar-context">{workspaceName}</span>
+                    <button type="button" className={`ks-service-status ${isConnected ? 'is-connected' : ''}`} onClick={isConnected ? onSettings : onRetry} title={isConnected ? 'Manage service connection' : 'Reconnect to your meeting service'}>
+                        <i aria-hidden="true" />{isConnected ? 'Service connected' : 'Service offline'}
+                    </button>
                     <button
                         className="ks-theme-toggle"
                         type="button"
@@ -384,7 +401,7 @@ export function DesignWorkspace({
                         <span>
                             {error ||
                                 history.error ||
-                                (banner.tone === 'destructive'
+                                (banner?.tone === 'destructive'
                                     ? 'Connection lost. Your meetings will appear when the service reconnects.'
                                     : banner.text)}
                         </span>
@@ -446,7 +463,7 @@ export function DesignWorkspace({
                                                                         hour12: false,
                                                                     })}
                                                                 </time>
-                                                                <i style={{ background: `${FOLDER_COLORS[index % FOLDER_COLORS.length]}66` }} />
+                                                                <i style={{ background: FOLDER_COLORS[index % FOLDER_COLORS.length] }} />
                                                                 <strong>{event.title}</strong>
                                                                 <small className={ended ? 'is-done' : ''}>
                                                                     {ended ? 'done' : countdownLabel(start - now)}
@@ -529,8 +546,11 @@ export function DesignWorkspace({
                             </div>
                             {!list.length && (
                                 <div className="ks-empty-card">
-                                    <h3>{history.isLoading ? 'Loading meetings…' : 'No meetings yet'}</h3>
-                                    <p>{query ? 'Try another search.' : 'Your recorded conversations will appear here.'}</p>
+                                    <h3>{history.isLoading ? 'Loading meetings…' : query ? 'No matching meetings' : folderId !== 'all' ? 'This folder is ready for meetings' : 'Your next conversation starts here'}</h3>
+                                    <p>{query ? 'Try a different title or a phrase from your meeting notes.' : 'Record a conversation to build a searchable collection of notes, decisions, and next steps.'}</p>
+                                    {!history.isLoading && !query && <button type="button" className="ks-button ks-primary" disabled={!canRecord} onClick={() => session.onStart()}>
+                                        <Mic /> Record your first meeting
+                                    </button>}
                                 </div>
                             )}
                         </div>
@@ -559,10 +579,10 @@ export function DesignWorkspace({
                     <div className="ks-ask-view">
                         <MeetingChatPanel
                             scope={scope === 'all' ? { type: 'all' } : { type: 'folder', folderId: scope }}
-                            scopeLabel={null}
+                            scopeLabel="Answers from your conversations"
                             scopeControl={
                                 <label className="ks-chat-scope">
-                                    Searching across
+                                    Search in
                                     <select aria-label="AI search scope" value={scope} onChange={event => setScope(event.target.value)}>
                                         <option value="all">All meetings</option>
                                         {folders.map(item => (
@@ -580,7 +600,9 @@ export function DesignWorkspace({
                 )}
                 {activeTab === 'podcast' && (
                     <div className="ks-podcast">
-                        <PodcastStudio meetings={history.meetings} activeMeeting={meeting} />
+                        <Suspense fallback={<p className="ks-chat-note">Opening the podcast studio…</p>}>
+                            <PodcastStudio meetings={history.meetings} activeMeeting={meeting} />
+                        </Suspense>
                     </div>
                 )}
                 {activeTab === 'profile' && (
@@ -589,12 +611,12 @@ export function DesignWorkspace({
                             <h1>My profile</h1>
                             <p>Manage your workspace and preferences.</p>
                             <section className="ks-account-card">
-                                <Avatar name="Local workspace" />
+                                <Avatar name={workspaceName} />
                                 <div>
-                                    <h2>My workspace</h2>
+                                    <h2>{workspaceName}</h2>
                                     <p>{plan}</p>
                                 </div>
-                                <span className="ks-tag">LOCAL</span>
+                                <span className="ks-tag">{isConnected ? 'CONNECTED' : 'OFFLINE'}</span>
                             </section>
                             <section className="ks-account-card ks-account-stack">
                                 <h2>Preferences</h2>
@@ -609,7 +631,7 @@ export function DesignWorkspace({
                                 </button>
                             </section>
                             <button className="ks-button" disabled={locked} onClick={onSignOut}>
-                                Back to sign in
+                                Back to welcome
                             </button>
                         </div>
                     </div>
@@ -629,7 +651,7 @@ export function DesignWorkspace({
                                     <li>Searchable meeting folders</li>
                                     <li>Screen and audio replay</li>
                                 </ul>
-                                <button className="ks-button ks-orange" onClick={onSettings}>
+                                <button className="ks-button ks-primary" onClick={onSettings}>
                                     Manage license
                                 </button>
                             </section>
@@ -674,7 +696,7 @@ export function DesignWorkspace({
                             <button type="button" className="ks-button" onClick={() => setCreating(false)}>
                                 Cancel
                             </button>
-                            <button className="ks-button ks-orange" disabled={busy || !folderName.trim()}>
+                            <button className="ks-button ks-primary" disabled={busy || !folderName.trim()}>
                                 {busy ? 'Creating…' : 'Create folder'}
                             </button>
                         </footer>

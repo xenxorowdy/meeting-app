@@ -201,10 +201,18 @@ function Fixture() {
     );
 }
 
-createRoot(document.getElementById('root')).render(
-    <TooltipProvider>
-        <div className="ks-app">
-            <Fixture />
-        </div>
-    </TooltipProvider>
-);
+const root = createRoot(document.getElementById('root'));
+
+function paint(theme) {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    root.render(
+        <TooltipProvider delayDuration={400} skipDelayDuration={200}>
+            <div className="ks-app" data-theme={theme}>
+                <Fixture />
+            </div>
+        </TooltipProvider>
+    );
+}
+
+window.fixtureSetTheme = paint;
+paint('dark');

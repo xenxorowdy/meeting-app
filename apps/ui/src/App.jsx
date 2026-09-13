@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTheme } from '@/lib/theme';
+import { usePreferences } from '@/hooks/usePreferences';
 import { useMeetingSession, SESSION_STATES } from '@/hooks/useMeetingSession';
 import { useTranscriptStream } from '@/hooks/useTranscriptStream';
 import { useMeetingHistory } from '@/hooks/useMeetingHistory';
@@ -7,10 +8,14 @@ import { useCalendar } from '@/hooks/useCalendar';
 import { eventForNow, attendeeNames } from '@/lib/calendarEvents';
 import { useMeetingReminder } from '@/hooks/useMeetingReminder';
 import { useShellCommands } from '@/hooks/useShellCommands';
-import { ExportModal } from '@/components/ExportModal';
-import { NewMeetingModal } from '@/components/NewMeetingModal';
-import { SettingsModal } from '@/components/SettingsModal';
 import { SourcePicker } from '@/components/SourcePicker';
+import { useOnceOpen } from '@/hooks/useOnceOpen';
+
+// Each of these is only reachable through a deliberate action, so their code is
+// fetched on first use instead of sitting in the startup bundle.
+const ExportModal = lazy(() => import('@/components/ExportModal').then(module => ({ default: module.ExportModal })));
+const NewMeetingModal = lazy(() => import('@/components/NewMeetingModal').then(module => ({ default: module.NewMeetingModal })));
+const SettingsModal = lazy(() => import('@/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 import { isRecordingSupported } from '@/lib/screenRecorder';
 import { DesignWorkspace } from '@/components/design/DesignWorkspace';
 import { SignInView } from '@/components/design/SignInView';
@@ -24,25 +29,30 @@ const VIEWS = ['home', 'ask', 'live', 'notes', 'replay', 'podcast', 'history'];
 
 export default function App() {
     const [entered, setEntered] = useState(false);
+    const [openSettingsOnEntry, setOpenSettingsOnEntry] = useState(false);
     const [theme, setTheme] = useTheme();
+    const [preferences] = usePreferences();
     return (
         <div className="ks-app" data-theme={theme}>
             {entered ? (
-                <ConnectedApp theme={theme} setTheme={setTheme} onSignOut={() => setEntered(false)} />
+                <ConnectedApp theme={theme} setTheme={setTheme} preferences={preferences} openSettingsOnEntry={openSettingsOnEntry} onSignOut={() => setEntered(false)} />
             ) : (
-                <SignInView onContinue={() => setEntered(true)} />
+                <SignInView onContinue={destination => { setOpenSettingsOnEntry(destination === 'settings'); setEntered(true); }} />
             )}
         </div>
     );
 }
 
-function ConnectedApp({ onSignOut, theme, setTheme }) {
+function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnEntry }) {
     const [activeTab, setActiveTab] = useState('home');
     const [citationFocus, setCitationFocus] = useState(null);
     const [isExportOpen, setIsExportOpen] = useState(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(openSettingsOnEntry);
     const [isNewMeetingOpen, setIsNewMeetingOpen] = useState(false);
     const [pendingStart, setPendingStart] = useState(null);
+    const exportMounted = useOnceOpen(isExportOpen);
+    const settingsMounted = useOnceOpen(isSettingsOpen);
+    const newMeetingMounted = useOnceOpen(isNewMeetingOpen);
 
     const {
         backendUrl,
@@ -52,7 +62,7 @@ function ConnectedApp({ onSignOut, theme, setTheme }) {
         activeMeeting,
         interimTurns,
         durationSeconds,
-        audioLevels,
+        subscribeAudioLevels,
         systemAudioSeen,
         micMuted,
         systemAudioMuted,
@@ -243,7 +253,7 @@ function ConnectedApp({ onSignOut, theme, setTheme }) {
     }, [handleStartRecording, handleStopRecording, isConnected, isPaused, isProcessing, isRecording]);
 
     const banner = !isConnected
-        ? { tone: 'destructive', text: `Can’t reach the backend at ${backendUrl}. Start it with npm run start:backend.` }
+        ? { tone: 'destructive', text: connection === 'connecting' ? 'Connecting to your workspace…' : 'Your workspace is offline. Check your connection and service access in Settings.' }
         : micError
           ? { tone: 'warning', text: `Microphone unavailable: ${micError}` }
           : error
@@ -255,6 +265,8 @@ function ConnectedApp({ onSignOut, theme, setTheme }) {
     return (
         <div className="ks-app" data-theme={theme}>
             <DesignWorkspace
+                workspaceName={preferences.workspaceName}
+                displayName={preferences.displayName}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 meeting={activeMeeting}
@@ -267,7 +279,7 @@ function ConnectedApp({ onSignOut, theme, setTheme }) {
                     isPaused,
                     isProcessing,
                     durationSeconds,
-                    audioLevels,
+                    subscribeAudioLevels,
                     micMuted,
                     systemAudioMuted,
                     systemAudioSeen,
@@ -313,25 +325,32 @@ function ConnectedApp({ onSignOut, theme, setTheme }) {
                     startWithSource(requested?.title || '', sourceId, requested?.event || null, mode);
                 }}
             />
-            <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} meeting={activeMeeting} />
-            <NewMeetingModal
-                isOpen={isNewMeetingOpen}
-                onClose={() => setIsNewMeetingOpen(false)}
-                providers={calendar.providers}
-                onCreated={calendar.refreshEvents}
-            />
-            <SettingsModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                settings={settings}
-                license={license}
-                engine={engine}
-                backendUrl={backendUrl}
-                isConnected={isConnected}
-                calendar={calendar}
-                onUpdateSettings={updateSettings}
-                onActivateLicense={activateLicense}
-            />
+            <Suspense fallback={null}>
+                {exportMounted && <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} meeting={activeMeeting} />}
+                {newMeetingMounted && (
+                    <NewMeetingModal
+                        isOpen={isNewMeetingOpen}
+                        onClose={() => setIsNewMeetingOpen(false)}
+                        providers={calendar.providers}
+                        onCreated={calendar.refreshEvents}
+                    />
+                )}
+                {settingsMounted && (
+                    <SettingsModal
+                        isOpen={isSettingsOpen}
+                        onClose={() => setIsSettingsOpen(false)}
+                        settings={settings}
+                        license={license}
+                        engine={engine}
+                        backendUrl={backendUrl}
+                        isConnected={isConnected}
+                        calendar={calendar}
+                        onUpdateSettings={updateSettings}
+                        onActivateLicense={activateLicense}
+                        sessionActive={!isIdle}
+                    />
+                )}
+            </Suspense>
         </div>
     );
 }

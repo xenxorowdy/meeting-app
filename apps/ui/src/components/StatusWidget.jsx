@@ -1,6 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppWindow, ChevronDown, GripVertical, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { JumpingBalls } from '@/components/JumpingBalls';
+import { StreamingText } from '@/components/StreamingText';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
 
 const shell = globalThis.alphaWidget || null;
@@ -15,19 +17,24 @@ function formatClock(totalSeconds) {
 
 function describe(connection, sessionState) {
     if (connection !== 'online') {
-        return { label: connection === 'connecting' ? 'Connecting' : 'Offline', dot: 'bg-muted-foreground/50', pulse: false };
+        return {
+            label: connection === 'connecting' ? 'Connecting' : 'Offline',
+            dot: 'bg-muted-foreground/50',
+            balls: connection === 'connecting',
+            tint: 'text-muted-foreground',
+        };
     }
     switch (sessionState) {
         case 'recording':
-            return { label: 'Recording', dot: 'bg-destructive', pulse: true };
+            return { label: 'Recording', dot: 'bg-destructive', balls: true, tint: 'text-destructive' };
         case 'paused':
-            return { label: 'Paused', dot: 'bg-warning', pulse: false };
+            return { label: 'Paused', dot: 'bg-warning', balls: false };
         case 'processing':
-            return { label: 'Transcribing', dot: 'bg-primary', pulse: true };
+            return { label: 'Transcribing', dot: 'bg-primary', balls: true, tint: 'text-primary' };
         case 'completed':
-            return { label: 'Notes ready', dot: 'bg-success', pulse: false };
+            return { label: 'Notes ready', dot: 'bg-success', balls: false };
         default:
-            return { label: 'Ready', dot: 'bg-muted-foreground', pulse: false };
+            return { label: 'Ready', dot: 'bg-muted-foreground', balls: false };
     }
 }
 
@@ -56,8 +63,8 @@ function TranscriptFeed({ turns, interimTurns }) {
                         {turn.speaker}
                     </span>
                     <span className="min-w-0 flex-1 text-footnote text-foreground">
-                        {turn.text}
-                        {turn.interim && <span className="ml-1 animate-breathe text-muted-foreground">▍</span>}
+                        <StreamingText text={turn.text} stream={Boolean(turn.interim)} />
+                        {turn.interim && <JumpingBalls size="sm" className="ml-1.5 align-middle text-primary" />}
                     </span>
                 </div>
             ))}
@@ -94,10 +101,13 @@ export function StatusWidget() {
                     aria-label={expanded ? 'Hide the live transcript' : 'Show the live transcript'}
                     className="no-drag flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-lg px-1 text-left transition-colors duration-200 ease-out hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                    <span className="relative flex size-2 shrink-0">
-                        {status.pulse && <span className={cn('absolute inline-flex size-2 animate-ping rounded-full opacity-60', status.dot)} />}
-                        <span className={cn('relative inline-flex size-2 rounded-full', status.dot)} />
-                    </span>
+                    {status.balls ? (
+                        <JumpingBalls size="sm" className={cn('shrink-0', status.tint)} />
+                    ) : (
+                        <span className="relative flex size-2 shrink-0">
+                            <span className={cn('relative inline-flex size-2 rounded-full', status.dot)} />
+                        </span>
+                    )}
                     <span className="min-w-0 flex-1 truncate text-footnote font-medium">{status.label}</span>
                     {isLive && <span className="tnum shrink-0 text-footnote text-muted-foreground">{formatClock(durationSeconds)}</span>}
                 </button>
