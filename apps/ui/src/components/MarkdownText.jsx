@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/utils/cn';
+import { SourceChip } from '@/components/SourceChip';
 
 const HEADING_STYLES = {
     1: 'text-title3 font-semibold',
@@ -8,8 +9,8 @@ const HEADING_STYLES = {
     4: 'text-body font-semibold',
 };
 
-function renderInline(text, keyPrefix) {
-    const segments = text.split(/(\*\*[^*]+\*\*|`[^`]+`|_[^_]+_)/g).filter(Boolean);
+function renderInline(text, keyPrefix, citations = [], onOpenCitation) {
+    const segments = text.split(/(\*\*[^*]+\*\*|`[^`]+`|_[^_]+_|\[\d+\])/g).filter(Boolean);
 
     return segments.map((segment, index) => {
         const key = `${keyPrefix}-${index}`;
@@ -17,7 +18,7 @@ function renderInline(text, keyPrefix) {
         if (segment.startsWith('**') && segment.endsWith('**')) {
             return (
                 <strong key={key} className="font-semibold">
-                    {segment.slice(2, -2)}
+                    {renderInline(segment.slice(2, -2), key, citations, onOpenCitation)}
                 </strong>
             );
         }
@@ -33,11 +34,17 @@ function renderInline(text, keyPrefix) {
         if (segment.startsWith('_') && segment.endsWith('_') && segment.length > 2) {
             return (
                 <em key={key} className="italic">
-                    {segment.slice(1, -1)}
+                    {renderInline(segment.slice(1, -1), key, citations, onOpenCitation)}
                 </em>
             );
         }
 
+        const citation = /^\[\d+\]$/.test(segment)
+            ? citations.find(item => String(item.number) === segment.slice(1, -1))
+            : null;
+        if (citation && onOpenCitation) {
+            return <SourceChip key={key} citation={citation} onOpen={onOpenCitation} />;
+        }
         return <React.Fragment key={key}>{segment}</React.Fragment>;
     });
 }
@@ -124,10 +131,11 @@ function splitRow(row) {
         .map(cell => cell.trim());
 }
 
-export function MarkdownText({ markdown, className }) {
+export function MarkdownText({ markdown, className, citations = [], onOpenCitation }) {
     if (!markdown || !markdown.trim()) return null;
 
     const blocks = parseBlocks(markdown);
+    const inline = (text, key) => renderInline(text, key, citations, onOpenCitation);
 
     return (
         <div className={cn('space-y-4 text-body', className)}>
@@ -136,7 +144,7 @@ export function MarkdownText({ markdown, className }) {
                     const Tag = block.level <= 2 ? 'h5' : 'h6';
                     return (
                         <Tag key={index} className={cn('pt-1', HEADING_STYLES[block.level] || HEADING_STYLES[4])}>
-                            {renderInline(block.text, `h-${index}`)}
+                            {inline(block.text, `h-${index}`)}
                         </Tag>
                     );
                 }
@@ -147,7 +155,7 @@ export function MarkdownText({ markdown, className }) {
                             {block.items.map((item, itemIndex) => (
                                 <li key={itemIndex} className="flex gap-2">
                                     <span className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground" aria-hidden="true" />
-                                    <span>{renderInline(item, `li-${index}-${itemIndex}`)}</span>
+                                    <span>{inline(item, `li-${index}-${itemIndex}`)}</span>
                                 </li>
                             ))}
                         </ul>
@@ -165,7 +173,7 @@ export function MarkdownText({ markdown, className }) {
                                     <tr className="bg-muted text-footnote text-muted-foreground">
                                         {headers.map((header, headerIndex) => (
                                             <th key={headerIndex} scope="col" className="px-2 py-2 font-medium">
-                                                {header}
+                                                {inline(header, `th-${index}-${headerIndex}`)}
                                             </th>
                                         ))}
                                     </tr>
@@ -175,7 +183,7 @@ export function MarkdownText({ markdown, className }) {
                                         <tr key={rowIndex}>
                                             {splitRow(row).map((cell, cellIndex) => (
                                                 <td key={cellIndex} className="px-2 py-2">
-                                                    {renderInline(cell, `td-${index}-${rowIndex}-${cellIndex}`)}
+                                                    {inline(cell, `td-${index}-${rowIndex}-${cellIndex}`)}
                                                 </td>
                                             ))}
                                         </tr>
@@ -186,7 +194,7 @@ export function MarkdownText({ markdown, className }) {
                     );
                 }
 
-                return <p key={index}>{renderInline(block.lines.join(' '), `p-${index}`)}</p>;
+                return <p key={index}>{inline(block.lines.join(' '), `p-${index}`)}</p>;
             })}
         </div>
     );

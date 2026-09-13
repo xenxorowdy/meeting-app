@@ -36,7 +36,7 @@ const SPECS: [Spec; 2] = [
         label: "Google Calendar",
         auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
         token_url: "https://oauth2.googleapis.com/token",
-        scope: "openid email https://www.googleapis.com/auth/calendar.events.readonly",
+        scope: "openid email https://www.googleapis.com/auth/calendar.events",
         redirect_host: "127.0.0.1",
         extra_auth: &[("access_type", "offline"), ("prompt", "consent")],
     },
@@ -463,6 +463,43 @@ impl CalendarService {
         json!({ "events": events, "warnings": warnings })
     }
 
+    pub async fn create_event(&self, provider: &str, draft: &Value) -> Result<Value, String> {
+        if provider != GOOGLE {
+            return Err(
+                "Outlook is connected read-only. Alpha can create events on Google Calendar; \
+                 Microsoft support needs a wider permission than the one this account granted."
+                    .to_string(),
+            );
+        }
+
+        let body = google_event_body(draft)?;
+        let token = self.access_token(provider).await?;
+        let response = self
+            .http
+            .post("https://www.googleapis.com/calendar/v3/calendars/primary/events")
+            .query(&[("conferenceDataVersion", "1"), ("sendUpdates", "all")])
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| format!("the calendar request failed: {error}"))?;
+
+        let status = response.status();
+        let created: Value = response
+            .json()
+            .await
+            .map_err(|error| format!("the calendar response was not JSON: {error}"))?;
+        if !status.is_success() {
+            let detail = created
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .unwrap_or("the calendar rejected the new event");
+            return Err(detail.to_string());
+        }
+
+        normalize(provider, &created).ok_or_else(|| "the calendar returned an event Alpha could not read".to_string())
+    }
+
     async fn fetch(&self, provider: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Value>, String> {
         let token = self.access_token(provider).await?;
         let request = match provider {
@@ -521,6 +558,60 @@ impl CalendarService {
     }
 }
 
+fn google_event_body(draft: &Value) -> Result<Value, String> {
+    let title = draft
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("a meeting needs a title")?;
+    let start = draft.get("start").and_then(Value::as_str).ok_or("a meeting needs a start time")?;
+    let end = draft.get("end").and_then(Value::as_str).ok_or("a meeting needs an end time")?;
+    let start_at = DateTime::parse_from_rfc3339(start).map_err(|_| "the start time is not a valid timestamp")?;
+    let end_at = DateTime::parse_from_rfc3339(end).map_err(|_| "the end time is not a valid timestamp")?;
+    if end_at <= start_at {
+        return Err("the meeting has to end after it starts".to_string());
+    }
+
+    let attendees: Vec<Value> = draft
+        .get("attendees")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|email| email.contains('@'))
+                .map(|email| json!({ "email": email }))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut body = json!({
+        "summary": title,
+        "start": { "dateTime": start },
+        "end": { "dateTime": end },
+        "attendees": attendees,
+    });
+    if let Some(description) = draft
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        body["description"] = json!(description);
+    }
+    if draft.get("addConference").and_then(Value::as_bool) == Some(true) {
+        body["conferenceData"] = json!({
+            "createRequest": {
+                "requestId": Uuid::new_v4().to_string(),
+                "conferenceSolutionKey": { "type": "hangoutsMeet" },
+            }
+        });
+    }
+
+    Ok(body)
+}
+
 fn normalize(provider: &str, item: &Value) -> Option<Value> {
     if provider == GOOGLE {
         if item.get("status").and_then(Value::as_str) == Some("cancelled") {
@@ -547,6 +638,15 @@ fn normalize(provider: &str, item: &Value) -> Option<Value> {
                     .collect()
             })
             .unwrap_or_default();
+        let join_url = item
+            .get("hangoutLink")
+            .and_then(Value::as_str)
+            .filter(|url| is_http_url(url))
+            .or_else(|| conference_url(item));
+        let links = supplied_links([
+            item.get("description").and_then(Value::as_str),
+            item.get("location").and_then(Value::as_str),
+        ]);
         Some(json!({
             "id": item.get("id").and_then(Value::as_str),
             "provider": GOOGLE,
@@ -554,8 +654,9 @@ fn normalize(provider: &str, item: &Value) -> Option<Value> {
             "start": start,
             "end": end,
             "location": item.get("location").and_then(Value::as_str),
-            "joinUrl": item.get("hangoutLink").and_then(Value::as_str)
-                .or_else(|| item.pointer("/conferenceData/entryPoints/0/uri").and_then(Value::as_str)),
+            "joinUrl": join_url,
+            "links": links,
+            "eventUrl": item.get("htmlLink").and_then(Value::as_str).filter(|url| is_http_url(url)),
             "organizer": item.pointer("/organizer/email").and_then(Value::as_str),
             "attendees": attendees,
         }))
@@ -579,6 +680,16 @@ fn normalize(provider: &str, item: &Value) -> Option<Value> {
                     .collect()
             })
             .unwrap_or_default();
+        let join_url = item
+            .pointer("/onlineMeeting/joinUrl")
+            .or_else(|| item.get("onlineMeetingUrl"))
+            .and_then(Value::as_str)
+            .filter(|url| is_http_url(url));
+        let links = supplied_links([
+            item.pointer("/body/content").and_then(Value::as_str),
+            item.get("bodyPreview").and_then(Value::as_str),
+            item.pointer("/location/displayName").and_then(Value::as_str),
+        ]);
         Some(json!({
             "id": item.get("id").and_then(Value::as_str),
             "provider": MICROSOFT,
@@ -586,11 +697,57 @@ fn normalize(provider: &str, item: &Value) -> Option<Value> {
             "start": normalize_graph_time(start),
             "end": normalize_graph_time(end),
             "location": item.pointer("/location/displayName").and_then(Value::as_str),
-            "joinUrl": item.pointer("/onlineMeeting/joinUrl").and_then(Value::as_str),
+            "joinUrl": join_url,
+            "links": links,
+            "eventUrl": item.get("webLink").and_then(Value::as_str).filter(|url| is_http_url(url)),
             "organizer": item.pointer("/organizer/emailAddress/address").and_then(Value::as_str),
             "attendees": attendees,
         }))
     }
+}
+
+fn is_http_url(value: &str) -> bool {
+    value.starts_with("https://") || value.starts_with("http://")
+}
+
+fn conference_url(item: &Value) -> Option<&str> {
+    let entries = item.pointer("/conferenceData/entryPoints")?.as_array()?;
+    entries
+        .iter()
+        .find(|entry| entry.get("entryPointType").and_then(Value::as_str) == Some("video"))
+        .and_then(|entry| entry.get("uri").and_then(Value::as_str))
+        .filter(|url| is_http_url(url))
+        .or_else(|| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.get("uri").and_then(Value::as_str))
+                .find(|url| is_http_url(url))
+        })
+}
+
+fn supplied_links<const N: usize>(fields: [Option<&str>; N]) -> Vec<String> {
+    let mut links = Vec::new();
+    for field in fields.into_iter().flatten() {
+        let mut rest = field;
+        while let Some(offset) = [rest.find("http://"), rest.find("https://")]
+            .into_iter()
+            .flatten()
+            .min()
+        {
+            rest = &rest[offset..];
+            let end = rest
+                .find(|character: char| character.is_whitespace() || matches!(character, '"' | '\'' | '<' | '>'))
+                .unwrap_or(rest.len());
+            let url = rest[..end]
+                .trim_end_matches(|character| matches!(character, '.' | ',' | ';' | ':' | ')' | ']' | '}'))
+                .replace("&amp;", "&");
+            if !url.is_empty() && !links.contains(&url) {
+                links.push(url);
+            }
+            rest = &rest[end..];
+        }
+    }
+    links
 }
 
 fn normalize_graph_time(value: &str) -> String {
@@ -654,6 +811,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn google_requests_event_write_access_with_fresh_offline_consent() {
+        let spec = spec_for(GOOGLE).unwrap();
+        let scopes: Vec<_> = spec.scope.split_whitespace().collect();
+        assert_eq!(scopes, vec!["openid", "email", "https://www.googleapis.com/auth/calendar.events"]);
+        assert!(spec.extra_auth.contains(&("access_type", "offline")));
+        assert!(spec.extra_auth.contains(&("prompt", "consent")));
+    }
+
+    #[test]
+    fn microsoft_is_read_only_and_says_why() {
+        let spec = spec_for(MICROSOFT).unwrap();
+        assert!(spec.scope.contains("Calendars.Read"));
+        assert!(!spec.scope.contains("Calendars.ReadWrite"));
+    }
+
+    #[test]
+    fn a_google_draft_becomes_a_calendar_insert_body() {
+        let body = google_event_body(&json!({
+            "title": "  Design review  ",
+            "start": "2026-08-31T17:00:00Z",
+            "end": "2026-08-31T17:45:00Z",
+            "attendees": ["asha@example.com", "  ben@example.com ", "not-an-address", ""],
+            "description": " Bring the mocks ",
+            "addConference": true
+        }))
+        .expect("body");
+
+        assert_eq!(body["summary"], "Design review");
+        assert_eq!(body["start"]["dateTime"], "2026-08-31T17:00:00Z");
+        assert_eq!(body["end"]["dateTime"], "2026-08-31T17:45:00Z");
+        assert_eq!(body["description"], "Bring the mocks");
+        assert_eq!(
+            body["attendees"],
+            json!([{ "email": "asha@example.com" }, { "email": "ben@example.com" }])
+        );
+        assert_eq!(body["conferenceData"]["createRequest"]["conferenceSolutionKey"]["type"], "hangoutsMeet");
+        assert!(!body["conferenceData"]["createRequest"]["requestId"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_draft_without_a_conference_asks_google_for_no_link() {
+        let body = google_event_body(&json!({
+            "title": "Solo hold",
+            "start": "2026-08-31T17:00:00Z",
+            "end": "2026-08-31T17:45:00Z"
+        }))
+        .expect("body");
+
+        assert_eq!(body.get("conferenceData"), None);
+        assert_eq!(body.get("description"), None);
+        assert_eq!(body["attendees"], json!([]));
+    }
+
+    #[test]
+    fn a_draft_missing_a_title_or_ending_before_it_starts_is_refused() {
+        let slot = |extra: Value| {
+            let mut draft = json!({ "start": "2026-08-31T17:00:00Z", "end": "2026-08-31T17:45:00Z" });
+            for (key, value) in extra.as_object().unwrap() {
+                draft[key] = value.clone();
+            }
+            draft
+        };
+
+        assert!(google_event_body(&slot(json!({ "title": "   " }))).is_err());
+        assert!(google_event_body(&slot(json!({}))).is_err());
+        assert!(google_event_body(&json!({ "title": "Backwards", "start": "2026-08-31T17:45:00Z", "end": "2026-08-31T17:00:00Z" })).is_err());
+        assert!(google_event_body(&json!({ "title": "Same", "start": "2026-08-31T17:00:00Z", "end": "2026-08-31T17:00:00Z" })).is_err());
+        assert!(google_event_body(&json!({ "title": "Broken", "start": "not a date", "end": "2026-08-31T17:00:00Z" })).is_err());
+    }
+
+    #[test]
     fn challenge_matches_rfc7636_example() {
         let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
         assert_eq!(challenge_for(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
@@ -684,12 +912,41 @@ mod tests {
             "start": { "dateTime": "2026-08-30T10:00:00Z" },
             "end": { "dateTime": "2026-08-30T10:15:00Z" },
             "hangoutLink": "https://meet.google.com/xyz",
+            "description": "Agenda: https://docs.example/agenda. Backup: https://call.example/room?x=1&amp;y=2",
+            "htmlLink": "https://calendar.google.com/event/abc",
             "attendees": [{ "email": "a@b.com", "displayName": "A B" }]
         });
         let event = normalize(GOOGLE, &item).expect("event");
         assert_eq!(event["title"], "Standup");
         assert_eq!(event["joinUrl"], "https://meet.google.com/xyz");
+        assert_eq!(event["links"], json!(["https://docs.example/agenda", "https://call.example/room?x=1&y=2"]));
+        assert_eq!(event["eventUrl"], "https://calendar.google.com/event/abc");
         assert_eq!(event["attendees"][0]["email"], "a@b.com");
+    }
+
+    #[test]
+    fn provider_links_use_video_conferences_and_supplied_urls() {
+        let google = json!({
+            "id": "g",
+            "start": { "dateTime": "2026-08-30T10:00:00Z" },
+            "conferenceData": { "entryPoints": [
+                { "entryPointType": "phone", "uri": "tel:+123" },
+                { "entryPointType": "video", "uri": "https://meet.example/google" }
+            ] }
+        });
+        assert_eq!(normalize(GOOGLE, &google).unwrap()["joinUrl"], "https://meet.example/google");
+
+        let microsoft = json!({
+            "id": "m",
+            "start": { "dateTime": "2026-08-30T10:00:00" },
+            "onlineMeetingUrl": "https://teams.example/join",
+            "bodyPreview": "Read https://docs.example/pre-read before joining",
+            "webLink": "https://outlook.example/event"
+        });
+        let event = normalize(MICROSOFT, &microsoft).unwrap();
+        assert_eq!(event["joinUrl"], "https://teams.example/join");
+        assert_eq!(event["links"], json!(["https://docs.example/pre-read"]));
+        assert_eq!(event["eventUrl"], "https://outlook.example/event");
     }
 
     #[test]

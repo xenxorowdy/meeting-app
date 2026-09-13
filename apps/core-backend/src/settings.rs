@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 
 /// Settings the backend understands. Anything else is rejected with a warning so
 /// the UI finds out rather than believing a write landed.
-const KNOWN_SETTINGS: [&str; 17] = [
+const KNOWN_SETTINGS: [&str; 19] = [
     "transcriptionProvider",
     "whisperModel",
     "sttLanguage",
@@ -30,6 +30,8 @@ const KNOWN_SETTINGS: [&str; 17] = [
     "summaryProvider",
     "autoSummarize",
     "echoSuppression",
+    "noiseSuppression",
+    "sarvamDiarizeAfterMeeting",
     "micDeviceId",
     "systemDeviceId",
     "recordScreen",
@@ -45,7 +47,14 @@ const SARVAM_KEY: &str = "sarvamApiKey";
 /// Computed fields the UI reads back and then sends again on the next save. They
 /// are not settings, but they are not mistakes either, so accept them silently
 /// rather than warning the user about their own round trip.
-const IGNORED_ON_WRITE: [&str; 4] = [GEMINI_KEY, "geminiApiKeySet", SARVAM_KEY, "sarvamApiKeySet"];
+const IGNORED_ON_WRITE: [&str; 14] = [
+    GEMINI_KEY, "geminiApiKeySet", SARVAM_KEY, "sarvamApiKeySet",
+    // Calendar credentials are handled separately by the settings route.
+    "googleCalendarClientId", "googleCalendarClientSecret",
+    "googleCalendarClientIdSet", "googleCalendarClientSecretSet", "googleCalendarConnected",
+    "microsoftCalendarClientId", "microsoftCalendarClientSecret",
+    "microsoftCalendarClientIdSet", "microsoftCalendarClientSecretSet", "microsoftCalendarConnected",
+];
 
 /// Where both files live. Deliberately derived the same way as the meeting store
 /// so a single `ALPHA_DATA_DIR` moves everything together.
@@ -135,6 +144,10 @@ impl SettingsStore {
             out.insert(
                 format!("{provider}CalendarClientIdSet"),
                 Value::Bool(credentials.contains_key(&format!("{provider}CalendarClientId"))),
+            );
+            out.insert(
+                format!("{provider}CalendarClientSecretSet"),
+                Value::Bool(credentials.contains_key(&format!("{provider}CalendarClientSecret"))),
             );
         }
         Value::Object(out)
@@ -248,6 +261,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn calendar_credentials_stay_private_and_settings_round_trip_without_warnings() {
+        let dir = scratch("calendar-credentials");
+        let store = store_in(&dir).await;
+        assert_eq!(store.public_value().await["googleCalendarClientSecretSet"], false);
+        for provider in ["google", "microsoft"] {
+            let id_key = format!("{provider}CalendarClientId");
+            let secret_key = format!("{provider}CalendarClientSecret");
+            store.set_credential(&id_key, Some("test-client-id")).await.unwrap();
+            store.set_credential(&secret_key, Some("test-client-secret")).await.unwrap();
+
+            let public = store.public_value().await;
+            assert_eq!(public[format!("{provider}CalendarClientSecretSet")], true);
+            assert!(public.get(&secret_key).is_none());
+            assert!(public.get(&id_key).is_none());
+            let mut incoming = public.as_object().unwrap().clone();
+            incoming.insert(id_key.clone(), json!("test-client-id"));
+            incoming.insert(secret_key.clone(), json!("test-client-secret"));
+            let (rejected, result) = store.merge(&incoming).await;
+            result.unwrap();
+            assert!(rejected.is_empty());
+
+            let ordinary = read_object(&dir.join("settings.json")).await;
+            assert!(!ordinary.contains_key(&secret_key));
+            assert!(!ordinary.contains_key(&id_key));
+            let private = read_object(&dir.join("credentials.json")).await;
+            assert_eq!(private[&secret_key], "test-client-secret");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(dir.join("credentials.json")).unwrap().permissions().mode();
+                assert_eq!(mode & 0o777, 0o600);
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn round_trips_known_settings_and_rejects_unknown_ones() {
         let dir = scratch("round-trip");
         let store = store_in(&dir).await;
@@ -255,6 +304,9 @@ mod tests {
         let mut incoming = Map::new();
         incoming.insert("sttLanguage".into(), json!("auto"));
         incoming.insert("autoSummarize".into(), json!(false));
+        incoming.insert("noiseSuppression".into(), json!(false));
+        incoming.insert("echoSuppression".into(), json!(true));
+        incoming.insert("sarvamDiarizeAfterMeeting".into(), json!(true));
         incoming.insert("somethingInvented".into(), json!("x"));
 
         let (rejected, result) = store.merge(&incoming).await;
@@ -275,6 +327,9 @@ mod tests {
             Some("auto")
         );
         assert_eq!(reloaded.get_bool("autoSummarize").await, Some(false));
+        assert_eq!(reloaded.get_bool("noiseSuppression").await, Some(false));
+        assert_eq!(reloaded.get_bool("echoSuppression").await, Some(true));
+        assert_eq!(reloaded.get_bool("sarvamDiarizeAfterMeeting").await, Some(true));
         assert!(reloaded.get_str("somethingInvented").await.is_none());
     }
 

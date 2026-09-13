@@ -31,21 +31,22 @@ function describe(connection, sessionState) {
     }
 }
 
-function TranscriptFeed({ turns }) {
+function TranscriptFeed({ turns, interimTurns }) {
     const endRef = useRef(null);
+    const pending = interimTurns.filter(turn => turn.text);
 
     useLayoutEffect(() => {
         endRef.current?.scrollIntoView({ block: 'end' });
-    }, [turns.length]);
+    }, [turns.length, pending.length, pending.map(turn => turn.text).join('')]);
 
-    if (turns.length === 0) {
+    if (turns.length === 0 && pending.length === 0) {
         return <p className="px-3 py-6 text-center text-footnote text-muted-foreground">Nothing transcribed yet.</p>;
     }
 
     return (
         <div className="flex flex-col gap-2 px-3 py-2">
-            {turns.map(turn => (
-                <div key={turn.id} className="flex gap-2">
+            {[...turns, ...pending].map(turn => (
+                <div key={turn.id} className={cn('flex gap-2', turn.interim && 'opacity-70')}>
                     <span
                         className={cn(
                             'w-14 shrink-0 truncate text-footnote font-medium',
@@ -54,7 +55,10 @@ function TranscriptFeed({ turns }) {
                     >
                         {turn.speaker}
                     </span>
-                    <span className="min-w-0 flex-1 text-footnote text-foreground">{turn.text}</span>
+                    <span className="min-w-0 flex-1 text-footnote text-foreground">
+                        {turn.text}
+                        {turn.interim && <span className="ml-1 animate-breathe text-muted-foreground">▍</span>}
+                    </span>
                 </div>
             ))}
             <div ref={endRef} />
@@ -63,7 +67,7 @@ function TranscriptFeed({ turns }) {
 }
 
 export function StatusWidget() {
-    const { connection, sessionState, meeting, turns, durationSeconds, isLive } = useLiveStatus();
+    const { connection, sessionState, meeting, turns, interimTurns, durationSeconds, isLive } = useLiveStatus();
     const [expanded, setExpanded] = useState(false);
     const status = describe(connection, sessionState);
 
@@ -137,7 +141,7 @@ export function StatusWidget() {
                                 Waiting for the Alpha backend. The transcript appears here once it answers.
                             </p>
                         ) : (
-                            <TranscriptFeed turns={turns} />
+                            <TranscriptFeed turns={turns} interimTurns={interimTurns} />
                         )}
                     </div>
                 </div>

@@ -108,8 +108,15 @@ const { COLLAPSED, EXPANDED, SCREEN_MARGIN, cornerBounds } = widget._testing;
 
 function open(onActivateMain = () => {}) {
     widget.destroy();
+    widget.setLive(false);
     const created = widget.create({ devUrl: null, distFile: '/dist/widget.html', preload: '/pre.js', onActivateMain });
     created.emit('ready-to-show');
+    return created;
+}
+
+function openLive(onActivateMain = () => {}) {
+    const created = open(onActivateMain);
+    widget.setLive(true);
     return created;
 }
 
@@ -143,8 +150,21 @@ test('a work area smaller than the expanded panel still yields a reachable origi
     assert.equal(after.y, tiny.y + SCREEN_MARGIN);
 });
 
-test('the widget opens without stealing focus and survives a full-screen call', () => {
+test('the widget stays hidden until a meeting is being transcribed', () => {
     const created = open();
+
+    assert.equal(created.visible, false, 'no meeting is running yet');
+
+    invoke('widget:set-live', created.webContents, true);
+    assert.equal(created.visible, true);
+
+    invoke('widget:set-live', created.webContents, false);
+    assert.equal(created.visible, false, 'the meeting ended, so the indicator has nothing to report');
+    assert.equal(created.isDestroyed(), false);
+});
+
+test('the widget opens without stealing focus and survives a full-screen call', () => {
+    const created = openLive();
 
     assert.equal(created.visible, true);
     assert.equal(created.focusStolen, false);
@@ -156,7 +176,7 @@ test('the widget opens without stealing focus and survives a full-screen call', 
 });
 
 test('window-scoped channels refuse a sender that is not the widget', () => {
-    const created = open();
+    const created = openLive();
     const impostor = { id: 'some-other-page' };
 
     assert.equal(invoke('widget:set-expanded', impostor, true), false);
@@ -167,7 +187,7 @@ test('window-scoped channels refuse a sender that is not the widget', () => {
 });
 
 test('the widget expands and collapses on its own request', () => {
-    const created = open();
+    const created = openLive();
 
     assert.equal(invoke('widget:set-expanded', created.webContents, true), true);
     assert.equal(created.bounds.height, EXPANDED.height);
@@ -185,7 +205,7 @@ test('opening the main window from the widget goes through the shell callback', 
 });
 
 test('re-enabling the preference clears a dismissal from earlier in the session', () => {
-    const created = open();
+    const created = openLive();
 
     invoke('widget:hide', created.webContents);
     assert.equal(created.visible, false);
@@ -199,7 +219,7 @@ test('re-enabling the preference clears a dismissal from earlier in the session'
 });
 
 test('the preference hides the widget without destroying it', () => {
-    const created = open();
+    const created = openLive();
 
     invoke('widget:set-visible', created.webContents, false);
     assert.equal(created.visible, false);
@@ -210,8 +230,18 @@ test('the preference hides the widget without destroying it', () => {
     assert.equal(created.visible, true);
 });
 
+test('a dismissal outlasts the meeting that was running when it was made', () => {
+    const created = openLive();
+
+    invoke('widget:hide', created.webContents);
+    widget.setLive(false);
+    widget.setLive(true);
+
+    assert.equal(created.visible, false, 'the close button promises the rest of the session');
+});
+
 test('destroy closes the window so it cannot hold the app open at quit', () => {
-    const created = open();
+    const created = openLive();
     widget.destroy();
 
     assert.equal(created.isDestroyed(), true);

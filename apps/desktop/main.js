@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, shell, nativeTheme } = require('electron');
 const recorder = require('./recorder');
 const podcast = require('./podcast');
 const widget = require('./widget');
+const menubar = require('./menubar');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -65,8 +66,12 @@ async function startBackend() {
         CORE_BACKEND_STT_LANGUAGE: STT_LANGUAGE,
         // The backend receives only relative recording paths. This trusted root
         // lets it resolve a completed recording for Sarvam batch STT without
-        // accepting arbitrary local file paths from HTTP clients.
-        ALPHA_RECORDINGS_DIR: recorder.RECORDINGS_ROOT,
+        // accepting arbitrary local file paths from HTTP clients. It is also where
+        // the backend writes one folder per meeting, so both values are the same
+        // directory by design — the backend only moves a finished recording into a
+        // meeting folder when they match.
+        ALPHA_RECORDINGS_DIR: recorder.LIBRARY_ROOT,
+        ALPHA_LIBRARY_DIR: recorder.LIBRARY_ROOT,
         // Podcast media follows the same trust model as recordings: renderer
         // requests carry project ids, while the backend receives one fixed root.
         ALPHA_PODCASTS_DIR: podcast.PODCASTS_ROOT,
@@ -181,6 +186,7 @@ function createWindow() {
 
     mainWindow.on('closed', () => {
         mainWindow = null;
+        widget.setLive(false);
         // The widget is skipTaskbar and always-on-top, so on Windows and Linux it
         // would keep the app alive with no way back to it once the main window is
         // gone. macOS keeps running without windows by design, so it stays.
@@ -225,6 +231,13 @@ if (!app.requestSingleInstanceLock()) {
         podcast.serveScheme();
         podcast.registerHandlers();
         widget.registerHandlers();
+        menubar.registerHandlers();
+
+        menubar.create({
+            onActivateMain: showMainWindow,
+            getMainWindow: () => mainWindow,
+            version: app.getVersion(),
+        });
 
         try {
             const status = await startBackend();
@@ -253,6 +266,7 @@ if (!app.requestSingleInstanceLock()) {
         // Close the recording file before the backend goes away, so quitting
         // mid-meeting still leaves something playable on disk.
         widget.destroy();
+        menubar.destroy();
         await recorder.shutdown();
         await podcast.shutdown();
         stopBackend();

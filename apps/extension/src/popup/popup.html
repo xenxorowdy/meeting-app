@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="stylesheet" href="popup.css" />
+        <title>Alpha Meeting Names</title>
+    </head>
+    <body>
+        <header>
+            <h1>Alpha Meeting Names</h1>
+            <span id="state" class="pill">checking…</span>
+        </header>
+
+        <section id="detail">
+            <p id="summary" class="muted">Open a Google Meet or Zoom call.</p>
+            <p id="speaking" class="speaking"></p>
+            <ul id="roster"></ul>
+            <p id="problem" class="problem" hidden></p>
+        </section>
+
+        <section class="controls">
+            <label class="row">
+                <span>Send names to Alpha</span>
+                <input id="enabled" type="checkbox" />
+            </label>
+            <label class="row">
+                <span>Detect the speaker from tile activity when the page gives no indicator</span>
+                <input id="fallback" type="checkbox" />
+            </label>
+            <label class="row">
+                <span>Backend port</span>
+                <input id="port" type="number" min="1" max="65535" />
+            </label>
+            <button id="test" type="button">Test connection</button>
+        </section>
+    </body>
+    <script src="popup.js"></script>
+</html>

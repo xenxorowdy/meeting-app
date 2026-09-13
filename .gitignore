@@ -29,3 +29,5 @@ ehthumbs.db
 Thumbs.db
 .vscode/
 .idea/
+.alpha-chat/
+.fastembed_cache/

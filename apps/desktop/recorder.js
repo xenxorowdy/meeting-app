@@ -4,10 +4,21 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-// Recordings live under Electron's own userData rather than the Rust core's data
-// directory: the shell owns these files and the backend only stores the path. Two
-// processes writing one directory is how partial files and orphans happen.
-const RECORDINGS_ROOT = path.join(app.getPath('userData'), 'recordings');
+// One visible folder per meeting, holding its recording next to the transcript and
+// summary the backend writes. The shell streams into `.in-progress/<meetingId>`
+// while the meeting runs — a uuid directory has no business sitting in a folder the
+// user browses — and the backend moves the finished file into the meeting's folder.
+// Both processes must agree on this root: it reaches the backend as
+// ALPHA_LIBRARY_DIR and ALPHA_RECORDINGS_DIR.
+const LIBRARY_ROOT = process.env.ALPHA_LIBRARY_DIR
+    ? path.resolve(process.env.ALPHA_LIBRARY_DIR)
+    : path.join(app.getPath('documents'), 'Alpha Meetings');
+const IN_PROGRESS = path.join(LIBRARY_ROOT, '.in-progress');
+
+// Where recordings lived before the library existed. Meetings recorded then still
+// point at `<meetingId>/screen.webm` under it, so playback falls back to this root
+// rather than breaking every recording made before the move.
+const LEGACY_ROOT = path.join(app.getPath('userData'), 'recordings');
 
 // A dedicated scheme rather than file://. `<video>` needs HTTP range requests to
 // seek, and `net.fetch` over a file URL implements them; serving the file through
@@ -26,17 +37,25 @@ function meetingDir(meetingId) {
     // renderer, so it is treated as untrusted input and stripped to a safe name.
     const safe = String(meetingId || '').replace(/[^a-zA-Z0-9_-]/g, '');
     if (!safe) throw new Error('a recording needs a meeting id');
-    return path.join(RECORDINGS_ROOT, safe);
+    return path.join(IN_PROGRESS, safe);
 }
 
 /** Resolve a path from the media scheme, refusing anything outside the root. */
-function resolveMedia(relativePath) {
-    const resolved = path.resolve(RECORDINGS_ROOT, relativePath);
-    const root = path.resolve(RECORDINGS_ROOT);
+function resolveUnder(root, relativePath) {
+    const resolved = path.resolve(root, relativePath);
+    const base = path.resolve(root);
     // `startsWith` alone would accept a sibling directory whose name shares the
     // prefix, so the separator has to be part of the comparison.
-    if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+    if (resolved !== base && !resolved.startsWith(base + path.sep)) return null;
     return resolved;
+}
+
+function resolveMedia(relativePath) {
+    return resolveUnder(LIBRARY_ROOT, relativePath);
+}
+
+function resolveLegacyMedia(relativePath) {
+    return resolveUnder(LEGACY_ROOT, relativePath);
 }
 
 async function directorySize(dir) {
@@ -91,7 +110,10 @@ function serveMediaScheme() {
             return new Response('Bad request', { status: 400 });
         }
 
-        const resolved = resolveMedia(withoutHost);
+        let resolved = resolveMedia(withoutHost);
+        if (!resolved || !fs.existsSync(resolved)) {
+            resolved = resolveLegacyMedia(withoutHost);
+        }
         if (!resolved || !fs.existsSync(resolved)) {
             return new Response('Not found', { status: 404 });
         }
@@ -148,7 +170,7 @@ function registerHandlers() {
         // Always report a URL-shaped path: `path.relative` yields backslashes on
         // Windows, and the media scheme these become part of is not a filesystem
         // path. Converted here rather than in every consumer.
-        return { id, path: toPosix(path.relative(RECORDINGS_ROOT, file)) };
+        return { id, path: toPosix(path.relative(LIBRARY_ROOT, file)) };
     });
 
     ipcMain.handle('recorder:write-chunk', async (_event, id, chunk) => {
@@ -172,15 +194,17 @@ function registerHandlers() {
         streams.delete(String(id));
 
         await new Promise(resolve => handle.stream.end(resolve));
-        return { path: toPosix(path.relative(RECORDINGS_ROOT, handle.file)), bytes: handle.bytes };
+        return { path: toPosix(path.relative(LIBRARY_ROOT, handle.file)), bytes: handle.bytes };
     });
 
     ipcMain.handle('recorder:remove', async (_event, meetingId) => {
-        await fsp.rm(meetingDir(meetingId), { recursive: true, force: true });
+        const partial = meetingDir(meetingId);
+        await fsp.rm(partial, { recursive: true, force: true });
+        await fsp.rm(path.join(LEGACY_ROOT, path.basename(partial)), { recursive: true, force: true });
         return { removed: true };
     });
 
-    ipcMain.handle('recorder:usage', async () => ({ bytes: await directorySize(RECORDINGS_ROOT) }));
+    ipcMain.handle('recorder:usage', async () => ({ bytes: await directorySize(LIBRARY_ROOT) }));
 }
 
 /**
@@ -224,11 +248,13 @@ async function shutdown() {
 
 module.exports = {
     MEDIA_SCHEME,
-    RECORDINGS_ROOT,
+    LIBRARY_ROOT,
+    IN_PROGRESS,
+    LEGACY_ROOT,
     registerMediaScheme,
     serveMediaScheme,
     registerHandlers,
     installDisplayMediaHandler,
     shutdown,
-    _testing: { resolveMedia, meetingDir },
+    _testing: { resolveMedia, resolveLegacyMedia, meetingDir },
 };

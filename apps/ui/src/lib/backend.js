@@ -184,9 +184,13 @@ export function mapBackendState(state) {
  */
 export function normalizeTurn(turn, index = 0) {
     const stream = turn.stream || turn.channel || 'system';
-    // The physical channel is authoritative. A stale speaker label must never
-    // make system audio appear as the local user (or vice versa).
-    const speaker = stream === 'mic' ? 'You' : turn.speaker === 'You' ? 'Speaker 1' : turn.speaker || 'Speaker 1';
+    // The physical channel is authoritative for the two live channels: a stale
+    // speaker label must never make system audio appear as the local user (or
+    // vice versa). Diarized turns carry no channel of their own ('mixed'), so
+    // there the backend's speaker is all there is.
+    const supplied = typeof turn.speaker === 'string' ? turn.speaker.trim() : '';
+    const placeholder = !supplied || /^(others?|speaker|unknown)$/i.test(supplied);
+    const speaker = stream === 'mic' ? 'You' : (stream === 'system' && supplied === 'You') || placeholder ? 'Speaker 1' : supplied;
     return {
         id: turn.id || `turn-${index}-${turn.startMs ?? 0}`,
         speaker,
@@ -199,6 +203,26 @@ export function normalizeTurn(turn, index = 0) {
         // before the backend reported it.
         language: turn.language || null,
     };
+}
+
+/**
+ * Text the engine is still revising, one entry per audio channel. It carries no
+ * id of its own — every partial for a channel supersedes the one before it, and
+ * the committed turn for that channel supersedes all of them.
+ */
+export function normalizeInterim(data) {
+    const stream = data?.channel || data?.stream || 'system';
+    return { ...normalizeTurn({ ...data, id: `interim-${stream}`, stream }), interim: true };
+}
+
+export function mergeInterim(current, data) {
+    const turn = normalizeInterim(data);
+    if (!turn.text) return current.filter(entry => entry.id !== turn.id);
+    const index = current.findIndex(entry => entry.id === turn.id);
+    if (index === -1) return [...current, turn];
+    const next = current.slice();
+    next[index] = turn;
+    return next;
 }
 
 export function normalizeMeeting(meeting) {

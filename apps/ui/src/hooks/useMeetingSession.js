@@ -3,6 +3,7 @@ import {
     apiRequest,
     createBackendSocket,
     mapBackendState,
+    mergeInterim,
     normalizeMeeting,
     normalizeTurn,
     BACKEND_URL,
@@ -32,8 +33,10 @@ const DEFAULT_SETTINGS = {
     sarvamLanguage: 'unknown',
     sarvamMode: 'transcribe',
     sarvamNumSpeakers: null,
+    sarvamDiarizeAfterMeeting: true,
     autoSummarize: true,
     echoSuppression: true,
+    noiseSuppression: true,
     // Read-only: the backend reports whether a key is stored, never the key.
     geminiApiKeySet: false,
     sarvamApiKeySet: false,
@@ -60,6 +63,7 @@ export function useMeetingSession() {
     const [durationSeconds, setDurationSeconds] = useState(0);
     const [audioLevels, setAudioLevels] = useState({ mic: 0, system: 0 });
     const [systemAudioSeen, setSystemAudioSeen] = useState(false);
+    const [interimTurns, setInterimTurns] = useState([]);
     const [micMuted, setMicMuted] = useState(false);
     const [systemAudioMuted, setSystemAudioMuted] = useState(false);
     const [error, setError] = useState(null);
@@ -68,7 +72,7 @@ export function useMeetingSession() {
     const [license, setLicense] = useState(null);
     const [engine, setEngine] = useState(null);
 
-    const [recordingState, setRecordingState] = useState({ active: false, hasSystemAudio: false, error: null });
+    const [recordingState, setRecordingState] = useState({ active: false, mode: null, hasSystemAudio: false, error: null });
     // The mic stream has to be state, not just a ref: the screen recording mixes it
     // in, and it only exists once the capture effect below has run.
     const [micStream, setMicStream] = useState(null);
@@ -76,11 +80,15 @@ export function useMeetingSession() {
     const socketRef = useRef(null);
     const captureRef = useRef(null);
     const recorderRef = useRef(null);
+    const recorderStartRef = useRef(null);
+    const startingRef = useRef(false);
+    const captureMuteRef = useRef({ mic: false, system: false });
+    captureMuteRef.current = { mic: micMuted || sessionState === SESSION_STATES.PAUSED, system: systemAudioMuted || sessionState === SESSION_STATES.PAUSED };
     // Set when a meeting starts with recording enabled, consumed by the effect that
     // waits for the microphone before opening the file.
     const pendingRecordingRef = useRef(null);
     const activeMeetingIdRef = useRef(null);
-    const callbacksRef = useRef({ onLiveTurn: null, onMeetingCompleted: null });
+    const callbacksRef = useRef({ onLiveTurn: null, onMeetingCompleted: null, onTranscriptReplaced: null });
     // startMeeting reads settings at the moment it runs; a ref keeps it from being
     // rebuilt (and its callers re-rendered) every time a setting changes.
     const settingsRef = useRef(settings);
@@ -90,6 +98,10 @@ export function useMeetingSession() {
 
     const setOnLiveTurn = useCallback(fn => {
         callbacksRef.current.onLiveTurn = fn;
+    }, []);
+
+    const setOnTranscriptReplaced = useCallback(fn => {
+        callbacksRef.current.onTranscriptReplaced = fn;
     }, []);
 
     const setOnCalendarConnection = useCallback(fn => {
@@ -130,6 +142,10 @@ export function useMeetingSession() {
         [adoptMeeting]
     );
 
+    const applyInterim = useCallback(data => {
+        setInterimTurns(previous => mergeInterim(previous, data));
+    }, []);
+
     const mergeNote = useCallback((meetingId, note) => {
         if (!note?.id) return;
         setActiveMeeting(prev => {
@@ -168,20 +184,36 @@ export function useMeetingSession() {
                 case 'meeting_started':
                     adoptMeeting(data);
                     setDurationSeconds(0);
+                    setInterimTurns([]);
                     setError(null);
                     break;
 
                 case 'meeting_completed': {
                     const meeting = adoptMeeting(data);
+                    setInterimTurns([]);
                     if (meeting && callbacksRef.current.onMeetingCompleted) {
                         callbacksRef.current.onMeetingCompleted(meeting);
                     }
                     break;
                 }
 
-                case 'transcript_turn':
+                case 'transcript_interim':
+                    if (!data?.meetingId || data.meetingId === activeMeetingIdRef.current) applyInterim(data);
+                    break;
+
+                case 'transcript_turn': {
+                    const turn = normalizeTurn(data);
+                    setInterimTurns(previous => previous.filter(entry => entry.stream !== turn.stream));
                     if (callbacksRef.current.onLiveTurn) {
-                        callbacksRef.current.onLiveTurn(normalizeTurn(data));
+                        callbacksRef.current.onLiveTurn(turn);
+                    }
+                    break;
+                }
+
+                case 'transcript_replaced':
+                    setInterimTurns([]);
+                    if (callbacksRef.current.onTranscriptReplaced) {
+                        callbacksRef.current.onTranscriptReplaced((Array.isArray(data?.turns) ? data.turns : []).map(normalizeTurn));
                     }
                     break;
 
@@ -202,7 +234,7 @@ export function useMeetingSession() {
                     break;
             }
         },
-        [adoptMeeting, applyStatus]
+        [adoptMeeting, applyInterim, applyStatus]
     );
 
     // Backend socket: one connection for the lifetime of the window.
@@ -251,6 +283,10 @@ export function useMeetingSession() {
         return () => clearInterval(timer);
     }, [sessionState, activeMeeting?.startedAt]);
 
+    useEffect(() => {
+        if (sessionState !== SESSION_STATES.RECORDING) setInterimTurns([]);
+    }, [sessionState]);
+
     // Microphone capture streams real PCM to the backend while recording.
     useEffect(() => {
         let cancelled = false;
@@ -259,7 +295,9 @@ export function useMeetingSession() {
         if (isLive && !captureRef.current) {
             startMicCapture({
                 deviceId: settings.micDeviceId,
-                muted: micMuted,
+                muted: captureMuteRef.current.mic,
+                noiseSuppression: settingsRef.current.noiseSuppression !== false,
+                echoCancellation: settingsRef.current.echoSuppression !== false,
                 onPcm: pcm => {
                     if (socketRef.current) socketRef.current.sendAudio(STREAM_MIC, pcm);
                 },
@@ -270,10 +308,11 @@ export function useMeetingSession() {
                         return;
                     }
                     captureRef.current = capture;
+                    capture.setMuted(captureMuteRef.current.mic);
                     setMicStream(capture.stream);
                     setMicError(null);
                 })
-                .catch(cause => setMicError(cause.message || 'Microphone unavailable'));
+                .catch(cause => { if (!cancelled) setMicError(cause.message || 'Microphone unavailable'); });
         }
 
         if (!isLive && captureRef.current) {
@@ -289,9 +328,21 @@ export function useMeetingSession() {
     }, [sessionState, settings.micDeviceId, micMuted]);
 
     useEffect(() => {
+        const capture = captureRef.current;
+        if (!capture) return;
+        let cancelled = false;
+        capture.setProcessing({
+            noiseSuppression: settings.noiseSuppression !== false,
+            echoCancellation: settings.echoSuppression !== false,
+        }).catch(cause => { if (!cancelled) setError(cause.message || 'Could not update microphone filtering.'); });
+        return () => { cancelled = true; };
+    }, [micStream, settings.noiseSuppression, settings.echoSuppression]);
+
+    useEffect(() => {
         if (captureRef.current) {
             captureRef.current.setMuted(micMuted || sessionState === SESSION_STATES.PAUSED);
         }
+        recorderRef.current?.setMicMuted(micMuted || sessionState === SESSION_STATES.PAUSED);
     }, [micMuted, sessionState]);
 
     // Open the screen recording once the microphone is available, so its audio can
@@ -305,9 +356,10 @@ export function useMeetingSession() {
 
         pendingRecordingRef.current = null;
 
-        startScreenRecording({
+        recorderStartRef.current = startScreenRecording({
             meetingId: pending.meetingId,
             sourceId: pending.sourceId,
+            mode: pending.mode,
             micStream,
             bitsPerSecond: settingsRef.current.recordingBitsPerSecond,
             onSystemPcm: pcm => {
@@ -317,7 +369,9 @@ export function useMeetingSession() {
         })
             .then(handle => {
                 recorderRef.current = handle;
-                setRecordingState({ active: true, hasSystemAudio: handle.hasSystemAudio, error: null });
+                handle.setMicMuted(captureMuteRef.current.mic);
+                handle.setSystemMuted(captureMuteRef.current.system);
+                setRecordingState({ active: true, mode: handle.mode, hasSystemAudio: handle.hasSystemAudio, error: null });
                 // Stopping the share from the OS overlay ends capture without
                 // going through our own stop path.
                 handle.onSourceEnded(() => setRecordingState(prev => ({ ...prev, active: false })));
@@ -326,7 +380,7 @@ export function useMeetingSession() {
                 // A denied permission or a missing encoder must not stop the
                 // meeting from being transcribed, so this only reports.
                 setRecordingState({ active: false, hasSystemAudio: false, error: cause.message });
-                setError(`Screen recording did not start: ${cause.message}`);
+                setError(`Recording did not start: ${cause.message}`);
             });
     }, [sessionState, micStream, micError]);
 
@@ -353,12 +407,16 @@ export function useMeetingSession() {
     );
 
     const startMeeting = useCallback(
-        async (title, { sourceId = null, event = null } = {}) => {
+        async (title, { sourceId = null, event = null, mode = 'audio' } = {}) => {
+            if (startingRef.current) return null;
             setError(null);
-            if (settingsRef.current.transcriptionProvider === 'sarvam' && !isRecordingSupported()) {
+            setMicError(null);
+            setRecordingState({ active: false, mode, hasSystemAudio: false, error: null });
+            if (settingsRef.current.transcriptionProvider === 'sarvam' && !isRecordingSupported(mode)) {
                 setError('Sarvam batch transcription needs the Alpha desktop app so it can capture the complete meeting audio.');
                 return null;
             }
+            startingRef.current = true;
             try {
                 const calendarEvent = calendarEventMetadata(event);
                 const response = await apiRequest('/api/meetings/start', {
@@ -377,15 +435,16 @@ export function useMeetingSession() {
                 // that opens it has not run yet at this point. Starting now would
                 // silently produce a recording with the meeting audio but none of
                 // the user's own voice.
-                const needsBatchRecording = settingsRef.current.transcriptionProvider === 'sarvam';
-                if ((settingsRef.current.recordScreen || needsBatchRecording) && isRecordingSupported() && meeting) {
-                    pendingRecordingRef.current = { meetingId: meeting.id, sourceId };
+                if (isRecordingSupported(mode) && meeting) {
+                    pendingRecordingRef.current = { meetingId: meeting.id, sourceId, mode };
                 }
 
                 return meeting;
             } catch (cause) {
                 setError(cause.message);
                 return null;
+            } finally {
+                startingRef.current = false;
             }
         },
         [adoptMeeting]
@@ -412,6 +471,7 @@ export function useMeetingSession() {
     const stopMeeting = useCallback(
         async (turns = []) => {
             setSessionState(SESSION_STATES.PROCESSING);
+            setInterimTurns([]);
             // A meeting stopped before the recorder ever opened must not leave a
             // request behind for the next one to pick up.
             pendingRecordingRef.current = null;
@@ -419,6 +479,10 @@ export function useMeetingSession() {
             // Finish the recording before telling the backend the meeting is over,
             // so its path and duration can be stored on the same record.
             let recording = null;
+            if (recorderStartRef.current) {
+                await recorderStartRef.current;
+                recorderStartRef.current = null;
+            }
             if (recorderRef.current) {
                 recording = await recorderRef.current.stop().catch(cause => {
                     setRecordingState(prev => ({ ...prev, error: cause.message }));
@@ -463,8 +527,9 @@ export function useMeetingSession() {
     const loadMeeting = useCallback(
         async meetingOrId => {
             const id = typeof meetingOrId === 'string' ? meetingOrId : meetingOrId?.id;
-            if (!id) return null;
+            if (!id || [SESSION_STATES.RECORDING, SESSION_STATES.PAUSED, SESSION_STATES.PROCESSING].includes(sessionState)) return null;
 
+            setInterimTurns([]);
             try {
                 const detail = await apiRequest(`/api/meetings/${id}`);
                 const meeting = adoptMeeting(detail.meeting);
@@ -476,7 +541,7 @@ export function useMeetingSession() {
                 return null;
             }
         },
-        [adoptMeeting]
+        [adoptMeeting, sessionState]
     );
 
     // The backend exposes no meeting-update route yet, so edits stay in this session.
@@ -538,9 +603,31 @@ export function useMeetingSession() {
 
     const updateSettings = useCallback(
         async next => {
-            setSettings(prev => ({ ...prev, ...next }));
+            const previous = settingsRef.current;
+            const processingChanged = 'noiseSuppression' in next || 'echoSuppression' in next;
+            const capture = captureRef.current;
             try {
-                await apiRequest('/api/settings', { method: 'POST', body: { settings: next } });
+                if (processingChanged && capture) {
+                    await capture.setProcessing({
+                        noiseSuppression: (next.noiseSuppression ?? previous.noiseSuppression) !== false,
+                        echoCancellation: (next.echoSuppression ?? previous.echoSuppression) !== false,
+                    });
+                }
+                const response = await apiRequest('/api/settings', { method: 'POST', body: { settings: next } });
+                if (response?.success === false) {
+                    throw new Error(response.warnings?.join('; ') || 'The backend rejected these settings.');
+                }
+                const credentialKeys = [
+                    'geminiApiKey', 'sarvamApiKey',
+                    'googleCalendarClientId', 'googleCalendarClientSecret',
+                    'microsoftCalendarClientId', 'microsoftCalendarClientSecret',
+                ];
+                const publicNext = Object.fromEntries(Object.entries(next).filter(([key]) => !credentialKeys.includes(key)));
+                setSettings(prev => ({
+                    ...Object.fromEntries(Object.entries(prev).filter(([key]) => !credentialKeys.includes(key))),
+                    ...publicNext,
+                    ...(response?.settings || {}),
+                }));
 
                 // The core accepts the write but does not necessarily keep it, so read
                 // it back rather than telling the user it was stored. The key is
@@ -548,15 +635,17 @@ export function useMeetingSession() {
                 // flag instead of by looking for itself.
                 const stored = await apiRequest('/api/settings').catch(() => ({ settings: {} }));
                 const persisted = Object.keys(next).every(key => {
-                    if (key === 'geminiApiKey') return stored?.settings?.geminiApiKeySet === true;
-                    if (key === 'sarvamApiKey') return stored?.settings?.sarvamApiKeySet === true;
-                    return stored?.settings?.[key] !== undefined;
+                    if (credentialKeys.includes(key)) return stored?.settings?.[`${key}Set`] === Boolean(next[key]?.trim());
+                    return JSON.stringify(stored?.settings?.[key]) === JSON.stringify(next[key]);
                 });
 
                 // Model and language changes land on the engine, so pick up its new state.
                 await refresh();
                 return { ok: true, persisted };
             } catch (cause) {
+                if (processingChanged && capture && captureRef.current === capture) {
+                    await capture.setProcessing({ noiseSuppression: previous.noiseSuppression !== false, echoCancellation: previous.echoSuppression !== false }).catch(() => {});
+                }
                 setError(cause.message);
                 return { ok: false, persisted: false, message: cause.message };
             }
@@ -587,6 +676,7 @@ export function useMeetingSession() {
         isConnected: connection === 'online',
         sessionState,
         activeMeeting,
+        interimTurns,
         durationSeconds,
         audioLevels,
         systemAudioSeen,
@@ -611,6 +701,7 @@ export function useMeetingSession() {
         activateLicense,
         refresh,
         setOnLiveTurn,
+        setOnTranscriptReplaced,
         setOnMeetingCompleted,
         clearError: useCallback(() => setError(null), []),
     };

@@ -1,17 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Film, Search, TriangleAlert, Volume2, VolumeX, User, Play, Pause, Pencil, X } from 'lucide-react';
+import {
+    Check,
+    Film,
+    Mic2,
+    Search,
+    TriangleAlert,
+    Volume2,
+    VolumeX,
+    User,
+    Play,
+    Pause,
+    Pencil,
+    X,
+    Bookmark,
+    Share2,
+    SkipBack,
+    SkipForward,
+    Minus,
+    Plus,
+} from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatMs, getSpeakerStyle, initialsFor } from '@/lib/speakers';
+import { speakerColor } from '@/components/design/designHelpers';
 
 // `timeupdate` fires around 4-60 times a second depending on the platform, but the
 // highlight only has to keep up with speech, so recomputing more often than this
 // just re-renders the list for nothing.
 const FOLLOW_INTERVAL_MS = 250;
-const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const PLAYBACK_RATES = [0.5, 1, 2, 4];
 
 function EmptyState({ title, children }) {
     return (
@@ -191,7 +211,7 @@ function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSee
  * if a stream stalls; if that ever shows up in practice the fix is a wall-clock
  * stamp per turn rather than a bigger constant here.
  */
-export function RecordingPlayer({ meeting, isConnected = true, nameSuggestions = [], onRenameSpeaker }) {
+export function RecordingPlayer({ meeting, citationFocus = null, isConnected = true, nameSuggestions = [], onRenameSpeaker }) {
     const videoRef = useRef(null);
     const activeRef = useRef(null);
     const listRef = useRef(null);
@@ -204,6 +224,16 @@ export function RecordingPlayer({ meeting, isConnected = true, nameSuggestions =
     const [muted, setMuted] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
+    const [zoom, setZoom] = useState(100);
+    const [bookmarks, setBookmarks] = useState([]);
+    const [copied, setCopied] = useState(false);
+    const [shareError, setShareError] = useState('');
+    const seekPosition = value => {
+        if (!videoRef.current) return;
+        const position = Math.max(0, Math.min(durationMs, value));
+        videoRef.current.currentTime = position / 1000;
+        setCurrentMs(position);
+    };
 
     const recording = meeting?.recording || null;
     const offsetMs = useMemo(() => {
@@ -266,6 +296,19 @@ export function RecordingPlayer({ meeting, isConnected = true, nameSuggestions =
         [offsetMs]
     );
 
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video || citationFocus?.meetingId !== meeting?.id || !Number.isFinite(citationFocus?.startMs)) return;
+        const seek = () => {
+            video.currentTime = Math.max(0, (citationFocus.startMs - offsetMs) / 1000);
+            setCurrentMs(video.currentTime * 1000);
+            setFollow(true);
+        };
+        if (video.readyState >= 1) seek();
+        else video.addEventListener('loadedmetadata', seek, { once: true });
+        return () => video.removeEventListener('loadedmetadata', seek);
+    }, [citationFocus, meeting?.id, offsetMs, src]);
+
     // Keep the highlighted line in view, unless the user has scrolled away to read
     // something else.
     useEffect(() => {
@@ -294,7 +337,7 @@ export function RecordingPlayer({ meeting, isConnected = true, nameSuggestions =
     if (!recording?.videoPath) {
         return (
             <EmptyState title="This meeting wasn’t recorded">
-                Turn on “Record the screen” in Settings before you start a meeting, and it will appear here afterwards.
+                Choose a screen in the recording source picker when you start your next meeting. Its replay will appear here once recording finishes.
             </EmptyState>
         );
     }
@@ -307,181 +350,251 @@ export function RecordingPlayer({ meeting, isConnected = true, nameSuggestions =
         );
     }
 
+    const activeTurn = turns.find(turn => turn.id === activeTurnId);
+    const uniqueSpeakers = [...new Set(turns.map(turn => turn.speaker))];
+    const mediaProps = {
+        ref: videoRef,
+        src,
+        muted,
+        preload: 'metadata',
+        onTimeUpdate: handleTimeUpdate,
+        onSeeked: event => setCurrentMs(event.target.currentTime * 1000),
+        onPlay: () => setIsPlaying(true),
+        onPause: () => setIsPlaying(false),
+        onEnded: () => setIsPlaying(false),
+        onError: () => setLoadError('unreadable'),
+    };
+
     return (
-        <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden sm:gap-4 lg:grid-cols-12">
-            <section aria-label="Recording" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border lg:col-span-7">
-                <div className="flex flex-wrap items-center justify-between gap-2 p-4 hairline-bottom sm:p-4">
-                    <div className="flex min-w-0 items-center gap-2">
-                        <Film className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        <h3 className="truncate text-headline font-semibold">{meeting.title}</h3>
+        <div className="ks-replay">
+            <header className="ks-replay-toolbar">
+                <span>{recording.mode === 'audio' ? 'AUDIO REPLAY' : 'SCREEN REPLAY'}</span>
+                <div className="ks-replay-toolbar-actions">
+                    <button className="ks-button ks-heatmap" disabled title="This recording has no pointer activity data for a heatmap.">
+                        ◉ Heatmap
+                    </button>
+                    <div className="ks-zoom">
+                        <button aria-label="Zoom out" disabled={zoom <= 50} onClick={() => setZoom(value => Math.max(50, value - 10))}>
+                            <Minus />
+                        </button>
+                        <span>{zoom}%</span>
+                        <button aria-label="Zoom in" disabled={zoom >= 200} onClick={() => setZoom(value => Math.min(200, value + 10))}>
+                            <Plus />
+                        </button>
                     </div>
-                    <div className="flex items-center gap-1">
-                        {recording.hasSystemAudio === false && (
-                            <Badge variant="warning">
-                                <TriangleAlert aria-hidden="true" />
-                                Your mic only
-                            </Badge>
-                        )}
-                        <Button variant="ghost" size="iconSm" onClick={() => setMuted(m => !m)} aria-label={muted ? 'Unmute' : 'Mute'}>
-                            {muted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}
-                        </Button>
+                    <button
+                        className="ks-button ks-mark"
+                        onClick={() => setBookmarks(items => [...new Set([...items, Math.round(currentMs)])].sort((a, b) => a - b))}
+                    >
+                        <Bookmark />
+                        Mark
+                    </button>
+                    <button
+                        className="ks-button"
+                        onClick={async () => {
+                            try {
+                                await navigator.clipboard.writeText(`${meeting.title} · ${formatMs(currentMs)}`);
+                                setCopied(true);
+                            } catch {
+                                setShareError('Could not copy the timestamp.');
+                            }
+                        }}
+                    >
+                        <Share2 />
+                        {copied ? 'Copied' : 'Share'}
+                    </button>
+                    <div className="ks-speeds" aria-label="Playback speed">
+                        {PLAYBACK_RATES.map(rate => (
+                            <button
+                                key={rate}
+                                aria-pressed={playbackRate === rate}
+                                aria-label={`Playback speed ${rate}×`}
+                                onClick={() => setPlaybackRate(rate)}
+                            >
+                                {rate}×
+                            </button>
+                        ))}
                     </div>
                 </div>
-
-                <div className="min-h-0 flex-1 bg-black">
-                    {loadError ? (
-                        <div className="flex h-full items-center p-8 text-callout text-muted-foreground">
-                            <span className="max-w-sm">The recording file is missing or unreadable. It may have been deleted from disk.</span>
+            </header>
+            {shareError && (
+                <p className="ks-error" role="alert">
+                    {shareError}
+                </p>
+            )}
+            <div className="ks-replay-body">
+                <section aria-label="Recording" className="ks-replay-stage">
+                    <div className="ks-video-frame">
+                        <div className="ks-video-titlebar">
+                            <span className="ks-video-dots">
+                                <i />
+                                <i />
+                                <i />
+                            </span>
+                            <span>{meeting.title}</span>
+                            <small>{recording.mode === 'audio' ? 'Audio' : 'Recorded'}</small>
                         </div>
-                    ) : (
-                        <video
-                            ref={videoRef}
-                            src={src}
-                            muted={muted}
-                            preload="metadata"
-                            onTimeUpdate={handleTimeUpdate}
-                            onSeeked={event => setCurrentMs(event.target.currentTime * 1000)}
-                            onPlay={() => setIsPlaying(true)}
-                            onPause={() => setIsPlaying(false)}
-                            onEnded={() => setIsPlaying(false)}
-                            onClick={togglePlay}
-                            onError={() => setLoadError('unreadable')}
-                            className="h-full w-full cursor-pointer bg-black"
-                        />
-                    )}
-                </div>
-
-                {/* Our own transport rather than `controls`. MediaRecorder writes a
-                    live-stream webm with no Duration element, so `video.duration`
-                    is Infinity and the native scrubber renders with no end and
-                    cannot be dragged. The real length was measured while recording
-                    and stored on the meeting, so the bar below is driven from that.
-                    Seeking itself works — only the reported duration is missing. */}
-                {!loadError && (
-                    <div className="flex items-center gap-4 p-4 hairline-top">
-                        <Button variant="ghost" size="iconSm" onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'}>
-                            {isPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-                        </Button>
-                        <span className="tnum shrink-0 text-footnote text-muted-foreground">{formatMs(currentMs)}</span>
-                        <input
-                            type="range"
-                            min={0}
-                            max={durationMs || 0}
-                            step={100}
-                            value={Math.min(currentMs, durationMs || 0)}
-                            disabled={!durationMs}
-                            onChange={event => {
-                                const video = videoRef.current;
-                                if (!video) return;
-                                const next = Number(event.target.value);
-                                video.currentTime = next / 1000;
-                                setCurrentMs(next);
-                            }}
-                            aria-label="Seek"
-                            className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-                        />
-                        <span className="tnum shrink-0 text-footnote text-muted-foreground">{durationMs ? formatMs(durationMs) : '--:--'}</span>
-                        <Select value={String(playbackRate)} onValueChange={value => setPlaybackRate(Number(value))}>
-                            <SelectTrigger className="h-8 w-[76px] shrink-0 px-2 text-footnote" aria-label="Playback speed">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent align="end">
-                                {PLAYBACK_RATES.map(rate => (
-                                    <SelectItem key={rate} value={String(rate)}>
-                                        {rate}×
-                                    </SelectItem>
+                        <div className="ks-video-viewport">
+                            {loadError ? (
+                                <div className="ks-empty">
+                                    <h3>Recording unavailable</h3>
+                                    <p>The recording file is missing or unreadable.</p>
+                                </div>
+                            ) : recording.mode === 'audio' ? (
+                                <div className="ks-audio-art">
+                                    <Mic2 />
+                                    <h3>Sound-only recording</h3>
+                                    <p>Recorded without screen sharing</p>
+                                    <audio {...mediaProps} />
+                                </div>
+                            ) : (
+                                <video {...mediaProps} onClick={togglePlay} style={{ transform: `scale(${zoom / 100})` }} />
+                            )}
+                            {activeTurn && (
+                                <div className="ks-replay-caption">
+                                    <span className="ks-avatar" style={{ '--speaker': speakerColor(activeTurn.speaker) }}>
+                                        {initialsFor(activeTurn.speaker)}
+                                    </span>
+                                    <span>{activeTurn.text}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="ks-replay-transport">
+                        <div className="ks-replay-scrubber">
+                            <input
+                                type="range"
+                                min={0}
+                                max={durationMs || 0}
+                                step={100}
+                                value={Math.min(currentMs, durationMs || 0)}
+                                disabled={!durationMs || Boolean(loadError)}
+                                onChange={event => seekPosition(Number(event.target.value))}
+                                aria-label="Seek recording"
+                            />
+                            <div className="ks-speech-markers">
+                                {turns.map(turn => (
+                                    <i
+                                        key={turn.id}
+                                        style={{
+                                            left: `${Math.min(100, Math.max(0, ((turn.startMs - offsetMs) / (durationMs || 1)) * 100))}%`,
+                                            background: speakerColor(turn.speaker),
+                                        }}
+                                    />
                                 ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                )}
-                {!loadError && (
-                    <SpeakerActivityTimeline
-                        turns={turns}
-                        durationMs={durationMs}
-                        offsetMs={offsetMs}
-                        currentMs={currentMs}
-                        onSeek={seekTo}
-                        onRenameSpeaker={onRenameSpeaker}
-                        nameSuggestions={nameSuggestions}
-                        isConnected={isConnected}
-                    />
-                )}
-            </section>
-
-            <section aria-label="Recording transcript" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border lg:col-span-5">
-                <div className="flex flex-col gap-4 p-4 hairline-bottom sm:p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                            <h3 className="text-headline font-semibold">Transcript</h3>
-                            <Badge variant="muted" className="tnum">
-                                {turns.length} {turns.length === 1 ? 'turn' : 'turns'}
-                            </Badge>
+                            </div>
                         </div>
-                        <Button variant={follow ? 'secondary' : 'ghost'} size="xs" onClick={() => setFollow(f => !f)}>
-                            {follow ? 'Following' : 'Follow'}
-                        </Button>
+                        {bookmarks.length > 0 && (
+                            <div className="ks-bookmarks">
+                                {bookmarks.map(mark => (
+                                    <button key={mark} onClick={() => seekPosition(mark)} title="Bookmarks are kept for this session">
+                                        <Bookmark />
+                                        {formatMs(mark)}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <div className="ks-transport-row">
+                            <button
+                                className="ks-transport-skip"
+                                aria-label="Back 10 seconds"
+                                disabled={Boolean(loadError)}
+                                onClick={() => seekPosition(currentMs - 10000)}
+                            >
+                                <SkipBack />
+                            </button>
+                            <button
+                                className="ks-play"
+                                aria-label={isPlaying ? 'Pause playback' : 'Play recording'}
+                                disabled={Boolean(loadError)}
+                                onClick={togglePlay}
+                            >
+                                {isPlaying ? <Pause /> : <Play />}
+                            </button>
+                            <button
+                                className="ks-transport-skip"
+                                aria-label="Forward 10 seconds"
+                                disabled={Boolean(loadError)}
+                                onClick={() => seekPosition(currentMs + 10000)}
+                            >
+                                <SkipForward />
+                            </button>
+                            <time>
+                                {formatMs(currentMs)} <span>/ {formatMs(durationMs)}</span>
+                            </time>
+                            <button
+                                className="ks-icon-button"
+                                aria-label={muted ? 'Unmute playback' : 'Mute playback'}
+                                onClick={() => setMuted(value => !value)}
+                            >
+                                {muted ? <VolumeX /> : <Volume2 />}
+                            </button>
+                            <div className="ks-replay-speakers">
+                                {uniqueSpeakers.map(speaker => (
+                                    <span key={speaker}>
+                                        <i style={{ background: speakerColor(speaker) }} />
+                                        {initialsFor(speaker)}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
                     </div>
-                    <div className="relative">
-                        <Search
-                            className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden="true"
+                    <details className="ks-speaker-details">
+                        <summary>Speaker activity & names</summary>
+                        <SpeakerActivityTimeline
+                            turns={turns}
+                            durationMs={durationMs}
+                            offsetMs={offsetMs}
+                            currentMs={currentMs}
+                            onSeek={seekTo}
+                            onRenameSpeaker={onRenameSpeaker}
+                            nameSuggestions={nameSuggestions}
+                            isConnected={isConnected}
                         />
-                        <Input
+                    </details>
+                </section>
+                <section aria-label="Recording transcript" className="ks-replay-transcript">
+                    <header>
+                        <div>
+                            <span>TRANSCRIPT</span>
+                            <button onClick={() => setFollow(value => !value)} aria-pressed={follow}>
+                                {follow ? 'Following' : 'Follow'}
+                            </button>
+                        </div>
+                        <input
                             value={searchQuery}
                             onChange={event => setSearchQuery(event.target.value)}
-                            placeholder="Search this transcript"
-                            className="pl-8"
-                            aria-label="Search the transcript"
+                            placeholder="Search transcript…"
+                            aria-label="Search recording transcript"
                         />
+                    </header>
+                    <div ref={listRef} className="ks-replay-turns">
+                        {filteredTurns.length === 0 && (
+                            <p className="ks-empty">{turns.length ? 'No matching passages.' : 'No transcript available.'}</p>
+                        )}
+                        {filteredTurns.map(turn => (
+                            <button
+                                key={turn.id}
+                                ref={turn.id === activeTurnId ? activeRef : null}
+                                className={turn.id === activeTurnId ? 'is-active' : ''}
+                                onClick={() => seekTo(turn)}
+                                aria-current={turn.id === activeTurnId ? 'true' : undefined}
+                            >
+                                <span className="ks-avatar" style={{ '--speaker': speakerColor(turn.speaker) }}>
+                                    {initialsFor(turn.speaker)}
+                                </span>
+                                <span>
+                                    <span className="ks-replay-turn-heading">
+                                        <strong>{turn.speaker}</strong>
+                                        <time>{formatMs(Math.max(0, turn.startMs - offsetMs))}</time>
+                                    </span>
+                                    <span className="ks-replay-turn-text">{turn.text}</span>
+                                </span>
+                            </button>
+                        ))}
                     </div>
-                </div>
-
-                <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-2">
-                    {filteredTurns.length === 0 ? (
-                        <p className="p-4 text-callout text-muted-foreground">
-                            {turns.length === 0 ? 'This meeting has no transcript.' : 'No lines match that search.'}
-                        </p>
-                    ) : (
-                        filteredTurns.map(turn => {
-                            const style = getSpeakerStyle(turn.speaker);
-                            const isActive = turn.id === activeTurnId;
-                            return (
-                                <button
-                                    key={turn.id}
-                                    ref={isActive ? activeRef : null}
-                                    type="button"
-                                    onClick={() => seekTo(turn)}
-                                    aria-current={isActive ? 'true' : undefined}
-                                    className={cn(
-                                        'flex w-full gap-2 rounded-lg p-2 text-left transition-colors',
-                                        isActive ? 'bg-primary/[0.12]' : 'hover:bg-muted'
-                                    )}
-                                >
-                                    <span
-                                        className={cn(
-                                            'mt-1 flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
-                                            style.avatar
-                                        )}
-                                        aria-hidden="true"
-                                    >
-                                        {style.isYou ? <User className="size-4" /> : initialsFor(turn.speaker)}
-                                    </span>
-                                    <span className="min-w-0 flex-1">
-                                        <span className="flex items-baseline gap-2">
-                                            <span className="truncate text-footnote font-medium">{turn.speaker}</span>
-                                            <span className="tnum shrink-0 text-footnote text-muted-foreground">
-                                                {formatMs(Math.max(0, turn.startMs - offsetMs))}
-                                            </span>
-                                        </span>
-                                        <span className="block text-callout">{turn.text}</span>
-                                    </span>
-                                </button>
-                            );
-                        })
-                    )}
-                </div>
-            </section>
+                </section>
+            </div>
         </div>
     );
 }

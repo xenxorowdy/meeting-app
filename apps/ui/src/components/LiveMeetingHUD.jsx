@@ -162,10 +162,10 @@ export function LiveMeetingHUD({
                             </span>
                         )}
 
-                        {recordingState?.active && <span className="text-muted-foreground">Screen</span>}
+                        {recordingState?.active && <span className="text-muted-foreground">{recordingState.mode === 'audio' ? 'Audio recording' : 'Screen recording'}</span>}
                         {/* The recording carrying only your own voice is worth saying
                             during the meeting, while it can still be fixed. */}
-                        {recordingState?.active && recordingState.hasSystemAudio === false && <span className="text-warning">No meeting audio</span>}
+                        {recordingState?.active && recordingState.mode !== 'audio' && recordingState.hasSystemAudio === false && <span className="text-warning">No meeting audio</span>}
                     </div>
 
                     <div className="flex min-w-0 items-center gap-1">

@@ -1,135 +1,23 @@
 import React, { useMemo } from 'react';
-import { Bell } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/utils/cn';
-import { REMINDER_MIN_ATTENDEES } from '@/lib/calendarEvents';
+import { CalendarDays, ChevronRight } from 'lucide-react';
 
-function clock(value) {
-    const ms = Date.parse(value);
-    if (!Number.isFinite(ms)) return '';
-    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+function clock(value) { const ms = Date.parse(value); return Number.isFinite(ms) ? new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''; }
+function shortDate(value) { const ms = typeof value === 'number' ? value : Date.parse(value); return Number.isFinite(ms) ? new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''; }
+function duration(seconds) { if (!seconds) return 'No duration'; const minutes = Math.max(1, Math.round(seconds / 60)); return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60 || ''}m`.trim() : `${minutes} min`; }
+function initials(name = 'Speaker') { return name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(); }
 
-function dayKey(ms) {
-    const date = new Date(ms);
-    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
-function dayLabel(ms) {
-    const date = new Date(ms);
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-
-    if (dayKey(ms) === dayKey(today.getTime())) return 'Today';
-    if (dayKey(ms) === dayKey(tomorrow.getTime())) return 'Tomorrow';
-    return date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-}
-
-function groupByDay(events) {
-    const groups = new Map();
-    for (const event of events) {
-        const ms = Date.parse(event.start);
-        if (!Number.isFinite(ms)) continue;
-        const key = dayKey(ms);
-        if (!groups.has(key)) groups.set(key, { label: dayLabel(ms), events: [] });
-        groups.get(key).events.push({ ...event, startMs: ms, endMs: Date.parse(event.end) });
-    }
-    return [...groups.values()];
-}
-
-export function HomeView({ events = [], providers = [], isConnected, canRecord, remindersEnabled = true, onStartMeeting, onOpenSettings }) {
-    const groups = useMemo(() => groupByDay(events), [events]);
-    const anyConnected = providers.some(provider => provider.connected);
+export function HomeView({ events = [], meetings = [], isLoading = false, isConnected, canRecord, onStartMeeting, onOpenSettings, onSelectMeeting, onOpenLibrary }) {
+    const today = useMemo(() => { const key = new Date().toDateString(); return events.filter(event => new Date(event.start).toDateString() === key).slice(0, 4); }, [events]);
+    const recent = meetings.slice(0, 6);
     const now = Date.now();
-
-    return (
-        <div className="flex h-full flex-col overflow-y-auto">
-            {!anyConnected ? (
-                <div className="max-w-sm py-16">
-                    <h2 className="text-title2">No calendar connected</h2>
-                    <p className="mt-2 text-callout text-muted-foreground">
-                        Connect Google Calendar or Outlook and today’s meetings appear here, each one a click away from recording.
-                    </p>
-                    <div className="mt-4 flex items-center gap-4">
-                        <Button size="sm" onClick={onOpenSettings} disabled={!isConnected}>
-                            Connect a calendar
-                        </Button>
-                        <button
-                            type="button"
-                            onClick={() => onStartMeeting()}
-                            disabled={!canRecord}
-                            className="text-callout text-muted-foreground underline-offset-4 transition-colors duration-200 ease-out hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-                        >
-                            Record without one
-                        </button>
-                    </div>
-                </div>
-            ) : groups.length === 0 ? (
-                <div className="max-w-sm py-16">
-                    <h2 className="text-title2">Nothing scheduled</h2>
-                    <p className="mt-2 text-callout text-muted-foreground">Your calendar is clear for the next twelve hours.</p>
-                    <button
-                        type="button"
-                        onClick={() => onStartMeeting()}
-                        disabled={!canRecord}
-                        className="mt-4 text-callout text-muted-foreground underline-offset-4 transition-colors duration-200 ease-out hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-                    >
-                        Start recording anyway
-                    </button>
-                </div>
-            ) : (
-                <div className="flex flex-col gap-8">
-                    {groups.map(group => (
-                        <section key={group.label}>
-                            <h2 className="text-title2">{group.label}</h2>
-                            <ul className="mt-4 divide-y divide-border border-t">
-                                {group.events.map(event => {
-                                    const live = event.startMs <= now && event.endMs > now;
-                                    const invited = Array.isArray(event.attendees) ? event.attendees.length : 0;
-                                    const willRemind = remindersEnabled && !live && event.startMs > now && invited >= REMINDER_MIN_ATTENDEES;
-                                    return (
-                                        <li key={`${event.provider}-${event.id}`}>
-                                            <button
-                                                type="button"
-                                                onClick={() => onStartMeeting(event.title, event)}
-                                                disabled={!canRecord}
-                                                className={cn(
-                                                    'flex h-12 w-full items-center gap-4 text-left transition-colors duration-200 ease-out',
-                                                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
-                                                    'hover:bg-accent'
-                                                )}
-                                            >
-                                                <span className="tnum w-24 shrink-0 pl-2 text-callout text-muted-foreground">
-                                                    {clock(event.start)}
-                                                </span>
-                                                <span className="min-w-0 flex-1 truncate text-body">{event.title}</span>
-                                                {live ? (
-                                                    <span className="shrink-0 pr-2 text-footnote text-muted-foreground">Now</span>
-                                                ) : willRemind ? (
-                                                    <Bell
-                                                        className="mr-2 size-4 shrink-0 text-muted-foreground"
-                                                        aria-label={`Alpha will remind you a minute before this meeting · ${invited} invited`}
-                                                    />
-                                                ) : null}
-                                            </button>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </section>
-                    ))}
-
-                    <button
-                        type="button"
-                        onClick={() => onStartMeeting()}
-                        disabled={!canRecord}
-                        className="self-start text-callout text-muted-foreground underline-offset-4 transition-colors duration-200 ease-out hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-                    >
-                        Record something not on the calendar
-                    </button>
-                </div>
-            )}
-        </div>
-    );
+    const hour = new Date().getHours();
+    return <div className="h-full flex-1 overflow-y-auto p-8"><div className="mx-auto max-w-2xl">
+        <header className="mb-8"><h1 className="mb-1 text-xl font-semibold text-[#e8e8ea]">Good {hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'}</h1><p className="text-xs text-[#6b6b74]">{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })} · {today.length} meeting{today.length === 1 ? '' : 's'} today</p></header>
+        <section className="mb-8"><div className="mb-3 flex items-center justify-between"><span className="font-mono text-[10px] tracking-wider text-[#6b6b74]">TODAY</span>{today.length > 0 && <span className="font-mono text-[10px] text-[#ff9533]">{today.filter(event => Date.parse(event.end) > now).length} upcoming</span>}</div><div className="space-y-2">
+            {today.length ? today.map((event, index) => { const start = Date.parse(event.start); const end = Date.parse(event.end); const status = end <= now ? 'done' : start <= now ? 'now' : `in ${Math.max(1, Math.round((start - now) / 60000))}m`; const colors = ['#ff7a1a', '#5b9bff', '#a78bfa', '#ffbd2e']; return <button key={`${event.provider}-${event.id}`} type="button" onClick={() => onStartMeeting(event.title, event)} disabled={!canRecord} className="flex w-full items-center gap-4 rounded-xl border border-[#2a2a2e] bg-[#161618] px-4 py-3 text-left transition-colors hover:border-[#38383e] disabled:opacity-40"><span className="w-12 shrink-0 font-mono text-xs text-[#6b6b74]">{clock(event.start)}</span><span className="h-6 w-0.5 shrink-0 rounded-full" style={{ background: `${colors[index % colors.length]}66` }} /><span className="min-w-0 flex-1 truncate text-xs text-[#e8e8ea]">{event.title}</span><span className={end <= now ? 'font-mono text-[10px] text-[#28c840]' : 'font-mono text-[10px] text-[#6b6b74]'}>{status}</span></button>; }) : <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#2a2a2e] px-4 py-5"><CalendarDays className="size-4 text-[#6b6b74]" /><div className="flex-1"><p className="text-xs text-[#e8e8ea]">Your calendar is clear</p><p className="mt-0.5 text-[11px] text-[#6b6b74]">Start an unscheduled meeting whenever you’re ready.</p></div><button onClick={() => onStartMeeting()} disabled={!canRecord} className="rounded-lg border border-[#ff7a1a44] bg-[#ff7a1a22] px-3 py-1.5 text-xs text-[#ff7a1a] disabled:opacity-40">New meeting</button></div>}
+        </div></section>
+        <section><div className="mb-3 flex items-center justify-between"><span className="font-mono text-[10px] tracking-wider text-[#6b6b74]">RECENT</span><button onClick={onOpenLibrary} className="flex items-center gap-1 text-[11px] text-[#6b6b74] hover:text-[#e8e8ea]">View all <ChevronRight className="size-3" /></button></div><div className="space-y-2">
+            {isLoading && !recent.length ? <p className="py-8 text-center text-xs text-[#6b6b74]">Loading meetings…</p> : recent.length ? recent.map(meeting => { const speakers = meeting.participants || []; const summary = (meeting.summaryMarkdown || '').replace(/[#*_`>-]/g, ' ').replace(/\s+/g, ' ').trim(); return <button key={meeting.id} type="button" onClick={() => onSelectMeeting(meeting)} className="group flex w-full items-start gap-4 rounded-xl border border-[#2a2a2e] bg-[#161618] px-4 py-3 text-left transition-colors hover:border-[#38383e]"><div className="min-w-0 flex-1"><div className="mb-1 flex items-center gap-2"><span className="truncate text-xs font-medium text-[#e8e8ea]">{meeting.title || 'Untitled meeting'}</span><span className="flex items-center gap-1 font-mono text-[9px] text-[#28c840]"><span className="size-1.5 rounded-full bg-[#28c840]" />captured</span></div><p className="mb-2 line-clamp-1 text-[11px] text-[#6b6b74]">{summary || 'Transcript and meeting details are ready to review.'}</p><div className="flex items-center gap-3">{speakers.length > 0 && <div className="flex -space-x-1">{speakers.slice(0, 3).map((speaker, index) => <span key={speaker} className="flex size-4 items-center justify-center rounded-full border border-[#0e0e0f] bg-[#1e1e21] text-[7px]" style={{ color: ['#ff7a1a', '#5b9bff', '#a78bfa'][index] }}>{initials(speaker)}</span>)}</div>}<span className="font-mono text-[10px] text-[#6b6b74]">{shortDate(meeting.startedAt)}</span><span className="font-mono text-[10px] text-[#6b6b74]">{duration(meeting.durationSeconds)}</span>{meeting.actionItems?.length > 0 && <span className="rounded bg-[#2a2a2e] px-1.5 py-0.5 font-mono text-[9px] text-[#6b6b74]">{meeting.actionItems.length} tasks</span>}</div></div><ChevronRight className="mt-1 size-3.5 text-[#38383e] transition-colors group-hover:text-[#ff7a1a]" /></button>; }) : <div className="rounded-xl border border-dashed border-[#2a2a2e] py-10 text-center"><p className="text-xs text-[#e8e8ea]">No meetings yet</p><p className="mt-1 text-[11px] text-[#6b6b74]">Your recordings will appear here.</p></div>}
+        </div>{!isConnected && <button onClick={onOpenSettings} className="mt-4 text-[11px] text-[#ff9533]">Backend offline · Open settings</button>}</section>
+    </div></div>;
 }

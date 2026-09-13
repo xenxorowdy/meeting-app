@@ -1,5 +1,10 @@
 //! Performance-sensitive primitives for the Rust core backend.
 
+pub mod denoise;
+pub mod dsp;
+pub mod echo;
+pub mod voiceprint;
+
 pub mod audio {
     pub const HEADER_SIZE: usize = 16;
     pub const STREAM_MIC: u32 = 0;

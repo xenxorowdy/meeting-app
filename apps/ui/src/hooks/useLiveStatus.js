@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiRequest, createBackendSocket, mapBackendState, normalizeTurn } from '@/lib/backend';
+import { apiRequest, createBackendSocket, mapBackendState, mergeInterim, normalizeTurn } from '@/lib/backend';
 
 const MAX_TURNS = 300;
 
@@ -8,6 +8,7 @@ export function useLiveStatus() {
     const [sessionState, setSessionState] = useState('idle');
     const [meeting, setMeeting] = useState(null);
     const [turns, setTurns] = useState([]);
+    const [interimTurns, setInterimTurns] = useState([]);
     const [durationSeconds, setDurationSeconds] = useState(0);
 
     const meetingIdRef = useRef(null);
@@ -50,15 +51,29 @@ export function useLiveStatus() {
                     meetingIdRef.current = data?.id || null;
                     setMeeting(data ? { id: data.id, title: data.title, startedAt: data.startedAt } : null);
                     setTurns([]);
+                    setInterimTurns([]);
                     setDurationSeconds(0);
                     setSessionState('recording');
                     break;
 
-                case 'transcript_turn':
-                    setTurns(prev => [...prev, normalizeTurn(data, prev.length)].slice(-MAX_TURNS));
+                case 'transcript_interim':
+                    setInterimTurns(prev => mergeInterim(prev, data));
+                    break;
+
+                case 'transcript_turn': {
+                    const turn = normalizeTurn(data, Date.now());
+                    setInterimTurns(prev => prev.filter(entry => entry.stream !== turn.stream));
+                    setTurns(prev => [...prev, turn].slice(-MAX_TURNS));
+                    break;
+                }
+
+                case 'transcript_replaced':
+                    setInterimTurns([]);
+                    setTurns((Array.isArray(data?.turns) ? data.turns : []).map(normalizeTurn).slice(-MAX_TURNS));
                     break;
 
                 case 'meeting_completed':
+                    setInterimTurns([]);
                     setSessionState('completed');
                     break;
 
@@ -85,7 +100,11 @@ export function useLiveStatus() {
         return () => clearInterval(timer);
     }, [sessionState, meeting?.startedAt]);
 
+    useEffect(() => {
+        if (sessionState !== 'recording') setInterimTurns([]);
+    }, [sessionState]);
+
     const isLive = sessionState === 'recording' || sessionState === 'paused';
 
-    return { connection, sessionState, meeting, turns, durationSeconds, isLive };
+    return { connection, sessionState, meeting, turns, interimTurns, durationSeconds, isLive };
 }

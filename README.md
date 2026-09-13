@@ -10,7 +10,8 @@ This project is decoupled into two clean, independent applications:
 packages/meeting-app/
 ├── apps/
 │   ├── ui/             # React 19 + Tailwind CSS + Shadcn UI Desktop Client
-│   └── core-backend/   # Rust performance core + Node.js compatibility implementation
+│   ├── core-backend/   # Rust performance core + Node.js compatibility implementation
+│   └── extension/      # Chrome extension: participant names from Google Meet / Zoom
 └── package.json        # Workspace orchestrator
 ```
 
@@ -33,10 +34,10 @@ available as `npm run test:legacy` while the remaining native STT and licensing
 providers are migrated behind the same API.
 
 - **Native Audio Capture**: ScreenCaptureKit (macOS) & WASAPI Loopback (Windows) over 16-byte binary streaming IPC.
-- **Audio DSP & VAD**: Zero-copy 16 kHz resampler, integer sum-of-squares RMS VAD, and acoustic echo suppression.
+- **Audio DSP & VAD**: Zero-copy 16 kHz resampler, integer sum-of-squares RMS VAD, spectral noise cancellation on the microphone, and acoustic echo suppression against the meeting audio.
 - **Speech-to-Text (STT)**: WhisperKit (Apple Neural Engine) and `whisper.cpp` / ONNX (Windows/Intel).
-- **Diarization Engine**: Guaranteed physical `"You"` attribution on mic + acoustic clustering on system audio + LLM name resolution.
-- **Storage Layer**: Rust atomic local persistence with multi-format export (Markdown, JSON); SQLite/FTS5 remains behind the compatibility implementation during migration.
+- **Diarization Engine**: Guaranteed physical `"You"` attribution on mic + live voiceprint clustering on meeting audio + provider diarization and meeting-client names when available. See [Who said what](#who-said-what).
+- **Storage Layer**: one visible folder per meeting on disk (see [The meeting library](#the-meeting-library)), written atomically, with multi-format export (Markdown, JSON); SQLite/FTS5 remains behind the compatibility implementation during migration.
 - **AI Summarizer**: Structured meeting intelligence through the Claude Code CLI (no API key required), with a keyword heuristic as the offline fallback. See [Meeting summaries](#meeting-summaries).
 - **Billing & Licensing**: License key verification and Free vs Pro tier quota enforcement.
 - **API Server**: Standalone WebSocket and HTTP/IPC bridge for frontend communication.
@@ -88,29 +89,166 @@ them with `{"regenerate": true}`.
 
 ## Transcription providers
 
-The Transcription settings offer two distinct flows:
+The Transcription settings offer three distinct flows:
 
 - **Whisper** transcribes microphone and meeting-audio segments live on the device.
-- **Sarvam Saaras** waits until the meeting ends, uploads the completed mixed WebM recording as one batch, requests speaker diarization, replaces the transcript with timestamped speaker turns, and then runs the normal summary pipeline.
+- **Sarvam Saaras (batch)** waits until the meeting ends, uploads the completed mixed WebM recording as one batch, requests speaker diarization, replaces the transcript with timestamped speaker turns, and then runs the normal summary pipeline.
+- **Sarvam Saaras (live streaming)** opens one realtime WebSocket per capture stream and sends 16 kHz PCM while the meeting runs. Turns arrive as they are spoken: `transcript.partial` is emitted to clients as a `transcript_interim` event and discarded, `transcript.final` is committed as a normal `transcript_turn`. A dropped socket reconnects with backoff; audio spoken while it is down is not transcribed.
 
-Sarvam batch mode requires the Alpha desktop app because Electron owns the recording files. It also requires screen recording to remain enabled so the saved recording contains both microphone and meeting audio. Configure the API key in Settings; it is stored in the private local credentials file and is never returned by the backend.
+The realtime socket returns no speakers of its own, so live turns are numbered from the local voiceprint pass described in [Who said what](#who-said-what), and the meeting is diarized again once it ends: unless `sarvamDiarizeAfterMeeting` is off, the finished recording goes through the same batch job as the batch provider and its speaker turns replace the live transcript before summarization. Clients hear about that as a `transcript_replaced` event carrying the whole transcript. If the batch pass fails, the live transcript is kept and the failure is reported as a transcription warning.
 
-| Variable                    | Default                 | Purpose                                       |
-| :-------------------------- | :---------------------- | :-------------------------------------------- |
-| `ALPHA_SARVAM_API_KEY`      | _(stored key)_          | Overrides the saved Sarvam API key.           |
-| `ALPHA_SARVAM_TIMEOUT_SECS` | `900`                   | Maximum wait for a batch transcription job.   |
-| `ALPHA_SARVAM_BASE_URL`     | `https://api.sarvam.ai` | API base override, primarily for testing.     |
-| `ALPHA_RECORDINGS_DIR`      | _(set by Electron)_     | Trusted root used to resolve recording paths. |
+Both Sarvam flows name the diarized speaker whose turns line up with the microphone `You` rather than `Speaker N`. The microphone timeline comes from the local VAD, which runs for every provider; a speaker is only named when the microphone was open for at least 60% of what they said and no other speaker comes close, so speaker bleed into the microphone costs a rename rather than a wrong attribution.
+
+Sarvam batch mode requires the Alpha desktop app because Electron owns the recording files. It also requires screen recording to remain enabled so the saved recording contains both microphone and meeting audio. Live streaming needs neither to transcribe, but its post-meeting diarization pass reads the same recording, so a realtime meeting recorded without one keeps the speaker numbers the live pass gave it. Both share one API key, configured in Settings; it is stored in the private local credentials file and is never returned by the backend. `sarvamLanguage` and `sarvamMode` apply to both, and the language value `unknown` is sent to the realtime endpoint as `auto`.
+
+| Variable                      | Default                                          | Purpose                                             |
+| :---------------------------- | :----------------------------------------------- | :-------------------------------------------------- |
+| `ALPHA_SARVAM_API_KEY`        | _(stored key)_                                   | Overrides the saved Sarvam API key.                 |
+| `ALPHA_SARVAM_TIMEOUT_SECS`   | `900`                                            | Maximum wait for a batch transcription job.         |
+| `ALPHA_SARVAM_BASE_URL`       | `https://api.sarvam.ai`                          | Batch API base override, primarily for testing.     |
+| `ALPHA_SARVAM_REALTIME_URL`   | `wss://api.sarvam.ai/speech-to-text-realtime/ws` | Realtime WebSocket override, primarily for testing. |
+| `ALPHA_SARVAM_REALTIME_MODEL` | `saaras:v3-realtime`                             | Realtime model override.                            |
+| `ALPHA_RECORDINGS_DIR`        | _(set by Electron)_                              | Trusted root used to resolve recording paths.       |
+
+---
+
+## The meeting library
+
+Every meeting is a folder you can open, back up, or hand to somebody:
+
+```
+~/Documents/Alpha Meetings/
+├── 2026-09-05 Design review/
+│   ├── meeting.json      # the record: transcript, summary, action items, metadata
+│   ├── transcript.md     # timestamped speaker turns
+│   ├── summary.md        # summary, decisions, action items, follow-up email
+│   └── recording.webm    # the screen recording, if one was made
+└── .in-progress/         # the shell streams here while a meeting runs
+```
+
+The folder is named `YYYY-MM-DD Title` from the meeting's own date and title, sanitised for every
+filesystem (path separators and `<>:"|?*` become `-`, 60 characters maximum, reserved Windows names
+avoided). Two meetings that would collide get the first eight characters of the id appended, and
+renaming a meeting renames its folder. `meeting.json` is rewritten on every change; `transcript.md`
+and `summary.md` are rewritten when the meeting ends, when a summary is regenerated, and when
+speakers are renamed. Deleting a meeting deletes its folder.
+
+The shell records into `.in-progress/<meetingId>/screen.webm` — a uuid directory has no business
+sitting in a folder you browse — and the backend moves the finished file in as `recording.webm` when
+the meeting ends. That move only happens when `ALPHA_RECORDINGS_DIR` and `ALPHA_LIBRARY_DIR` are the
+same directory, which is how the desktop shell launches the backend. Recordings made before the
+library existed stay under `userData/recordings` and the media scheme still resolves them there.
+
+| Variable            | Default                      | Purpose                                                        |
+| :------------------ | :--------------------------- | :------------------------------------------------------------- |
+| `ALPHA_LIBRARY_DIR` | `~/Documents/Alpha Meetings` | Where meeting folders live. The shell sets it for the backend. |
+| `ALPHA_DATA_DIR`    | _(working directory)_        | Parent of `Alpha Meetings/` when no library dir is set.        |
+
+The first run after an upgrade imports the old `.alpha-meeting-assistant/meetings.json` into folders.
+That file is left untouched, and the ids it brought over are recorded in `.alpha-library.json` inside
+the library, so a meeting deleted after the import is not resurrected on the next start.
+
+---
+
+## Who said what
+
+Your microphone is `You`, always and by construction: it is a separate capture stream, so nothing has to
+infer it. Everyone else arrives mixed together on the meeting-audio channel, and three passes number them,
+each overruling the one below it.
+
+**The meeting page**, when the extension in the next section is installed: turns take the identity the tab
+reported as speaking, each identity keeps one number for the meeting, and the voiceprints step aside — a
+page that is naming people is a better witness than the audio, and mixing the two would number one person
+twice.
+
+**The voice itself**, otherwise, and live. Every meeting-audio utterance the VAD closes is reduced to a
+voiceprint — the mean of its mel-frequency cepstral coefficients over the loud frames, plus the median
+fundamental frequency — and matched against the voices already heard (`src/voiceprint.rs`). A close enough
+match keeps that speaker's number; anything further away opens `Speaker 2`, `Speaker 3`, and so on. It is a
+classical voiceprint rather than a neural embedding, so it is deliberately reluctant to split: a voice needs
+1.5 seconds of speech before it may claim a new number, at most eight speakers are separated live, and a
+turn that follows within 1.5 seconds stays with the previous speaker unless it is clearly someone else.
+Numbering one person twice reads far worse than leaving two people sharing a number.
+
+**The finished recording**, last, for the Sarvam providers: real diarization over the whole meeting replaces
+the live transcript, and the speaker whose turns line up with the microphone becomes `You` (see
+[Transcription providers](#transcription-providers)).
+
+Speaker numbers are ordinary text, so renaming a speaker in the transcript renames every turn they own.
+
+| Variable                   | Default | Purpose                                                                                                        |
+| :------------------------- | :------ | :------------------------------------------------------------------------------------------------------------- |
+| `CORE_BACKEND_VOICE_SPLIT` | `1.15`  | Distance at which a meeting-audio voice becomes a new numbered speaker. Lower splits more eagerly, higher less. |
+
+---
+
+## Noise cancellation and echo suppression
+
+Two switches in Audio settings, both applied by the core backend rather than only by the browser, so they
+reach the recogniser and not just the microphone driver.
+
+**Noise cancellation** filters the microphone before anything else looks at it — before the level meter,
+before the VAD, before the recogniser (`src/denoise.rs`). It is a Wiener filter over 32 ms frames: the noise
+floor per frequency band is tracked as a minimum over the last few seconds, the a priori signal-to-noise
+ratio is smoothed the decision-directed way so the filter does not chatter, and each band is attenuated by
+what is left. Steady room noise — a fan, an air conditioner, street hum — drops far enough to fall back under
+the VAD's speech threshold, which matters more than the loudness itself: audio the VAD wrongly opens on is
+handed to Whisper, and Whisper answers noise with confident invented sentences. Meeting audio is not filtered.
+It arrives as a digital loopback with no room in it, and filtering it would only cost quality.
+
+**Echo suppression** drops microphone audio that is the meeting coming back through the speakers. Everything
+the meeting plays is kept as a rolling 12-second energy envelope; when the microphone closes an utterance,
+its envelope is correlated against that timeline across every acoustic delay up to 600 ms, and a strong match
+that is not much louder than what was played is discarded rather than transcribed (`src/echo.rs`). The
+comparison is against played audio rather than against finished meeting-audio turns because a microphone
+utterance closes long before the turn it echoes has been recognised. A second, cheaper check runs on the
+text: a microphone turn that repeats what the meeting said within the last ten seconds is dropped too.
+Without either, one sentence lands twice — once as `Speaker 1` and once as `You`.
+
+Both switches take effect immediately, including mid-meeting.
+
+---
+
+## Participant names from the meeting page
+
+The audio pipeline separates voices; it cannot name them. `apps/extension` is an unpacked Chrome
+extension that reads the participant list and the speaking indicator out of the Google Meet or Zoom
+tab and posts them to the backend, so speaker numbers follow the people the page is naming rather than the
+voiceprints.
+See [its README](apps/extension/README.md) for installation and for repairing a selector after Meet
+or Zoom changes its markup.
+
+The contract is one endpoint. `POST /api/session/participants` takes a snapshot of the call:
+
+```json
+{ "source": "google-meet", "participants": ["Riyam Jain", "Aditi Sharma"], "speaking": ["Aditi Sharma"], "self": "Riyam Jain" }
+```
+
+Snapshots are stamped against the meeting clock and stitched into named speech intervals
+(`src/speakers.rs`). A live turn from the meeting-audio channel is numbered by the identity that was
+talking across it, so each person on the call holds one `Speaker N` for the whole meeting instead of
+being re-clustered from their voice; a diarized speaker takes the name their turns overlap, decided
+across all speakers at once so no two share a name; and the roster joins the calendar attendees the
+summary is written against, on `metadata.participants`. An identity is only attached when it covers
+at least half the turn and no other name is close, so cross-talk keeps one shared provisional number. The
+microphone still wins for your own turns — you stay `You`. Posts made while nothing is recording are
+answered with `{"accepted": false}` and change nothing.
 
 ---
 
 ## Calendar connections
 
 Google Calendar and Microsoft Outlook connect over OAuth 2.0 authorization code + PKCE with a
-loopback redirect. A desktop app cannot keep a client secret, so there is none in the flow: the
-consent page opens in the user's real browser and comes back to a listener the backend opens on
-loopback for exactly one request, on an ephemeral port chosen per attempt. Scopes are read-only
-(`calendar.events.readonly`, `Calendars.Read`) — Alpha never writes to a calendar.
+loopback redirect. Desktop clients cannot keep a client secret confidential; Google can still
+require its issued secret for token exchange and refresh. The consent page opens in the user's
+real browser and comes back to a listener the backend opens on
+loopback for exactly one request, on an ephemeral port chosen per attempt. Google requests event
+read/write access (`calendar.events`); Microsoft requests read-only access (`Calendars.Read`).
+The calendar API lists events and creates them. **New meeting** — in the menu bar or on the home screen —
+schedules a Google Calendar event, optionally minting a Google Meet link, and invites the addresses you
+supply. Creation is Google-only: the Microsoft token this app requests is `Calendars.Read`, so Outlook
+calendars stay read-only and the backend refuses a create against them with an explanatory error rather
+than failing silently. Editing and deletion are still not implemented.
 
 Refresh tokens live in `credentials.json` alongside the API keys, written `0600`. Access tokens are
 refreshed a minute before expiry; Microsoft's rotating refresh tokens are re-stored on each refresh.
@@ -121,9 +259,16 @@ Both providers need an OAuth client id, which identifies the app rather than the
 **Settings → Calendar**, or as an environment variable.
 
 **Google** — Cloud Console → enable the _Google Calendar API_ → _OAuth consent screen_ (add the
-`calendar.events.readonly` scope and yourself as a test user) → _Credentials_ → _Create OAuth client
-ID_ → application type **Desktop app**. Google issues a client secret for desktop clients; paste it
-too if the token exchange asks for one.
+`calendar.events` scope and yourself as a test user) → _Credentials_ → _Create OAuth client
+ID_ → application type **Desktop app**. If Google reports `client_secret is missing`, open the same
+OAuth client's details and copy its client secret (also available as `installed.client_secret` in
+the downloaded OAuth client JSON). Paste it into **Settings → Calendar → Google client secret**,
+save, then click **Connect** again. It is stored locally in the private credentials file and is
+sent only to Google's token endpoint. An empty field preserves the saved secret.
+
+If Google was already connected with read-only access, restart the updated backend, then disconnect
+and reconnect Google in **Settings → Calendar** to approve event write access. The same client ID
+can be used; existing tokens do not gain permissions automatically.
 
 **Microsoft** — Entra admin center → _App registrations_ → _New registration_, account types
 including personal Microsoft accounts → _Authentication_ → _Add a platform_ → **Mobile and desktop
@@ -143,7 +288,8 @@ dynamic port; do not pin one.
 | `GET /api/calendar/status`      | Per provider: connected, configured, signed-in account.               |
 | `POST /api/calendar/connect`    | `{"provider"}` → `{"authUrl"}`. Opening it is the caller's job.       |
 | `POST /api/calendar/disconnect` | Forgets the stored tokens for one provider.                           |
-| `GET /api/calendar/events`      | Merged, time-sorted events. `minutesBack` (15), `minutesAhead` (720). |
+| `GET /api/calendar/events`      | Merged, time-sorted events. `minutesBack` (15), `minutesAhead` (2880). |
+| `POST /api/calendar/events`     | Creates one Google event. `{provider, title, start, end, attendees[], description, addConference}`. |
 
 Completion arrives as a `calendar_connection` WebSocket event rather than a response to `connect`,
 because the consent round trip runs through the browser.
@@ -158,15 +304,15 @@ Script and multi-speaker voice generation use the Gemini key configured in Alpha
 
 Local media operations require FFmpeg/ffprobe. Speech cleanup additionally requires the DeepFilterNet `deep-filter` executable. Development builds discover these on `PATH` or through the variables below; packaged builds should place reviewed binaries under `resources/media-tools/<platform>/<arch>/`. See `apps/desktop/media-tools/README.md` for the packaging contract and license checklist.
 
-| Variable | Purpose |
-| :-- | :-- |
-| `ALPHA_FFMPEG_PATH` | Explicit FFmpeg executable; Electron passes its resolved copy to the Rust backend. |
-| `ALPHA_FFPROBE_PATH` | Explicit ffprobe executable. |
-| `ALPHA_DEEP_FILTER_PATH` | Explicit DeepFilterNet CLI executable. |
-| `ALPHA_PODCAST_SCRIPT_MODEL` | Gemini structured-script model override. |
-| `ALPHA_PODCAST_TTS_MODEL` | Gemini multi-speaker TTS model override. |
-| `ALPHA_PODCAST_TIMEOUT_SECS` | Gemini request timeout; defaults to 300 seconds. |
-| `ALPHA_GOOGLE_OAUTH_CLIENT_ID` | Packaged or developer Google desktop OAuth client ID for YouTube. |
+| Variable                       | Purpose                                                                            |
+| :----------------------------- | :--------------------------------------------------------------------------------- |
+| `ALPHA_FFMPEG_PATH`            | Explicit FFmpeg executable; Electron passes its resolved copy to the Rust backend. |
+| `ALPHA_FFPROBE_PATH`           | Explicit ffprobe executable.                                                       |
+| `ALPHA_DEEP_FILTER_PATH`       | Explicit DeepFilterNet CLI executable.                                             |
+| `ALPHA_PODCAST_SCRIPT_MODEL`   | Gemini structured-script model override.                                           |
+| `ALPHA_PODCAST_TTS_MODEL`      | Gemini multi-speaker TTS model override.                                           |
+| `ALPHA_PODCAST_TIMEOUT_SECS`   | Gemini request timeout; defaults to 300 seconds.                                   |
+| `ALPHA_GOOGLE_OAUTH_CLIENT_ID` | Packaged or developer Google desktop OAuth client ID for YouTube.                  |
 
 The full product definition, security boundaries, data contract, and acceptance criteria are in [the Podcast Studio PRD](docs/PODCAST-STUDIO-PRD.md).
 

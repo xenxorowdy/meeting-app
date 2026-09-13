@@ -9,6 +9,7 @@ let widgetWindow = null;
 let expanded = false;
 let hiddenByUser = false;
 let enabled = true;
+let live = false;
 let activateMain = null;
 
 const alive = () => Boolean(widgetWindow) && !widgetWindow.isDestroyed();
@@ -38,7 +39,7 @@ function resizeKeepingCorner(size) {
 
 function applyVisibility() {
     if (!alive()) return;
-    if (enabled && !hiddenByUser) {
+    if (enabled && live && !hiddenByUser) {
         // showInactive, not show: an indicator that steals focus from the call
         // you are in is worse than no indicator.
         widgetWindow.showInactive();
@@ -127,6 +128,17 @@ function registerHandlers() {
         applyVisibility();
         return enabled;
     });
+
+    ipcMain.handle('widget:set-live', (_event, next) => {
+        live = Boolean(next);
+        applyVisibility();
+        return live;
+    });
+}
+
+function setLive(next) {
+    live = Boolean(next);
+    applyVisibility();
 }
 
 function destroy() {
@@ -140,6 +152,7 @@ function destroy() {
 module.exports = {
     create,
     registerHandlers,
+    setLive,
     destroy,
     isOpen: alive,
     _testing: { COLLAPSED, EXPANDED, SCREEN_MARGIN, cornerBounds },

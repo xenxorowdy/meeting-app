@@ -65,7 +65,37 @@ contextBridge.exposeInMainWorld('alphaPodcast', {
         `alpha-podcast://${encodeURIComponent(projectId)}/${String(relativePath).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`,
 });
 
+const MENUBAR_COMMANDS = new Set(['record', 'new-note', 'new-meeting', 'settings']);
+const menuBarListeners = new Set();
+
+const normalizeCommand = command =>
+    command && MENUBAR_COMMANDS.has(command.type) ? Object.freeze({ type: command.type, event: command.event ?? null }) : null;
+
+ipcRenderer.on('menubar:command', (_event, command) => {
+    const normalized = normalizeCommand(command);
+    if (!normalized) return;
+    for (const listener of menuBarListeners) {
+        try {
+            listener(normalized);
+        } catch {
+            /* empty */
+        }
+    }
+});
+
 // The main window owns the floating-widget preference; the shell owns the window.
 contextBridge.exposeInMainWorld('alphaShell', {
     setWidgetVisible: visible => ipcRenderer.invoke('widget:set-visible', Boolean(visible)),
+
+    setWidgetLive: live => ipcRenderer.invoke('widget:set-live', Boolean(live)),
+
+    ownsMeetingReminders: true,
+
+    onMenuBarCommand: listener => {
+        if (typeof listener !== 'function') return () => {};
+        menuBarListeners.add(listener);
+        return () => menuBarListeners.delete(listener);
+    },
+
+    pendingMenuBarCommand: () => ipcRenderer.invoke('menubar:pending-command'),
 });

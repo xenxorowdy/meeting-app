@@ -21,8 +21,12 @@ use uuid::Uuid;
 
 use alpha_core_backend::{
     audio::{self, AudioPacket, PacketParser, STREAM_MIC, STREAM_SYSTEM},
+    denoise::NoiseSuppressor,
+    dsp,
+    echo::EchoWindow,
     transcript::strip_non_speech,
     vad::{SpeechDetector, Utterance},
+    voiceprint::{VoiceRoster, Voiceprint},
 };
 
 mod calendar;
@@ -31,13 +35,21 @@ use calendar::CalendarService;
 mod stt;
 use stt::SttService;
 
+mod library;
+mod workspace;
+mod chat;
 mod sarvam;
+mod sarvam_live;
 mod settings;
+mod speakers;
 mod podcast;
 mod summarizer;
 use podcast::{Host as PodcastHost, PodcastService, ScriptRequest as PodcastScriptRequest, SourceTurn as PodcastSourceTurn};
-use sarvam::{label_speakers, BatchConfig, SarvamService};
+use sarvam::{identify_mic_speaker, label_speakers, BatchConfig, SarvamService};
+use sarvam_live::{LiveConfig, LiveEvent, LiveTranscriber};
+use library::Library;
 use settings::SettingsStore;
+use speakers::{clean_name, clean_names, DiarizedSpan, NumberedSpeakers, SpeechLog};
 use summarizer::{MeetingSummary, SummaryNote, SummaryRequest, SummaryService, SummaryTurn};
 
 const VERSION: &str = "2.0.0-rust";
@@ -45,6 +57,17 @@ const DEFAULT_PORT: u16 = 48900;
 /// How long a stopping meeting waits for queued utterances to come back from the
 /// transcription engine before the summary is written.
 const TRANSCRIPTION_DRAIN_BUDGET: Duration = Duration::from_secs(12);
+/// How long a stopping meeting waits for Sarvam to return the transcripts it
+/// still owes for audio already streamed to it.
+const LIVE_FLUSH_BUDGET: Duration = Duration::from_secs(10);
+
+fn speaker_name(stream_id: u32) -> &'static str {
+    if stream_id == STREAM_MIC {
+        "You"
+    } else {
+        "Speaker 1"
+    }
+}
 
 fn channel_name(stream_id: u32) -> &'static str {
     if stream_id == STREAM_MIC {
@@ -62,6 +85,16 @@ fn now_ms() -> i64 {
 }
 
 fn invited_names(metadata: &Value) -> Vec<String> {
+    let mut names = calendar_attendees(metadata);
+    for observed in clean_names(metadata.get("participants")) {
+        if !names.iter().any(|known| known.contains(&observed)) {
+            names.push(observed);
+        }
+    }
+    names
+}
+
+fn calendar_attendees(metadata: &Value) -> Vec<String> {
     metadata
         .pointer("/calendarEvent/attendees")
         .and_then(Value::as_array)
@@ -112,6 +145,8 @@ struct Meeting {
     ended_at: Option<i64>,
     duration_seconds: i64,
     summary_markdown: String,
+    #[serde(default)]
+    summary_sections: Vec<Value>,
     action_items: Vec<Value>,
     key_decisions: Vec<String>,
     #[serde(default)]
@@ -129,6 +164,8 @@ struct Meeting {
     notes: Vec<Value>,
     transcript: Vec<TranscriptTurn>,
     created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize)]
@@ -174,63 +211,74 @@ struct Session {
     mic_vad: SpeechDetector,
     system_vad: SpeechDetector,
     transcription_provider: String,
+    live: Option<LiveTranscriber>,
+    mic_speech: Vec<(i64, i64)>,
+    participants: SpeechLog,
+    speaker_labels: NumberedSpeakers,
+    voices: VoiceRoster,
+    mic_epoch_ms: Option<i64>,
+    system_epoch_ms: Option<i64>,
+    denoiser: Option<NoiseSuppressor>,
+    echo: EchoWindow,
+    echo_suppression: bool,
+    system_samples: i64,
 }
 
 #[derive(Clone)]
 struct Store {
-    path: Arc<PathBuf>,
+    library: Arc<RwLock<Library>>,
     meetings: Arc<RwLock<HashMap<String, Meeting>>>,
 }
 
 impl Store {
     async fn load() -> Self {
-        let path = env::var_os("CORE_BACKEND_DATA_FILE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                let base = env::var_os("ALPHA_DATA_DIR")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-                base.join(".alpha-meeting-assistant").join("meetings.json")
-            });
-        let mut meetings = HashMap::new();
-        if let Ok(bytes) = tokio::fs::read(&path).await {
-            if let Ok(values) = serde_json::from_slice::<Vec<Meeting>>(&bytes) {
-                meetings.extend(values.into_iter().map(|m| (m.id.clone(), m)));
-            }
-        }
+        let mut library = Library::new(library::root_from_env());
+        let mut meetings = library.load().await;
+        meetings.extend(library.import_from(&library::legacy_file()).await);
+        println!(
+            "[Alpha Core Backend] meeting library: {} ({} meeting folders)",
+            library.root().display(),
+            meetings.len()
+        );
         Self {
-            path: Arc::new(path),
-            meetings: Arc::new(RwLock::new(meetings)),
+            library: Arc::new(RwLock::new(library)),
+            meetings: Arc::new(RwLock::new(
+                meetings
+                    .into_iter()
+                    .map(|meeting| (meeting.id.clone(), meeting))
+                    .collect(),
+            )),
         }
     }
 
-    async fn persist(&self) -> io::Result<()> {
-        let values: Vec<Meeting> = self.meetings.read().await.values().cloned().collect();
-        let bytes = serde_json::to_vec_pretty(&values).map_err(io::Error::other)?;
-        if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        let tmp = self.path.with_extension("json.tmp");
-        tokio::fs::write(&tmp, bytes).await?;
-        tokio::fs::rename(tmp, &*self.path).await
-    }
-
-    async fn put(&self, meeting: Meeting) -> io::Result<()> {
+    async fn put(&self, mut meeting: Meeting) -> io::Result<Meeting> {
+        self.library.write().await.save(&mut meeting).await?;
         self.meetings
             .write()
             .await
-            .insert(meeting.id.clone(), meeting);
-        self.persist().await
+            .insert(meeting.id.clone(), meeting.clone());
+        Ok(meeting)
+    }
+
+    async fn put_documents(&self, meeting: &Meeting) -> io::Result<()> {
+        self.library.read().await.save_documents(meeting).await
+    }
+
+    async fn adopt_recording(&self, meeting: &mut Meeting) -> io::Result<bool> {
+        let root = env::var_os("ALPHA_RECORDINGS_DIR").map(PathBuf::from);
+        self.library
+            .read()
+            .await
+            .adopt_recording(meeting, root.as_deref())
+            .await
     }
     async fn get(&self, id: &str) -> Option<Meeting> {
         self.meetings.read().await.get(id).cloned()
     }
     async fn delete(&self, id: &str) -> io::Result<bool> {
         let removed = self.meetings.write().await.remove(id).is_some();
-        if removed {
-            self.persist().await?;
-        }
-        Ok(removed)
+        let discarded = self.library.write().await.remove(id).await?;
+        Ok(removed || discarded)
     }
     async fn list(&self, search: &str, limit: usize, offset: usize) -> Vec<Meeting> {
         let query = search.trim().to_lowercase();
@@ -293,8 +341,9 @@ fn posted_transcript(payload: &Value) -> Vec<TranscriptTurn> {
                 channel: channel.to_string(),
                 speaker: if channel == "mic" {
                     "You".into()
-                } else if supplied == Some("You") || supplied.is_none() {
-                    "Others".into()
+                } else if (channel == "system" && supplied == Some("You"))
+                    || matches!(supplied, None | Some("") | Some("Others") | Some("Speaker")) {
+                    "Speaker 1".into()
                 } else {
                     supplied.unwrap().to_string()
                 },
@@ -311,6 +360,29 @@ fn posted_transcript(payload: &Value) -> Vec<TranscriptTurn> {
                     .map(str::to_string),
             })
         })
+        .collect()
+}
+
+fn remote_identity(participants: &SpeechLog, start_ms: i64, end_ms: i64) -> Option<String> {
+    participants
+        .speaker_during(start_ms, end_ms)
+        .filter(|name| Some(name.as_str()) != participants.self_name())
+}
+
+fn remember_speech(intervals: &mut Vec<(i64, i64)>, start_ms: i64, end_ms: i64) {
+    if end_ms <= start_ms {
+        return;
+    }
+    match intervals.last_mut() {
+        Some(last) if start_ms <= last.1 => last.1 = last.1.max(end_ms),
+        _ => intervals.push((start_ms, end_ms)),
+    }
+}
+
+fn shift_intervals(intervals: &[(i64, i64)], offset_ms: i64) -> Vec<(i64, i64)> {
+    intervals
+        .iter()
+        .map(|(start, end)| (start - offset_ms, end - offset_ms))
         .collect()
 }
 
@@ -410,6 +482,7 @@ struct AppState {
     settings: Arc<SettingsStore>,
     calendar: Arc<CalendarService>,
     podcast: Arc<PodcastService>,
+    chat: Arc<chat::ChatService>,
 }
 
 impl AppState {
@@ -425,6 +498,17 @@ impl AppState {
         let mut status = self.stt.status_value().await;
         status["provider"] = json!(configured);
         status["sarvam"] = self.sarvam.status_value().await;
+        if configured == "sarvam-realtime" {
+            let diarize = self
+                .settings
+                .get_bool("sarvamDiarizeAfterMeeting")
+                .await
+                .unwrap_or(true);
+            status["sarvam"]["mode"] = json!("realtime");
+            status["sarvam"]["model"] = json!(sarvam_live::model_name());
+            status["sarvam"]["diarization"] = json!(diarize);
+            status["sarvam"]["diarizationAfterMeeting"] = json!(diarize);
+        }
         status
     }
 
@@ -447,10 +531,16 @@ impl AppState {
         } else {
             String::new()
         };
+        let participants = json!({
+            "source": session.participants.source(),
+            "names": session.participants.roster(),
+            "observations": session.participants.observations(),
+        });
         let state = json!({ "state": session.state.as_str(), "meetingId": session.current.as_ref().map(|m| &m.id), "meetingTitle": session.current.as_ref().map(|m| &m.title), "durationSeconds": session.current.as_ref().map(|m| (now_ms() - m.started_at).max(0) / 1000).unwrap_or(0), "turnsCount": turns, "audioLevels": { "mic": session.mic_rms * 100.0, "system": session.system_rms * 100.0 } });
         drop(session);
 
         let mut status = state;
+        status["participants"] = participants;
         status["stt"] = self.stt_status(Some(&session_provider)).await;
         status["stt"]["pending"] = json!(self.pending_transcriptions.load(Ordering::SeqCst));
         status["summary"] = self.summarizer.status_value().await;
@@ -472,12 +562,39 @@ impl AppState {
             .unwrap_or_else(|| "whisper".into())
             .trim()
             .to_ascii_lowercase();
-        if !matches!(provider.as_str(), "whisper" | "sarvam") {
+        if !matches!(provider.as_str(), "whisper" | "sarvam" | "sarvam-realtime") {
             return Err(format!("Unknown transcription provider '{provider}'"));
         }
-        if provider == "sarvam" && !self.sarvam.has_key().await {
-            return Err("Add a Sarvam API key in Transcription settings before starting batch transcription.".into());
+        if provider.starts_with("sarvam") && !self.sarvam.has_key().await {
+            return Err(if provider == "sarvam-realtime" {
+                "Add a Sarvam API key in Transcription settings before starting realtime transcription."
+            } else {
+                "Add a Sarvam API key in Transcription settings before starting batch transcription."
+            }
+            .into());
         }
+        let live_config = match provider.as_str() {
+            "sarvam-realtime" => Some(
+                LiveConfig {
+                    language: self
+                        .settings
+                        .get_str("sarvamLanguage")
+                        .await
+                        .unwrap_or_default(),
+                    mode: self
+                        .settings
+                        .get_str("sarvamMode")
+                        .await
+                        .unwrap_or_else(|| "transcribe".into()),
+                    ..LiveConfig::default()
+                }
+                .validate()?,
+            ),
+            _ => None,
+        };
+
+        let noise_suppression = self.settings.get_bool("noiseSuppression").await != Some(false);
+        let echo_suppression = self.settings.get_bool("echoSuppression").await != Some(false);
 
         let mut session = self.session.lock().await;
         if matches!(
@@ -493,6 +610,16 @@ impl AppState {
         session.state = SessionState::Starting;
         session.mic_vad.reset();
         session.system_vad.reset();
+        session.mic_speech.clear();
+        session.participants = SpeechLog::default();
+        session.speaker_labels = NumberedSpeakers::default();
+        session.voices = VoiceRoster::default();
+        session.mic_epoch_ms = None;
+        session.system_epoch_ms = None;
+        session.denoiser = noise_suppression.then(NoiseSuppressor::new);
+        session.echo = EchoWindow::default();
+        session.echo_suppression = echo_suppression;
+        session.system_samples = 0;
         session.transcription_provider = provider.clone();
         let now = now_ms();
 
@@ -524,6 +651,7 @@ impl AppState {
             ended_at: None,
             duration_seconds: 0,
             summary_markdown: String::new(),
+            summary_sections: vec![],
             action_items: vec![],
             key_decisions: vec![],
             topics: vec![],
@@ -533,12 +661,26 @@ impl AppState {
             notes: vec![],
             transcript: vec![],
             created_at: now,
+            folder: None,
         };
         self.store
             .put(meeting.clone())
             .await
             .map_err(|e| e.to_string())?;
         session.current = Some(meeting.clone());
+        if let Some(config) = live_config {
+            let (sender, receiver) = mpsc::unbounded_channel();
+            let key = self.sarvam.api_key().await.unwrap_or_default();
+            session.live = Some(LiveTranscriber::start(
+                key,
+                config,
+                &[STREAM_MIC, STREAM_SYSTEM],
+                sender,
+            ));
+            let consumer = self.clone();
+            let meeting_id = meeting.id.clone();
+            tokio::spawn(async move { consumer.consume_live_events(meeting_id, receiver).await });
+        }
         session.state = SessionState::Recording;
         drop(session);
         self.emit(
@@ -552,9 +694,11 @@ impl AppState {
     }
 
     async fn finish(&self, payload: &Value) -> Result<Meeting, String> {
-        // Whisper closes its live VAD buffers here. Sarvam deliberately has no
-        // live jobs: it waits for the complete mixed recording below.
-        let (provider, tail) = {
+        // Whisper closes its live VAD buffers here and Sarvam realtime closes its
+        // sockets. Sarvam batch deliberately has no live jobs: it waits for the
+        // complete mixed recording below.
+        let mut tail_voice = None;
+        let (provider, tail, live, mic_speech, participants) = {
             let mut session = self.session.lock().await;
             let meeting_id = match session.current.as_ref() {
                 Some(meeting) => meeting.id.clone(),
@@ -576,16 +720,35 @@ impl AppState {
                 session.transcription_provider.clone()
             };
 
+            let mic_epoch = session.mic_epoch_ms.unwrap_or(0);
+            let system_epoch = session.system_epoch_ms.unwrap_or(0);
+
             let mut jobs = Vec::new();
-            if provider == "whisper" {
-                if let Some(utterance) = session.mic_vad.flush() {
+            if let Some(mut utterance) = session.mic_vad.flush() {
+                utterance.start_ms += mic_epoch;
+                utterance.end_ms += mic_epoch;
+                remember_speech(
+                    &mut session.mic_speech,
+                    utterance.start_ms,
+                    utterance.end_ms,
+                );
+                if provider == "whisper" {
                     jobs.push(TranscriptionJob {
                         meeting_id: meeting_id.clone(),
                         stream_id: STREAM_MIC,
                         utterance,
                     });
                 }
-                if let Some(utterance) = session.system_vad.flush() {
+            }
+            if let Some(mut utterance) = session.system_vad.flush() {
+                utterance.start_ms += system_epoch;
+                utterance.end_ms += system_epoch;
+                tail_voice = Some((
+                    utterance.start_ms,
+                    utterance.end_ms,
+                    utterance.pcm.clone(),
+                ));
+                if provider == "whisper" {
                     jobs.push(TranscriptionJob {
                         meeting_id,
                         stream_id: STREAM_SYSTEM,
@@ -593,7 +756,16 @@ impl AppState {
                     });
                 }
             }
-            (provider, jobs)
+            let mic_speech = std::mem::take(&mut session.mic_speech);
+            let started_at = session
+                .current
+                .as_ref()
+                .map(|meeting| meeting.started_at)
+                .unwrap_or_else(now_ms);
+            let mut participants = std::mem::take(&mut session.participants);
+            participants.close((now_ms() - started_at).max(0));
+            let live = session.live.take();
+            (provider, jobs, live, mic_speech, participants)
         };
 
         self.emit(
@@ -602,9 +774,13 @@ impl AppState {
         )
         .await;
 
+        self.learn_voices(tail_voice.into_iter().collect()).await;
         if provider == "whisper" {
             self.queue_transcriptions(tail).await;
             self.drain_transcriptions(TRANSCRIPTION_DRAIN_BUDGET).await;
+        }
+        if let Some(live) = live {
+            live.finish(LIVE_FLUSH_BUDGET).await;
         }
 
         let mut session = self.session.lock().await;
@@ -632,7 +808,10 @@ impl AppState {
         drop(session);
 
         let mut transcription_warning = None;
-        if provider == "sarvam" {
+        let diarize_recording = provider == "sarvam"
+            || (provider == "sarvam-realtime"
+                && self.settings.get_bool("sarvamDiarizeAfterMeeting").await != Some(false));
+        if diarize_recording {
             let recording_offset = meeting
                 .recording
                 .as_ref()
@@ -664,7 +843,33 @@ impl AppState {
             };
             match result {
                 Ok(batch) => {
-                    let labels = label_speakers(&batch.turns);
+                    let spans: Vec<DiarizedSpan> = batch
+                        .turns
+                        .iter()
+                        .map(|turn| DiarizedSpan {
+                            speaker_id: turn.speaker_id.clone(),
+                            start_ms: recording_offset + turn.start_ms,
+                            end_ms: recording_offset + turn.end_ms,
+                        })
+                        .collect();
+                    let self_name = participants.self_name().map(str::to_string);
+                    let observed = participants.attribute(&spans, &[], &[]);
+                    let mic_speaker = identify_mic_speaker(
+                        &batch.turns,
+                        &shift_intervals(&mic_speech, recording_offset),
+                    ).or_else(|| {
+                        // A confident active-speaker match from the meeting client
+                        // can identify self when the microphone timing is ambiguous.
+                        observed.iter().find_map(|(id, name)| {
+                            (Some(name.as_str()) == self_name.as_deref()).then(|| id.clone())
+                        })
+                    });
+                    let labels = label_speakers(&batch.turns, mic_speaker.as_deref());
+                    let named = participants.attribute(
+                        &spans,
+                        &mic_speaker.as_deref().into_iter().collect::<Vec<_>>(),
+                        &self_name.as_deref().into_iter().collect::<Vec<_>>(),
+                    );
                     meeting.transcript = batch
                         .turns
                         .into_iter()
@@ -682,21 +887,53 @@ impl AppState {
                             language: turn.language.or_else(|| batch.language.clone()),
                         })
                         .collect();
-                    set_meeting_metadata(&mut meeting, "transcriptionProvider", json!("sarvam"));
+                    set_meeting_metadata(&mut meeting, "transcriptionProvider", json!(provider));
                     set_meeting_metadata(&mut meeting, "diarized", json!(true));
-                    for turn in &meeting.transcript {
-                        self.emit(
-                            "transcript_turn",
-                            serde_json::to_value(turn).unwrap_or_else(|_| json!({})),
-                        )
-                        .await;
-                    }
+                    set_meeting_metadata(
+                        &mut meeting,
+                        "micSpeakerIdentified",
+                        json!(mic_speaker.is_some()),
+                    );
+                    set_meeting_metadata(&mut meeting, "namedSpeakers", json!(named.len()));
+                    self.emit(
+                        "transcript_replaced",
+                        json!({
+                            "meetingId": meeting.id,
+                            "turns": serde_json::to_value(&meeting.transcript)
+                                .unwrap_or_else(|_| json!([])),
+                        }),
+                    )
+                    .await;
                 }
                 Err(cause) => {
+                    let cause = if provider == "sarvam-realtime" {
+                        format!(
+                            "{cause} — the live transcript was kept, without speaker separation"
+                        )
+                    } else {
+                        cause
+                    };
                     set_meeting_metadata(&mut meeting, "transcriptionWarning", json!(cause));
                     transcription_warning = Some(cause);
                 }
             }
+        }
+
+        if !participants.is_empty() {
+            let mut session = self.session.lock().await;
+            for turn in meeting.transcript.iter_mut() {
+                if turn.channel != "system" {
+                    continue;
+                }
+                if let Some(name) = participants.speaker_during(turn.start_ms, turn.end_ms) {
+                    if Some(name.as_str()) != participants.self_name() {
+                        turn.speaker = session.speaker_labels.label(Some(&name));
+                    }
+                }
+            }
+        }
+        if !participants.roster().is_empty() {
+            set_meeting_metadata(&mut meeting, "participants", json!(participants.roster()));
         }
 
         let mut session = self.session.lock().await;
@@ -721,10 +958,18 @@ impl AppState {
             self.summarize_into(&mut meeting).await
         };
 
-        self.store
-            .put(meeting.clone())
+        let mut meeting = self.store.put(meeting).await.map_err(|e| e.to_string())?;
+        if self
+            .store
+            .adopt_recording(&mut meeting)
             .await
-            .map_err(|e| e.to_string())?;
+            .unwrap_or(false)
+        {
+            meeting = self.store.put(meeting).await.map_err(|e| e.to_string())?;
+        }
+        if let Err(cause) = self.store.put_documents(&meeting).await {
+            eprintln!("[Alpha Core Backend] could not write the meeting documents: {cause}");
+        }
 
         let mut session = self.session.lock().await;
         session.current = Some(meeting.clone());
@@ -761,6 +1006,7 @@ impl AppState {
                 .transcript
                 .iter()
                 .map(|t| SummaryTurn {
+                    id: t.id.clone(),
                     speaker: t.speaker.clone(),
                     start_ms: t.start_ms,
                     text: t.text.clone(),
@@ -783,6 +1029,7 @@ impl AppState {
 
         let summary = self.summarizer.summarize(&request).await;
         meeting.summary_markdown = summary.summary_markdown.clone();
+        meeting.summary_sections = summary.summary_sections.clone();
         meeting.key_decisions = summary.key_decisions.clone();
         meeting.action_items = summary.action_items.clone();
         meeting.topics = summary.topics.clone();
@@ -794,11 +1041,28 @@ impl AppState {
         let mut session = self.session.lock().await;
         let packets = session.parser.feed(bytes);
         let recording = matches!(session.state, SessionState::Recording);
-        let live_whisper = session.transcription_provider != "sarvam";
-        let meeting_id = session.current.as_ref().map(|m| m.id.clone());
+        let provider = session.transcription_provider.clone();
+        let live_whisper = !provider.starts_with("sarvam");
+        let live_sarvam = provider == "sarvam-realtime";
+        let separate_voices = live_whisper || live_sarvam;
+        let meeting = session
+            .current
+            .as_ref()
+            .map(|meeting| (meeting.id.clone(), meeting.started_at));
         let mut jobs = Vec::new();
+        let mut heard = Vec::new();
 
-        for AudioPacket { stream_id, pcm, .. } in packets {
+        for AudioPacket {
+            stream_id,
+            timestamp_ms,
+            pcm,
+        } in packets
+        {
+            let pcm = match session.denoiser.as_mut() {
+                Some(denoiser) if stream_id == STREAM_MIC => denoiser.process(&pcm),
+                _ => pcm,
+            };
+
             let level = audio::rms(&pcm);
             if stream_id == STREAM_MIC {
                 session.mic_rms = level;
@@ -806,20 +1070,69 @@ impl AppState {
                 session.system_rms = level;
             }
 
+            if recording && live_sarvam {
+                if let Some(live) = session.live.as_ref() {
+                    live.feed(stream_id, &pcm);
+                }
+            }
+
             // Audio is metered whenever it arrives, but only a live meeting is
             // segmented and transcribed.
-            if let (true, true, Some(id)) = (recording, live_whisper, meeting_id.as_ref()) {
+            if let (true, Some((id, started_at))) = (recording, meeting.as_ref()) {
+                let arrived = (timestamp_ms - started_at).max(0);
+                let epoch = if stream_id == STREAM_MIC {
+                    *session.mic_epoch_ms.get_or_insert(arrived)
+                } else {
+                    *session.system_epoch_ms.get_or_insert(arrived)
+                };
+
+                if stream_id != STREAM_MIC {
+                    if session.echo_suppression {
+                        let played_at =
+                            epoch + session.system_samples * 1000 / dsp::SAMPLE_RATE as i64;
+                        session.echo.append_played(played_at, &pcm);
+                    }
+                    session.system_samples += pcm.len() as i64 / 2;
+                }
+
                 let utterances = if stream_id == STREAM_MIC {
                     session.mic_vad.feed(&pcm)
-                } else {
+                } else if separate_voices {
                     session.system_vad.feed(&pcm)
+                } else {
+                    Vec::new()
                 };
-                for utterance in utterances {
-                    jobs.push(TranscriptionJob {
-                        meeting_id: id.clone(),
-                        stream_id,
-                        utterance,
-                    });
+
+                for mut utterance in utterances {
+                    utterance.start_ms += epoch;
+                    utterance.end_ms += epoch;
+
+                    if stream_id == STREAM_MIC {
+                        if session.echo_suppression
+                            && session.echo.is_echo(utterance.start_ms, &utterance.pcm)
+                        {
+                            continue;
+                        }
+                        remember_speech(
+                            &mut session.mic_speech,
+                            utterance.start_ms,
+                            utterance.end_ms,
+                        );
+                    } else {
+                        heard.push((
+                            utterance.start_ms,
+                            utterance.end_ms,
+                            utterance.pcm.clone(),
+                        ));
+                    }
+
+                    if live_whisper {
+                        jobs.push(TranscriptionJob {
+                            meeting_id: id.clone(),
+                            stream_id,
+                            utterance,
+                        });
+                    }
                 }
             }
         }
@@ -833,7 +1146,81 @@ impl AppState {
             json!({"mic":mic*100.0,"system":system*100.0}),
         )
         .await;
+        self.learn_voices(heard).await;
         self.queue_transcriptions(jobs).await;
+    }
+
+    async fn learn_voices(&self, heard: Vec<(i64, i64, Vec<u8>)>) {
+        if heard.is_empty() {
+            return;
+        }
+        let printed = tokio::task::spawn_blocking(move || {
+            heard
+                .into_iter()
+                .filter_map(|(start_ms, end_ms, pcm)| {
+                    Voiceprint::from_pcm(&pcm).map(|print| (start_ms, end_ms, print))
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_default();
+
+        if printed.is_empty() {
+            return;
+        }
+        let mut session = self.session.lock().await;
+        for (start_ms, end_ms, print) in printed {
+            session.voices.observe(&print, start_ms, end_ms);
+        }
+    }
+
+    async fn observe_participants(&self, payload: &Value) -> Value {
+        let roster = clean_names(payload.get("participants"));
+        let speaking = clean_names(payload.get("speaking"));
+        let source = payload
+            .get("source")
+            .and_then(Value::as_str)
+            .and_then(clean_name);
+        let self_name = payload
+            .get("self")
+            .and_then(Value::as_str)
+            .and_then(clean_name);
+
+        let mut session = self.session.lock().await;
+        let state = session.state.as_str();
+        let recording = matches!(session.state, SessionState::Recording);
+        let Some((meeting_id, started_at)) = session
+            .current
+            .as_ref()
+            .map(|meeting| (meeting.id.clone(), meeting.started_at))
+        else {
+            return json!({"accepted": false, "state": state});
+        };
+
+        session.participants.set_source(source);
+        session.participants.set_self_name(self_name);
+        session.participants.extend_roster(&roster);
+        if recording {
+            session
+                .participants
+                .observe(&speaking, (now_ms() - started_at).max(0));
+        }
+
+        let names = session.participants.roster().to_vec();
+        let source = session.participants.source().map(str::to_string);
+        if let Some(meeting) = session.current.as_mut() {
+            set_meeting_metadata(meeting, "participants", json!(names));
+            if let Some(source) = source {
+                set_meeting_metadata(meeting, "participantSource", json!(source));
+            }
+        }
+
+        json!({
+            "accepted": recording,
+            "state": state,
+            "meetingId": meeting_id,
+            "participants": names,
+        })
     }
 
     async fn queue_transcriptions(&self, jobs: Vec<TranscriptionJob>) {
@@ -941,22 +1328,41 @@ impl AppState {
         self.store
             .put(meeting)
             .await
+            .map(|_| ())
             .map_err(|cause| cause.to_string())
     }
 
     async fn commit_turn(&self, job: &TranscriptionJob, text: String, language: Option<String>) {
-        let turn = TranscriptTurn {
+        self.commit_live_turn(
+            &job.meeting_id,
+            job.stream_id,
+            job.utterance.start_ms,
+            job.utterance.end_ms,
+            text,
+            language,
+        )
+        .await;
+    }
+
+    async fn commit_live_turn(
+        &self,
+        meeting_id: &str,
+        stream_id: u32,
+        start_ms: i64,
+        end_ms: i64,
+        text: String,
+        language: Option<String>,
+    ) {
+        let mut turn = TranscriptTurn {
             id: Uuid::new_v4().to_string(),
-            channel: channel_name(job.stream_id).to_string(),
-            // The core has no diarization yet, so remote audio is one voice.
-            speaker: if job.stream_id == STREAM_MIC {
-                "You"
-            } else {
-                "Others"
-            }
-            .to_string(),
-            start_ms: job.utterance.start_ms,
-            end_ms: job.utterance.end_ms,
+            channel: channel_name(stream_id).to_string(),
+            // The microphone is always the local user. Meeting audio is resolved
+            // below, from the meeting client's active speaker when there is one,
+            // and otherwise stays one provisional speaker until the post-meeting
+            // pass separates the voices.
+            speaker: speaker_name(stream_id).to_string(),
+            start_ms,
+            end_ms,
             text,
             confidence: 1.0,
             language,
@@ -964,8 +1370,33 @@ impl AppState {
 
         let snapshot = {
             let mut session = self.session.lock().await;
+            if session.current.as_ref().map(|meeting| meeting.id.as_str()) != Some(meeting_id) {
+                return;
+            }
+            let epoch = if stream_id == STREAM_MIC {
+                session.mic_epoch_ms
+            } else {
+                session.system_epoch_ms
+            }
+            .unwrap_or(0);
+            turn.start_ms = start_ms + epoch;
+            turn.end_ms = end_ms + epoch;
+
+            if stream_id == STREAM_MIC {
+                if session.echo_suppression
+                    && session.echo.repeats_meeting_audio(turn.start_ms, &turn.text)
+                {
+                    return;
+                }
+            } else {
+                let identity = remote_identity(&session.participants, turn.start_ms, turn.end_ms);
+                turn.speaker = session.speaker_labels.label(identity.as_deref());
+                if session.echo_suppression {
+                    session.echo.remember_text(turn.start_ms, &turn.text);
+                }
+            }
             match session.current.as_mut() {
-                Some(meeting) if meeting.id == job.meeting_id => {
+                Some(meeting) if meeting.id == meeting_id => {
                     meeting.transcript.push(turn.clone());
                     Some(meeting.clone())
                 }
@@ -982,6 +1413,78 @@ impl AppState {
             serde_json::to_value(&turn).unwrap_or_else(|_| json!({})),
         )
         .await;
+    }
+
+    async fn live_speaker(&self, stream_id: u32) -> String {
+        if stream_id == STREAM_MIC {
+            return speaker_name(stream_id).to_string();
+        }
+        let session = self.session.lock().await;
+        session
+            .speaker_labels
+            .peek(None)
+            .unwrap_or_else(|| speaker_name(stream_id))
+            .to_string()
+    }
+
+    async fn consume_live_events(
+        &self,
+        meeting_id: String,
+        mut events: mpsc::UnboundedReceiver<LiveEvent>,
+    ) {
+        while let Some(event) = events.recv().await {
+            match event {
+                LiveEvent::Partial { stream_id, text } => {
+                    let speaker = self.live_speaker(stream_id).await;
+                    self.emit(
+                        "transcript_interim",
+                        json!({
+                            "meetingId": meeting_id,
+                            "channel": channel_name(stream_id),
+                            "speaker": speaker,
+                            "text": text,
+                        }),
+                    )
+                    .await;
+                }
+                LiveEvent::Final {
+                    stream_id,
+                    text,
+                    language,
+                    start_ms,
+                    end_ms,
+                } => {
+                    if let Some(speech) = strip_non_speech(&text) {
+                        self.commit_live_turn(
+                            &meeting_id,
+                            stream_id,
+                            start_ms,
+                            end_ms,
+                            speech,
+                            language,
+                        )
+                        .await;
+                    }
+                }
+                LiveEvent::Notice {
+                    stream_id,
+                    message,
+                    fatal,
+                } => {
+                    eprintln!(
+                        "[Alpha Core Backend] Sarvam realtime {}: {message}",
+                        channel_name(stream_id)
+                    );
+                    if fatal {
+                        self.emit(
+                            "warning",
+                            json!({"message": format!("Sarvam realtime transcription stopped: {message}")}),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1043,10 +1546,15 @@ async fn main() -> io::Result<()> {
         }
     }
 
+    let store = Store::load().await;
+    let chat = chat::ChatService::new(store.library.read().await.root().to_path_buf());
+    let session = Arc::new(Mutex::new(Session::default()));
+    chat.start(store.clone(), session.clone());
     let state = AppState {
         started_at: now_ms(),
-        session: Arc::new(Mutex::new(Session::default())),
-        store: Store::load().await,
+        session,
+        store,
+        chat,
         events,
         stt: stt.clone(),
         sarvam: sarvam.clone(),
@@ -1082,7 +1590,11 @@ async fn main() -> io::Result<()> {
 
     // Load the model at boot rather than on the first meeting, so the very first
     // sentence of a recording is transcribed instead of being spent on warm-up.
-    if settings.get_str("transcriptionProvider").await.as_deref() != Some("sarvam") {
+    if !settings
+        .get_str("transcriptionProvider")
+        .await
+        .is_some_and(|provider| provider.starts_with("sarvam"))
+    {
         let warm_stt = stt.clone();
         tokio::spawn(async move { warm_stt.ensure_ready().await });
     }
@@ -1248,6 +1760,13 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             200,
             json!({"status":"ok","version":VERSION,"uptimeSeconds":((now_ms()-state.started_at).max(0)/1000),"state":state.session.lock().await.state.as_str(),"stt":state.stt_status(None).await,"podcast":state.podcast.status_value().await}),
         ),
+        ("GET", "/api/folders") | ("POST", "/api/folders") => {
+            match workspace::folders(&state.store, (req.method == "POST").then_some(&body)).await {
+                Ok(result) => json_response(200, result),
+                Err(error) => json_response(400, json!({"error":error})),
+            }
+        }
+        (_, path) if path == "/api/chat" || path.starts_with("/api/chat/") => chat::route(req, state, &body).await,
         ("GET", "/api/status") => json_response(200, state.status().await),
         ("GET", "/api/meetings") => {
             let limit = req
@@ -1283,6 +1802,9 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }
             json_response(200, json!({"success":true,"state":s.state.as_str()}))
         }
+        ("POST", "/api/session/participants") => {
+            json_response(200, state.observe_participants(&body).await)
+        }
         ("POST", "/api/meetings/stop") => match state.finish(&body).await {
             Ok(m) => json_response(200, json!({"success":true,"meeting":m})),
             Err(e) => json_response(409, json!({"error":e})),
@@ -1317,6 +1839,9 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             if settings.get("sarvamMode").is_none() {
                 settings["sarvamMode"] = json!("transcribe");
             }
+            if settings.get("sarvamDiarizeAfterMeeting").is_none() {
+                settings["sarvamDiarizeAfterMeeting"] = json!(true);
+            }
             json_response(200, json!({"settings": settings}))
         }
         ("POST", "/api/settings") => {
@@ -1332,7 +1857,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             if let Some(provider) = object.get("transcriptionProvider").and_then(Value::as_str) {
                 if !matches!(
                     provider.trim().to_ascii_lowercase().as_str(),
-                    "whisper" | "sarvam"
+                    "whisper" | "sarvam" | "sarvam-realtime"
                 ) {
                     return json_response(
                         400,
@@ -1348,6 +1873,19 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 .validate()
                 {
                     return json_response(400, json!({"error": cause}));
+                }
+            }
+            if let Some(value) = object.get("sarvamDiarizeAfterMeeting") {
+                if !value.is_boolean() {
+                    return json_response(
+                        400,
+                        json!({"error": "Sarvam post-meeting diarization must be true or false"}),
+                    );
+                }
+            }
+            for key in ["noiseSuppression", "echoSuppression"] {
+                if object.get(key).is_some_and(|value| !value.is_boolean()) {
+                    return json_response(400, json!({"error": format!("{key} must be true or false")}));
                 }
             }
             if let Some(value) = object.get("sarvamNumSpeakers") {
@@ -1382,6 +1920,17 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             if let Some(model) = object.get("aiModel").and_then(Value::as_str) {
                 if let Err(cause) = state.summarizer.set_model(model).await {
                     warnings.push(cause);
+                }
+            }
+            {
+                let mut session = state.session.lock().await;
+                if let Some(enabled) = object.get("noiseSuppression").and_then(Value::as_bool) {
+                    if enabled != session.denoiser.is_some() {
+                        session.denoiser = enabled.then(NoiseSuppressor::new);
+                    }
+                }
+                if let Some(enabled) = object.get("echoSuppression").and_then(Value::as_bool) {
+                    session.echo_suppression = enabled;
                 }
             }
             if let Some(provider) = object.get("summaryProvider").and_then(Value::as_str) {
@@ -1502,8 +2051,21 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 .query
                 .get("minutesAhead")
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(720);
+                .unwrap_or(2880);
             json_response(200, state.calendar.events(back, ahead).await)
+        }
+        ("POST", "/api/calendar/events") => {
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or(calendar::GOOGLE);
+            if !calendar::is_provider(provider) {
+                return json_response(400, json!({"error": "unknown calendar provider"}));
+            }
+            match state.calendar.create_event(provider, &body).await {
+                Ok(event) => json_response(200, json!({"event": event})),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
         }
         ("GET", "/api/search") => {
             let q = req.query.get("q").map(String::as_str).unwrap_or("");
@@ -1674,6 +2236,12 @@ async fn route_meeting(
     let parts: Vec<_> = req.path.trim_matches('/').split('/').collect();
     if parts.len() >= 3 && parts[0] == "api" && parts[1] == "meetings" {
         let id = parts[2];
+        if req.method == "PATCH" && parts.len() == 4 && parts[3] == "folder" {
+            return match workspace::move_meeting(&state.store, id, body).await {
+                Ok(meeting) => json_response(200, json!({"meeting":meeting})),
+                Err(error) => json_response(400, json!({"error":error})),
+            };
+        }
         if req.method == "POST" && parts.len() == 4 && parts[3] == "notes" {
             let text = body.get("text").and_then(Value::as_str).unwrap_or_default();
             return match state.add_note(id, text).await {
@@ -1698,9 +2266,11 @@ async fn route_meeting(
                 Ok(changed) => changed,
                 Err(cause) => return json_response(400, json!({"error": cause})),
             };
-            if let Err(cause) = state.store.put(meeting.clone()).await {
-                return json_response(500, json!({"error": cause.to_string()}));
-            }
+            let meeting = match state.store.put(meeting).await {
+                Ok(meeting) => meeting,
+                Err(cause) => return json_response(500, json!({"error": cause.to_string()})),
+            };
+            let _ = state.store.put_documents(&meeting).await;
             return json_response(
                 200,
                 json!({"success":true,"changedTurns":changed,"meeting":meeting}),
@@ -1743,14 +2313,17 @@ async fn route_meeting(
                 let summary = state.summarize_into(&mut meeting).await;
                 provider = summary.provider;
                 warning = summary.warning;
-                if let Err(cause) = state.store.put(meeting.clone()).await {
-                    return json_response(500, json!({"error": cause.to_string()}));
+                match state.store.put(meeting.clone()).await {
+                    Ok(stored) => {
+                        let _ = state.store.put_documents(&stored).await;
+                    }
+                    Err(cause) => return json_response(500, json!({"error": cause.to_string()})),
                 }
             }
 
             return json_response(
                 200,
-                json!({"success":true,"summary":{"rawMarkdown":meeting.summary_markdown,"actionItems":meeting.action_items,"keyDecisions":meeting.key_decisions,"topics":meeting.topics,"emailDraft":meeting.email_draft,"provider":provider,"warning":warning}}),
+                json!({"success":true,"summary":{"rawMarkdown":meeting.summary_markdown,"sections":meeting.summary_sections,"actionItems":meeting.action_items,"keyDecisions":meeting.key_decisions,"topics":meeting.topics,"emailDraft":meeting.email_draft,"provider":provider,"warning":warning}}),
             );
         }
         if req.method == "GET" && parts.get(3) == Some(&"export") {
@@ -1781,43 +2354,7 @@ async fn route_meeting(
 }
 
 fn export_markdown(meeting: &Meeting) -> String {
-    let mut out = format!("# {}\n\n", meeting.title);
-    out.push_str(&format!(
-        "**Duration:** {} seconds\n\n",
-        meeting.duration_seconds
-    ));
-    if !meeting.summary_markdown.is_empty() {
-        out.push_str(&format!("## Summary\n\n{}\n\n", meeting.summary_markdown));
-    }
-    if !meeting.key_decisions.is_empty() {
-        out.push_str("## Key Decisions\n\n");
-        for decision in &meeting.key_decisions {
-            out.push_str(&format!("- {decision}\n"));
-        }
-        out.push('\n');
-    }
-    if !meeting.action_items.is_empty() {
-        out.push_str("## Action Items\n\n");
-        for item in &meeting.action_items {
-            let task = item.get("task").and_then(Value::as_str).unwrap_or("");
-            let owner = item
-                .get("owner")
-                .and_then(Value::as_str)
-                .unwrap_or("Unassigned");
-            let deadline = item
-                .get("deadline")
-                .and_then(Value::as_str)
-                .unwrap_or("TBD");
-            out.push_str(&format!("- **{owner}** — {task} ({deadline})\n"));
-        }
-        out.push('\n');
-    }
-    if !meeting.email_draft.is_empty() {
-        out.push_str(&format!(
-            "## Follow-Up Email\n\n{}\n\n",
-            meeting.email_draft
-        ));
-    }
+    let mut out = library::summary_document(meeting);
     if !meeting.transcript.is_empty() {
         out.push_str("## Transcript\n\n");
         for t in &meeting.transcript {
@@ -1827,17 +2364,52 @@ fn export_markdown(meeting: &Meeting) -> String {
     out
 }
 
-async fn websocket_session(mut stream: TcpStream, key: &str, state: AppState) -> io::Result<()> {
+async fn websocket_session(stream: TcpStream, key: &str, state: AppState) -> io::Result<()> {
+    let (mut reader, mut writer) = stream.into_split();
     let accept = websocket_accept(key);
     let response=format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n");
-    stream.write_all(response.as_bytes()).await?;
+    writer.write_all(response.as_bytes()).await?;
     let mut receiver = state.events.subscribe();
     let initial =
         json!({"type":"connection_established","status":state.status().await}).to_string();
-    write_ws_text(&mut stream, &initial).await?;
+    write_ws_text(&mut writer, &initial).await?;
+
+    let (pongs, mut pong_queue) = mpsc::unbounded_channel::<Vec<u8>>();
+    let outbound = tokio::spawn(async move {
+        loop {
+            let written = tokio::select! {
+                event = receiver.recv() => match event {
+                    Ok(event) => write_ws_text(&mut writer, &event).await,
+                    Err(broadcast::error::RecvError::Lagged(_)) => Ok(()),
+                    Err(broadcast::error::RecvError::Closed) => break,
+                },
+                payload = pong_queue.recv() => match payload {
+                    Some(payload) => write_ws_pong(&mut writer, &payload).await,
+                    None => break,
+                },
+            };
+            if written.is_err() {
+                break;
+            }
+        }
+    });
+
     loop {
-        tokio::select! { event=receiver.recv()=>{if let Ok(event)=event {write_ws_text(&mut stream,&event).await?;}}, frame=read_ws_frame(&mut stream)=>{match frame? { Some(WsFrame::Close)=>break,Some(WsFrame::Binary(bytes))=>state.feed_audio(&bytes).await,Some(WsFrame::Text(text))=>handle_ws_message(&state,&text).await,Some(WsFrame::Ping(payload))=>write_ws_pong(&mut stream,&payload).await?,None=>break}} }
+        match read_ws_frame(&mut reader).await {
+            Ok(Some(WsFrame::Binary(bytes))) => state.feed_audio(&bytes).await,
+            Ok(Some(WsFrame::Text(text))) => handle_ws_message(&state, &text).await,
+            Ok(Some(WsFrame::Ping(payload))) => {
+                if pongs.send(payload).is_err() {
+                    break;
+                }
+            }
+            Ok(Some(WsFrame::Close)) | Ok(None) => break,
+            Err(_) => break,
+        }
     }
+
+    drop(pongs);
+    outbound.abort();
     Ok(())
 }
 
@@ -1886,7 +2458,7 @@ enum WsFrame {
     Ping(Vec<u8>),
     Close,
 }
-async fn read_ws_frame(stream: &mut TcpStream) -> io::Result<Option<WsFrame>> {
+async fn read_ws_frame<R: AsyncReadExt + Unpin>(stream: &mut R) -> io::Result<Option<WsFrame>> {
     let mut head = [0u8; 2];
     if stream.read_exact(&mut head).await.is_err() {
         return Ok(None);
@@ -1928,13 +2500,13 @@ async fn read_ws_frame(stream: &mut TcpStream) -> io::Result<Option<WsFrame>> {
         _ => return Ok(None),
     }))
 }
-async fn write_ws_text(stream: &mut TcpStream, text: &str) -> io::Result<()> {
+async fn write_ws_text<W: AsyncWriteExt + Unpin>(stream: &mut W, text: &str) -> io::Result<()> {
     write_ws_frame(stream, 1, text.as_bytes()).await
 }
-async fn write_ws_pong(stream: &mut TcpStream, data: &[u8]) -> io::Result<()> {
+async fn write_ws_pong<W: AsyncWriteExt + Unpin>(stream: &mut W, data: &[u8]) -> io::Result<()> {
     write_ws_frame(stream, 10, data).await
 }
-async fn write_ws_frame(stream: &mut TcpStream, opcode: u8, data: &[u8]) -> io::Result<()> {
+async fn write_ws_frame<W: AsyncWriteExt + Unpin>(stream: &mut W, opcode: u8, data: &[u8]) -> io::Result<()> {
     let mut frame = Vec::with_capacity(data.len() + 10);
     frame.push(0x80 | opcode);
     match data.len() {
@@ -2017,6 +2589,43 @@ fn sha1(data: &[u8]) -> [u8; 20] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meeting_audio_stays_one_provisional_speaker_when_no_meeting_client_is_attached() {
+        let silent = SpeechLog::default();
+        let mut labels = NumberedSpeakers::default();
+
+        for (start_ms, end_ms) in [(0, 3_000), (10_000, 13_000), (40_000, 44_000)] {
+            let identity = remote_identity(&silent, start_ms, end_ms);
+            assert_eq!(identity, None);
+            assert_eq!(labels.label(identity.as_deref()), "Speaker 1");
+        }
+    }
+
+    #[test]
+    fn a_meeting_client_reporting_names_is_what_names_meeting_audio() {
+        let mut participants = SpeechLog::default();
+        participants.set_self_name(Some("Riyam".into()));
+        participants.observe(&["Aditi".to_string()], 0);
+        participants.observe(&["Riyam".to_string()], 10_000);
+        participants.close(13_000);
+
+        assert_eq!(
+            remote_identity(&participants, 0, 3_000).as_deref(),
+            Some("Aditi")
+        );
+        assert_eq!(remote_identity(&participants, 10_000, 13_000), None);
+    }
+
+    #[test]
+    fn a_speaker_number_can_be_read_back_without_claiming_the_next_one() {
+        let mut labels = NumberedSpeakers::default();
+        assert_eq!(labels.peek(Some("voice-1")), None);
+
+        labels.label(Some("voice-1"));
+        assert_eq!(labels.peek(Some("voice-1")), Some("Speaker 1"));
+        assert_eq!(labels.label(Some("voice-2")), "Speaker 2");
+    }
 
     #[test]
     fn invited_names_prefer_a_name_and_fall_back_to_the_address() {
@@ -2121,6 +2730,20 @@ mod tests {
         );
         assert_eq!(reparsed.recording.as_ref().unwrap()["hasSystemAudio"], true);
         assert_eq!(reparsed.transcript[0].language.as_deref(), Some("es"));
+    }
+
+    #[test]
+    fn microphone_speech_merges_segments_that_run_together() {
+        let mut intervals = Vec::new();
+        remember_speech(&mut intervals, 0, 15_000);
+        remember_speech(&mut intervals, 15_000, 21_400);
+        remember_speech(&mut intervals, 30_000, 32_000);
+        remember_speech(&mut intervals, 33_000, 33_000);
+        assert_eq!(intervals, vec![(0, 21_400), (30_000, 32_000)]);
+        assert_eq!(
+            shift_intervals(&intervals, 4_000),
+            vec![(-4_000, 17_400), (26_000, 28_000)]
+        );
     }
 
     #[test]

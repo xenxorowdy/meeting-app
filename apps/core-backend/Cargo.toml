@@ -9,6 +9,8 @@ license = "Commercial"
 base64 = "0.22.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 sha2 = "0.10"
+rusqlite = { version = "0.38", features = ["bundled"] }
+fastembed = { version = "=6.0.2", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
 # First TLS dependency in the tree: Gemini is HTTPS-only and the hand-rolled
 # HTTP in stt.rs only works because the WhisperKit sidecar is plaintext localhost.
 # rustls rather than default-features, so this does not drag in OpenSSL.
@@ -17,6 +19,8 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.132"
 tokio = { version = "1.45.1", features = ["macros", "net", "rt-multi-thread", "sync", "time", "io-util", "signal", "fs", "process"] }
 tokio-util = { version = "0.7", features = ["io"] }
+futures-util = { version = "0.3", features = ["sink"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 uuid = { version = "1.11.0", features = ["v4", "serde"] }
 
 [profile.release]

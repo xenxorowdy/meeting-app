@@ -14,6 +14,8 @@ const DEFAULT_BASE_URL: &str = "https://api.sarvam.ai";
 const DEFAULT_MODEL: &str = "saaras:v3";
 const DEFAULT_TIMEOUT_SECS: u64 = 900;
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+const MIC_ATTRIBUTION_MIN_MS: i64 = 3_000;
+const MIC_ATTRIBUTION_MIN_SHARE: f64 = 0.6;
 
 #[derive(Clone, Debug)]
 pub struct BatchConfig {
@@ -116,6 +118,10 @@ impl SarvamService {
 
     pub async fn has_key(&self) -> bool {
         self.key.read().await.is_some()
+    }
+
+    pub async fn api_key(&self) -> Option<String> {
+        self.key.read().await.clone()
     }
 
     pub async fn status_value(&self) -> Value {
@@ -488,13 +494,53 @@ fn seconds_to_ms(value: Option<&Value>) -> i64 {
         .unwrap_or(0)
 }
 
-pub fn label_speakers(turns: &[BatchTurn]) -> HashMap<String, String> {
-    let mut labels = HashMap::new();
+pub fn identify_mic_speaker(turns: &[BatchTurn], mic_speech: &[(i64, i64)]) -> Option<String> {
+    if mic_speech.is_empty() {
+        return None;
+    }
+
+    let mut totals: HashMap<&str, (i64, i64)> = HashMap::new();
     for turn in turns {
-        let next = labels.len() + 1;
-        labels
-            .entry(turn.speaker_id.clone())
-            .or_insert_with(|| format!("Speaker {next}"));
+        let duration = (turn.end_ms - turn.start_ms).max(0);
+        if duration == 0 {
+            continue;
+        }
+        let overlap: i64 = mic_speech
+            .iter()
+            .map(|(start, end)| (turn.end_ms.min(*end) - turn.start_ms.max(*start)).max(0))
+            .sum();
+        let entry = totals.entry(turn.speaker_id.as_str()).or_insert((0, 0));
+        entry.0 += duration;
+        entry.1 += overlap.min(duration);
+    }
+
+    let mut ranked: Vec<(&str, f64)> = totals
+        .iter()
+        .filter(|(_, (spoken, _))| *spoken >= MIC_ATTRIBUTION_MIN_MS)
+        .map(|(id, (spoken, overlap))| (*id, *overlap as f64 / *spoken as f64))
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+
+    let (best, share) = *ranked.first()?;
+    let runner_up = ranked.get(1).map(|(_, share)| *share).unwrap_or(0.0);
+    if share < MIC_ATTRIBUTION_MIN_SHARE || runner_up > share / 2.0 {
+        return None;
+    }
+    Some(best.to_string())
+}
+
+pub fn label_speakers(turns: &[BatchTurn], mic_speaker: Option<&str>) -> HashMap<String, String> {
+    let mut labels = HashMap::new();
+    if let Some(speaker_id) = mic_speaker {
+        labels.insert(speaker_id.to_string(), "You".to_string());
+    }
+    let mut numbered = 0;
+    for turn in turns {
+        if labels.contains_key(&turn.speaker_id) {
+            continue;
+        }
+        numbered += 1;
+        labels.insert(turn.speaker_id.clone(), format!("Speaker {numbered}"));
     }
     labels
 }
@@ -534,33 +580,55 @@ mod tests {
         assert_eq!(parsed.turns[1].start_ms, 1250);
     }
 
+    fn turn(speaker_id: &str, start_ms: i64, end_ms: i64) -> BatchTurn {
+        BatchTurn {
+            speaker_id: speaker_id.into(),
+            start_ms,
+            end_ms,
+            text: "spoken".into(),
+            language: None,
+        }
+    }
+
     #[test]
     fn assigns_stable_human_speaker_labels() {
-        let turns = vec![
-            BatchTurn {
-                speaker_id: "7".into(),
-                text: "a".into(),
-                start_ms: 0,
-                end_ms: 1,
-                language: None,
-            },
-            BatchTurn {
-                speaker_id: "2".into(),
-                text: "b".into(),
-                start_ms: 1,
-                end_ms: 2,
-                language: None,
-            },
-            BatchTurn {
-                speaker_id: "7".into(),
-                text: "c".into(),
-                start_ms: 2,
-                end_ms: 3,
-                language: None,
-            },
-        ];
-        let labels = label_speakers(&turns);
+        let turns = vec![turn("7", 0, 1), turn("2", 1, 2), turn("7", 2, 3)];
+        let labels = label_speakers(&turns, None);
         assert_eq!(labels["7"], "Speaker 1");
         assert_eq!(labels["2"], "Speaker 2");
+    }
+
+    #[test]
+    fn the_microphone_speaker_is_named_and_the_rest_stay_sequential() {
+        let turns = vec![turn("7", 0, 1), turn("2", 1, 2), turn("5", 2, 3)];
+        let labels = label_speakers(&turns, Some("2"));
+        assert_eq!(labels["2"], "You");
+        assert_eq!(labels["7"], "Speaker 1");
+        assert_eq!(labels["5"], "Speaker 2");
+    }
+
+    #[test]
+    fn identifies_the_diarized_speaker_the_microphone_was_open_for() {
+        let turns = vec![
+            turn("0", 0, 4_000),
+            turn("1", 4_000, 9_000),
+            turn("0", 9_000, 13_000),
+        ];
+        let mic_speech = [(0, 4_100), (8_900, 13_000)];
+        assert_eq!(
+            identify_mic_speaker(&turns, &mic_speech).as_deref(),
+            Some("0")
+        );
+        assert_eq!(identify_mic_speaker(&turns, &[]), None);
+    }
+
+    #[test]
+    fn declines_to_name_anyone_when_the_microphone_heard_the_room() {
+        let turns = vec![turn("0", 0, 5_000), turn("1", 5_000, 10_000)];
+        let bleed = [(0, 10_000)];
+        assert_eq!(identify_mic_speaker(&turns, &bleed), None);
+
+        let brief = vec![turn("0", 0, 900), turn("1", 900, 6_000)];
+        assert_eq!(identify_mic_speaker(&brief, &[(0, 900)]), None);
     }
 }

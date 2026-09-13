@@ -21,10 +21,17 @@ export function TranscriptView({
     onToggleAutoScroll,
     isLive = false,
     stt = null,
+    citationFocus = null,
 }) {
     const [copiedId, setCopiedId] = useState(null);
     const [copiedFull, setCopiedFull] = useState(false);
     const scrollContainerRef = useRef(null);
+
+    useEffect(() => {
+        if (!citationFocus?.turnIds?.length) return;
+        const target = Array.from(scrollContainerRef.current?.querySelectorAll('[data-turn-id]') || []).find(element => citationFocus.turnIds.includes(element.dataset.turnId));
+        target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, [citationFocus, filteredTurns]);
 
     // Auto-scroll to bottom on new turns if enabled
     useEffect(() => {
@@ -195,7 +202,7 @@ export function TranscriptView({
                         const isCopied = copiedId === turn.id;
 
                         return (
-                            <article key={turn.id} className="group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60 sm:px-4">
+                            <article key={turn.id} data-turn-id={turn.id} className={`group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60 sm:px-4 ${citationFocus?.turnIds?.includes(turn.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/30' : ''}`}>
                                 <div
                                     className={cn(
                                         'flex size-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold',

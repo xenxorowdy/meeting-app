@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Monitor, AppWindow, TriangleAlert } from 'lucide-react';
+import { Monitor, AppWindow, TriangleAlert, Mic } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -85,6 +85,25 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                 </DialogHeader>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                    <button
+                        type="button"
+                        onClick={() => onConfirm(null, 'audio')}
+                        className="mb-4 flex w-full items-center gap-3 rounded-xl border bg-primary/[0.06] p-4 text-left transition-colors hover:bg-primary/[0.11] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            <Mic className="size-5" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-headline font-semibold">Sound only</span>
+                            <span className="block text-callout text-muted-foreground">Record your microphone without sharing or capturing your screen.</span>
+                        </span>
+                    </button>
+
+                    <div className="mb-3 flex items-center gap-3 text-footnote text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        Or record a screen with sound
+                        <span className="h-px flex-1 bg-border" />
+                    </div>
                     {error ? (
                         <p className="flex items-start gap-2 rounded-lg border bg-muted px-4 py-4 text-callout text-warning">
                             <TriangleAlert className="mt-[2px] size-4 shrink-0" aria-hidden="true" />
@@ -114,8 +133,8 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                     <Button variant="ghost" onClick={onClose}>
                         Cancel
                     </Button>
-                    <Button onClick={() => onConfirm(selectedId)} disabled={!selectedId}>
-                        Start recording
+                    <Button onClick={() => onConfirm(selectedId, 'screen')} disabled={!selectedId}>
+                        Screen + sound
                     </Button>
                 </DialogFooter>
             </DialogContent>

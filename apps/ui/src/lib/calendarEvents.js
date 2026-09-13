@@ -1,12 +1,39 @@
 export const EVENT_MATCH_LEAD_MS = 300000;
 export const EVENT_MATCH_GRACE_MS = 300000;
 export const REMINDER_LEAD_MS = 60000;
-export const REMINDER_MIN_ATTENDEES = 2;
 
 function withBounds(events) {
     return (Array.isArray(events) ? events : [])
         .map(event => ({ ...event, startMs: Date.parse(event?.start), endMs: Date.parse(event?.end) }))
         .filter(event => Number.isFinite(event.startMs));
+}
+
+function localDayKey(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return null;
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+export function eventsForTodayAndTomorrow(events, nowMs = Date.now()) {
+    const today = new Date(nowMs);
+    const tomorrow = new Date(nowMs);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayKey = localDayKey(today);
+    const tomorrowKey = localDayKey(tomorrow);
+    const days = { today: [], tomorrow: [] };
+
+    for (const event of Array.isArray(events) ? events : []) {
+        const key = localDayKey(event?.start);
+        if (key === todayKey) days.today.push(event);
+        if (key === tomorrowKey) days.tomorrow.push(event);
+    }
+
+    return days;
+}
+
+export function calendarEventLink(event) {
+    const candidates = [event?.joinUrl, ...(Array.isArray(event?.links) ? event.links : []), event?.eventUrl];
+    return candidates.find(value => typeof value === 'string' && /^https?:\/\//i.test(value.trim()))?.trim() || null;
 }
 
 export function currentOrNextEvent(events, nowMs = Date.now()) {
@@ -36,6 +63,8 @@ export function calendarEventMetadata(event) {
         end: event.end ?? null,
         location: event.location ?? null,
         joinUrl: event.joinUrl ?? null,
+        links: Array.isArray(event.links) ? event.links : [],
+        eventUrl: event.eventUrl ?? null,
         organizer: event.organizer ?? null,
         attendees: (Array.isArray(event.attendees) ? event.attendees : []).map(person => ({
             name: person?.name ?? null,
@@ -57,11 +86,44 @@ export function reminderKey(event) {
 export function dueForReminder(events, nowMs, leadMs = REMINDER_LEAD_MS) {
     if (!Array.isArray(events)) return [];
     return events.filter(event => {
-        const attendees = Array.isArray(event?.attendees) ? event.attendees : [];
-        if (attendees.length < REMINDER_MIN_ATTENDEES) return false;
-        const startMs = Date.parse(event.start);
+        const startMs = Date.parse(event?.start);
         if (!Number.isFinite(startMs)) return false;
         const untilStart = startMs - nowMs;
         return untilStart >= 0 && untilStart <= leadMs;
     });
+}
+
+export function durationLabel(ms) {
+    if (!Number.isFinite(ms) || ms < 60000) return '<1m';
+    const totalMinutes = Math.floor(ms / 60000);
+    if (totalMinutes < 60) return `${totalMinutes}m`;
+    const totalHours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (totalHours < 24) return minutes === 0 ? `${totalHours}h` : `${totalHours}h ${minutes}m`;
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
+}
+
+export function countdownLabel(msUntilStart) {
+    if (!Number.isFinite(msUntilStart) || msUntilStart <= 0) return 'now';
+    return `in ${durationLabel(msUntilStart)}`;
+}
+
+export function startsLabel(msUntilStart) {
+    if (!Number.isFinite(msUntilStart)) return 'No upcoming meetings';
+    if (msUntilStart > 0) return `Starts ${countdownLabel(msUntilStart)}`;
+    const elapsed = -msUntilStart;
+    if (elapsed < 60000) return 'Starting now';
+    return `Started ${durationLabel(elapsed)} ago`;
+}
+
+export function formatEventRange(event, locale = undefined, timeZone = undefined) {
+    const startMs = Date.parse(event?.start);
+    if (!Number.isFinite(startMs)) return '';
+    const formatter = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', ...(timeZone ? { timeZone } : {}) });
+    const clean = value => formatter.format(value).replace(/ /g, ' ');
+    const endMs = Date.parse(event?.end);
+    if (!Number.isFinite(endMs) || endMs <= startMs) return clean(startMs);
+    return `${clean(startMs)} – ${clean(endMs)}`;
 }

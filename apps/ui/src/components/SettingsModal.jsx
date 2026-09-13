@@ -36,6 +36,7 @@ const ENGLISH_ONLY_MODELS = ['tiny', 'base'];
 const TRANSCRIPTION_PROVIDERS = [
     { value: 'whisper', label: 'Whisper — live, on device' },
     { value: 'sarvam', label: 'Sarvam Saaras — batch + speakers' },
+    { value: 'sarvam-realtime', label: 'Sarvam Saaras — live streaming' },
 ];
 
 const SARVAM_LANGUAGES = [
@@ -140,7 +141,7 @@ export function SettingsModal({
     // key field always starts blank — the backend never sends it back.
     useEffect(() => {
         if (isOpen) {
-            setFormData({ ...settings, geminiApiKey: '', sarvamApiKey: '' });
+            setFormData({ ...settings, geminiApiKey: '', sarvamApiKey: '', googleCalendarClientSecret: '' });
             setSaveState(null);
             setActivation(null);
         }
@@ -177,6 +178,14 @@ export function SettingsModal({
         if (!payload.sarvamApiKey) delete payload.sarvamApiKey;
         delete payload.geminiApiKeySet;
         delete payload.sarvamApiKeySet;
+        for (const provider of ['google', 'microsoft']) {
+            for (const suffix of ['ClientId', 'ClientSecret']) {
+                const key = `${provider}Calendar${suffix}`;
+                if (!payload[key]?.trim()) delete payload[key];
+                delete payload[`${key}Set`];
+            }
+            delete payload[`${provider}CalendarConnected`];
+        }
 
         const result = await onUpdateSettings(payload);
 
@@ -209,6 +218,10 @@ export function SettingsModal({
     const englishOnlyModel = ENGLISH_ONLY_MODELS.includes(formData.whisperModel);
     const nonEnglishSelected = language !== 'en' && language !== 'auto';
     const transcriptionProvider = formData.transcriptionProvider || 'whisper';
+    const usesSarvam = transcriptionProvider.startsWith('sarvam');
+    const usesSarvamBatch = transcriptionProvider === 'sarvam';
+    const diarizeAfterMeeting = formData.sarvamDiarizeAfterMeeting !== false;
+    const diarizes = usesSarvamBatch || diarizeAfterMeeting;
 
     const tier = license?.tier ? license.tier.charAt(0).toUpperCase() + license.tier.slice(1) : 'Unknown';
     const meetingsThisMonth = license?.usage?.meetingsThisMonth ?? license?.usage?.meetingsCount;
@@ -283,6 +296,18 @@ export function SettingsModal({
                                 </SettingRow>
 
                                 <SettingRow
+                                    id="noise-suppression"
+                                    label="Noise cancellation"
+                                    description="Reduces background noise in your microphone and the recorded audio. Applies during recording too."
+                                >
+                                    <Switch
+                                        id="noise-suppression"
+                                        checked={formData.noiseSuppression !== false}
+                                        onCheckedChange={checked => setFormData({ ...formData, noiseSuppression: checked })}
+                                    />
+                                </SettingRow>
+
+                                <SettingRow
                                     id="echo-suppression"
                                     label="Echo suppression"
                                     description="Drops speaker bleed picked up by the microphone."
@@ -301,7 +326,7 @@ export function SettingsModal({
                                 <SettingRow
                                     id="transcription-provider"
                                     label="Transcription engine"
-                                    description="Whisper writes live turns locally. Sarvam processes the complete recording in one batch and separates speakers before summarization."
+                                    description="Whisper writes live turns locally. Sarvam either streams turns as they are spoken, or processes the complete recording in one batch. Speakers are separated from the finished recording either way."
                                     badge={
                                         transcriptionProvider === 'whisper' ? (
                                             <Badge variant="success">
@@ -309,7 +334,7 @@ export function SettingsModal({
                                                 On device
                                             </Badge>
                                         ) : (
-                                            <Badge variant="tinted">Batch cloud</Badge>
+                                            <Badge variant="tinted">{usesSarvamBatch ? 'Batch cloud' : 'Live cloud'}</Badge>
                                         )
                                     }
                                     stacked
@@ -320,7 +345,6 @@ export function SettingsModal({
                                             setFormData({
                                                 ...formData,
                                                 transcriptionProvider: value,
-                                                ...(value === 'sarvam' ? { recordScreen: true } : {}),
                                             })
                                         }
                                     >
@@ -341,12 +365,16 @@ export function SettingsModal({
                                     </Select>
                                 </SettingRow>
 
-                                {transcriptionProvider === 'sarvam' && (
+                                {usesSarvam && (
                                     <>
                                         <SettingRow
                                             id="sarvam-key"
                                             label="Sarvam API key"
-                                            description="Stored privately on this Mac. The completed meeting recording is uploaded to Sarvam for batch transcription and speaker diarization."
+                                            description={
+                                                usesSarvamBatch
+                                                    ? 'Stored privately on this Mac. The completed meeting recording is uploaded to Sarvam for batch transcription and speaker diarization.'
+                                                    : 'Stored privately on this Mac. Meeting audio is streamed to Sarvam while the meeting runs, and turns come back as they are spoken.'
+                                            }
                                             badge={
                                                 stt?.sarvam?.apiKeySet || formData.sarvamApiKeySet ? (
                                                     <Badge variant="success">
@@ -404,31 +432,47 @@ export function SettingsModal({
                                             </Select>
                                         </SettingRow>
 
-                                        <SettingRow
-                                            id="sarvam-speakers"
-                                            label="Expected speakers"
-                                            description="Automatic detection is recommended for meetings."
-                                            stacked
-                                        >
-                                            <Select
-                                                value={formData.sarvamNumSpeakers == null ? 'auto' : String(formData.sarvamNumSpeakers)}
-                                                onValueChange={value =>
-                                                    setFormData({ ...formData, sarvamNumSpeakers: value === 'auto' ? null : Number(value) })
-                                                }
+                                        {!usesSarvamBatch && (
+                                            <SettingRow
+                                                id="sarvam-diarize-after"
+                                                label="Separate speakers after the meeting"
+                                                description="Your microphone is labelled You. Meeting audio is separated by voice as it is spoken, into Speaker 1, Speaker 2 and so on, and the completed recording is separated again once the meeting ends."
                                             >
-                                                <SelectTrigger id="sarvam-speakers" className="w-full">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="auto">Detect automatically</SelectItem>
-                                                    {[2, 3, 4, 5, 6, 8, 10, 15, 20].map(count => (
-                                                        <SelectItem key={count} value={String(count)}>
-                                                            {count} speakers
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </SettingRow>
+                                                <Switch
+                                                    id="sarvam-diarize-after"
+                                                    checked={diarizeAfterMeeting}
+                                                    onCheckedChange={checked => setFormData({ ...formData, sarvamDiarizeAfterMeeting: checked })}
+                                                />
+                                            </SettingRow>
+                                        )}
+
+                                        {diarizes && (
+                                            <SettingRow
+                                                id="sarvam-speakers"
+                                                label="Expected speakers"
+                                                description="Automatic detection is recommended for meetings."
+                                                stacked
+                                            >
+                                                <Select
+                                                    value={formData.sarvamNumSpeakers == null ? 'auto' : String(formData.sarvamNumSpeakers)}
+                                                    onValueChange={value =>
+                                                        setFormData({ ...formData, sarvamNumSpeakers: value === 'auto' ? null : Number(value) })
+                                                    }
+                                                >
+                                                    <SelectTrigger id="sarvam-speakers" className="w-full">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="auto">Detect automatically</SelectItem>
+                                                        {[2, 3, 4, 5, 6, 8, 10, 15, 20].map(count => (
+                                                            <SelectItem key={count} value={String(count)}>
+                                                                {count} speakers
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </SettingRow>
+                                        )}
                                     </>
                                 )}
 
@@ -587,8 +631,14 @@ export function SettingsModal({
                                 <div className="space-y-2 text-footnote">
                                     <p className="text-muted-foreground">
                                         Engine:{' '}
-                                        {transcriptionProvider === 'sarvam'
-                                            ? `Sarvam ${stt.sarvam?.model || 'saaras:v3'} · batch with speaker diarization`
+                                        {usesSarvam
+                                            ? `Sarvam ${stt.sarvam?.model || (usesSarvamBatch ? 'saaras:v3' : 'saaras:v3-realtime')} · ${
+                                                  usesSarvamBatch
+                                                      ? 'batch with speaker diarization'
+                                                      : diarizeAfterMeeting
+                                                        ? 'live streaming, speakers separated after the meeting'
+                                                        : 'live streaming'
+                                              }`
                                             : stt.engine === 'unavailable'
                                               ? 'Whisper is not installed'
                                               : `${stt.engine} · ${stt.status}`}
@@ -635,9 +685,13 @@ export function SettingsModal({
                                             label={provider.label}
                                             description={
                                                 provider.connected
-                                                    ? `Connected as ${provider.account || 'your account'}. Alpha reads upcoming events and never writes to your calendar.`
+                                                    ? provider.provider === 'google'
+                                                        ? `Connected as ${provider.account || 'your account'}. If you previously granted read-only access, disconnect and reconnect to allow event editing.`
+                                                        : `Connected as ${provider.account || 'your account'}. Alpha reads upcoming events and never writes to your calendar.`
                                                     : provider.configured
-                                                      ? 'Opens your browser to sign in, then returns to Alpha. Read-only access to events.'
+                                                      ? provider.provider === 'google'
+                                                          ? 'Opens your browser to sign in, then returns to Alpha. Requests permission to view, create, edit, and delete events.'
+                                                          : 'Opens your browser to sign in, then returns to Alpha. Read-only access to events.'
                                                       : 'Add an OAuth client id below before connecting.'
                                             }
                                             badge={provider.connected ? <Badge variant="success">Connected</Badge> : null}
@@ -671,7 +725,7 @@ export function SettingsModal({
                                 <SettingRow
                                     id="meeting-reminders"
                                     label="Remind me before a meeting"
-                                    description="A notification a minute before any scheduled meeting with two or more people invited. Clicking it starts the recording."
+                                    description="A notification a minute before any scheduled meeting, and a countdown in the menu bar. Clicking the notification starts the recording."
                                 >
                                     <Switch
                                         id="meeting-reminders"
@@ -694,6 +748,21 @@ export function SettingsModal({
                                         placeholder={formData.googleCalendarClientIdSet ? 'Saved' : '…apps.googleusercontent.com'}
                                         value={formData.googleCalendarClientId || ''}
                                         onChange={event => setFormData({ ...formData, googleCalendarClientId: event.target.value })}
+                                    />
+                                </SettingRow>
+                                <SettingRow
+                                    id="google-client-secret"
+                                    label="Google client secret"
+                                    description="From the same Google Cloud Desktop app client as your client id. Required if Google reports that client_secret is missing. Leave blank to keep the saved value."
+                                    stacked
+                                >
+                                    <Input
+                                        id="google-client-secret"
+                                        type="password"
+                                        autoComplete="new-password"
+                                        placeholder={formData.googleCalendarClientSecretSet ? 'Saved — type to replace' : 'Paste the client secret'}
+                                        value={formData.googleCalendarClientSecret || ''}
+                                        onChange={event => setFormData({ ...formData, googleCalendarClientSecret: event.target.value })}
                                     />
                                 </SettingRow>
                                 <SettingRow
@@ -725,7 +794,7 @@ export function SettingsModal({
                                 <SettingRow
                                     id="floating-widget"
                                     label="Floating status widget"
-                                    description="A small always-on-top pill showing whether Alpha is recording. Click it to read the live transcript without leaving your call."
+                                    description="A small always-on-top pill that appears while a meeting is being transcribed. Click it to read the live transcript without leaving your call."
                                 >
                                     <Switch
                                         id="floating-widget"

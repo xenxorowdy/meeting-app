@@ -1,4 +1,4 @@
-import { startPcmCapture } from '@/lib/pcmCapture';
+import { startPcmCapture } from './pcmCapture.js';
 
 // Meetings are mostly static faces and slides, so a modest bitrate keeps files
 // small. Capture at 25–27 FPS so cursor movement and shared video look fluid;
@@ -16,12 +16,13 @@ const CANDIDATE_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,op
 // large enough that IPC overhead stays irrelevant.
 const CHUNK_MS = 1000;
 
-function pickMimeType() {
-    return CANDIDATE_TYPES.find(type => MediaRecorder.isTypeSupported(type)) || '';
+function pickMimeType(mode = 'screen') {
+    const candidates = mode === 'audio' ? ['audio/webm;codecs=opus', 'audio/webm'] : CANDIDATE_TYPES;
+    return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
 }
 
-export function isRecordingSupported() {
-    return Boolean(globalThis.alphaRecorder && typeof MediaRecorder !== 'undefined' && pickMimeType());
+export function isRecordingSupported(mode = 'screen') {
+    return Boolean(globalThis.alphaRecorder && typeof MediaRecorder !== 'undefined' && pickMimeType(mode));
 }
 
 export function listSources() {
@@ -46,17 +47,20 @@ export function listSources() {
 export async function startScreenRecording({
     meetingId,
     sourceId,
+    mode = 'screen',
     micStream = null,
     onSystemPcm,
     onError,
     bitsPerSecond = DEFAULT_BITS_PER_SECOND,
 } = {}) {
     const bridge = globalThis.alphaRecorder;
-    if (!bridge) throw new Error('Screen recording needs the desktop app.');
+    if (!bridge) throw new Error('Saving a recording needs the desktop app.');
 
-    const mimeType = pickMimeType();
-    if (!mimeType) throw new Error('This build has no video encoder for screen recording.');
+    const mimeType = pickMimeType(mode);
+    if (!mimeType) throw new Error(`This build has no encoder for ${mode === 'audio' ? 'audio' : 'screen'} recording.`);
 
+    let stream = new MediaStream();
+    if (mode === 'screen') {
     const permission = await bridge.screenPermission();
     if (permission === 'denied' || permission === 'restricted') {
         throw new Error(
@@ -68,7 +72,7 @@ export async function startScreenRecording({
     // back; the renderer cannot choose one itself.
     await bridge.selectSource(sourceId || null);
 
-    const stream = await navigator.mediaDevices.getDisplayMedia({
+    stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
             // getDisplayMedia rejects `min`/`exact` constraints during source
             // selection. Apply the requested lower bound to the returned track
@@ -78,6 +82,10 @@ export async function startScreenRecording({
         },
         audio: true,
     });
+
+    } else if (!micStream?.getAudioTracks().some(track => track.readyState === 'live')) {
+        throw new Error('Allow microphone access to record audio without sharing your screen.');
+    }
 
     const videoTrack = stream.getVideoTracks()[0] || null;
     if (videoTrack) {
@@ -93,6 +101,11 @@ export async function startScreenRecording({
     // recording carries only the screen, and a replay of a meeting with no sound
     // is close to useless.
     let mixContext = null;
+    let systemGain = null;
+    let micGain = null;
+    let handle = null;
+    let systemCapture = null;
+    try {
     let mixed = null;
     const audioSources = [];
     if (systemTrack) audioSources.push(new MediaStream([systemTrack]));
@@ -102,19 +115,27 @@ export async function startScreenRecording({
         mixContext = new AudioContext();
         mixed = mixContext.createMediaStreamDestination();
         for (const source of audioSources) {
-            mixContext.createMediaStreamSource(source).connect(mixed);
+            const gain = mixContext.createGain();
+            mixContext.createMediaStreamSource(source).connect(gain).connect(mixed);
+            if (source === micStream) micGain = gain;
+            else systemGain = gain;
         }
     }
+
+    if (mixContext?.state === 'suspended') await mixContext.resume();
 
     const recordedStream = new MediaStream([...stream.getVideoTracks(), ...(mixed ? mixed.stream.getAudioTracks() : [])]);
 
     const startedAtMs = Date.now();
-    const handle = await bridge.start({ meetingId, mimeType, startedAtMs });
+    handle = await bridge.start({ meetingId, mimeType, startedAtMs });
 
     let bytes = 0;
     let writeFailed = null;
 
-    const recorder = new MediaRecorder(recordedStream, { mimeType, videoBitsPerSecond: bitsPerSecond });
+    const recorder = new MediaRecorder(
+        recordedStream,
+        mode === 'audio' ? { mimeType, audioBitsPerSecond: 128_000 } : { mimeType, videoBitsPerSecond: bitsPerSecond }
+    );
 
     // A webm is only valid if its clusters land in the order they were encoded, and
     // `ondataavailable` cannot guarantee that on its own: MediaRecorder fires it
@@ -143,7 +164,7 @@ export async function startScreenRecording({
     };
 
     recorder.onerror = event => {
-        if (onError) onError(event.error?.message || 'The screen recorder failed.');
+        if (onError) onError(event.error?.message || 'The recorder failed.');
     };
 
     // The user can stop sharing from the OS overlay, which ends the video track
@@ -152,20 +173,26 @@ export async function startScreenRecording({
 
     // Feed system audio to the backend at 16 kHz. This is the first time this app
     // hears anyone but its own user, so remote turns depend on it.
-    let systemCapture = null;
     if (systemTrack && onSystemPcm) {
         systemCapture = await startPcmCapture({ stream: new MediaStream([systemTrack]), onPcm: onSystemPcm });
     }
 
     recorder.start(CHUNK_MS);
 
+    let stopPromise = null;
     const result = {
         hasSystemAudio,
+        mode,
         mimeType,
         startedAtMs,
 
         setSystemMuted(muted) {
             if (systemCapture) systemCapture.setMuted(muted);
+            if (systemGain) systemGain.gain.value = muted ? 0 : 1;
+        },
+
+        setMicMuted(muted) {
+            if (micGain) micGain.gain.value = muted ? 0 : 1;
         },
 
         onSourceEnded(callback) {
@@ -175,7 +202,13 @@ export async function startScreenRecording({
         },
 
         /** Flush, close the file, and return what to store on the meeting. */
-        async stop() {
+        stop() {
+            if (!stopPromise) stopPromise = finish();
+            return stopPromise;
+        },
+    };
+
+    async function finish() {
             if (recorder.state !== 'inactive') {
                 await new Promise(resolve => {
                     recorder.onstop = resolve;
@@ -199,7 +232,9 @@ export async function startScreenRecording({
             const finished = await bridge.stop(handle.id).catch(() => null);
 
             return {
+                // Keep the existing descriptor key for backend and old-client compatibility.
                 videoPath: finished?.path || handle.path,
+                mode,
                 startedAtMs,
                 durationMs: Date.now() - startedAtMs,
                 bytes: finished?.bytes ?? bytes,
@@ -208,8 +243,14 @@ export async function startScreenRecording({
                 sourceId: sourceId || null,
                 error: writeFailed,
             };
-        },
-    };
+    }
 
     return result;
+    } catch (cause) {
+        if (systemCapture) await systemCapture.stop().catch(() => {});
+        if (mixContext) await mixContext.close().catch(() => {});
+        stream.getTracks().forEach(track => track.stop());
+        if (handle) await bridge.stop(handle.id).catch(() => {});
+        throw cause;
+    }
 }
