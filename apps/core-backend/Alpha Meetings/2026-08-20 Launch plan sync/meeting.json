@@ -1,0 +1,34 @@
+{
+  "id": "c0e89236-2af2-4ec4-8f36-005562306cd3",
+  "title": "Launch plan sync",
+  "startedAt": 1787230084302,
+  "endedAt": 1787230141343,
+  "durationSeconds": 57,
+  "summaryMarkdown": "Meeting **Launch plan sync** completed with 1 spoken turns across You.",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "task": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the notorization by Friday."
+    }
+  ],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "f4c469cb-0adf-4754-8ec1-813d814a0db4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 220,
+      "endMs": 9000,
+      "text": "Good morning everyone, let's lock down the launch plan for the desktop meeting assistant. I will finish the notorization by Friday.",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787230084302,
+  "folder": "2026-08-20 Launch plan sync"
+}

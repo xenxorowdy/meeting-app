@@ -1,0 +1,49 @@
+# Fly.io deployment for the Alpha core backend. The app name below is a
+# placeholder — `fly launch` rewrites it for your fly account.
+app = "alpha-meeting-backend"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Meeting data, credentials, and the chat embedding model persist in the volume.
+  ALPHA_DATA_DIR = "/data"
+  # The Electron desktop app loads its UI from file://, so Chromium sends
+  # `Origin: null` on every request. Hosted mode rejects null origins by
+  # default, which would lock the desktop client out; bearer-token auth still
+  # protects every route. For a browser-only deployment, override with:
+  #   fly secrets set ALPHA_ALLOW_NULL_ORIGIN=false
+  ALPHA_ALLOW_NULL_ORIGIN = "true"
+
+[http_service]
+  internal_port = 48900
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+  # /health is the one route that answers without a workspace token, so the
+  # load balancer can probe it.
+  [http_service.checks]
+    [http_service.checks.health]
+      port = 48900
+      type = "http"
+      method = "GET"
+      path = "/health"
+      interval = "30s"
+      timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"
+
+[mounts]
+  source = "alpha_data"
+  destination = "/data"
+  initial_size = "5gb"

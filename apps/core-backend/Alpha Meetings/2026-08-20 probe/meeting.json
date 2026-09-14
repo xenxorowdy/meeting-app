@@ -1,0 +1,79 @@
+{
+  "id": "bb6f2d56-bafb-40d4-9407-7b3d8e6066a3",
+  "title": "probe",
+  "startedAt": 1787232456163,
+  "endedAt": 1787232497817,
+  "durationSeconds": 41,
+  "summaryMarkdown": "Meeting **probe** completed with 6 spoken turns across You.",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "task": "I will do a bully, yes."
+    }
+  ],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "69b4b928-3cd9-4734-8fec-ef54f90828b6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 8280,
+      "endMs": 11580,
+      "text": "Gracias.",
+      "confidence": 1.0
+    },
+    {
+      "id": "4d734561-6242-48a2-a04a-e79f9cbfa39f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 15600,
+      "endMs": 19020,
+      "text": "ऐसे वाठी के उटाइम पास कर रहा लर्पाटी यह करने हैं",
+      "confidence": 1.0
+    },
+    {
+      "id": "6c3769be-4797-4d78-bea4-cb3b3e0da2fb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 20580,
+      "endMs": 23800,
+      "text": "तुछ पर पर पता है उसके वार्टे वांचे",
+      "confidence": 1.0
+    },
+    {
+      "id": "41bdb498-e92c-477e-b1a0-552d39f18a84",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 29120,
+      "endMs": 34160,
+      "text": "Why are you looking for a girl's pain?",
+      "confidence": 1.0
+    },
+    {
+      "id": "11a57429-023f-41f1-a6ca-83ae3435a8b3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 34920,
+      "endMs": 37540,
+      "text": "Nah, I like it, you see me.",
+      "confidence": 1.0
+    },
+    {
+      "id": "46e01300-d565-4ba6-b44b-50413a997533",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 37540,
+      "endMs": 39736,
+      "text": "I will do a bully, yes.",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787232456163,
+  "folder": "2026-08-20 probe"
+}

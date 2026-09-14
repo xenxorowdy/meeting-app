@@ -19,10 +19,8 @@ use tokio::sync::RwLock;
 
 /// Settings the backend understands. Anything else is rejected with a warning so
 /// the UI finds out rather than believing a write landed.
-const KNOWN_SETTINGS: [&str; 19] = [
+const KNOWN_SETTINGS: [&str; 17] = [
     "transcriptionProvider",
-    "whisperModel",
-    "sttLanguage",
     "sarvamLanguage",
     "sarvamMode",
     "sarvamNumSpeakers",
@@ -77,7 +75,7 @@ pub struct SettingsStore {
     credentials: RwLock<Map<String, Value>>,
 }
 
-async fn read_object(path: &Path) -> Map<String, Value> {
+pub(crate) async fn read_object(path: &Path) -> Map<String, Value> {
     tokio::fs::read(path)
         .await
         .ok()
@@ -88,7 +86,7 @@ async fn read_object(path: &Path) -> Map<String, Value> {
 
 /// Write-then-rename, so a crash mid-write cannot leave a truncated file where a
 /// valid one used to be.
-async fn write_object(path: &Path, object: &Map<String, Value>, private: bool) -> io::Result<()> {
+pub(crate) async fn write_object(path: &Path, object: &Map<String, Value>, private: bool) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -302,7 +300,7 @@ mod tests {
         let store = store_in(&dir).await;
 
         let mut incoming = Map::new();
-        incoming.insert("sttLanguage".into(), json!("auto"));
+        incoming.insert("sarvamLanguage".into(), json!("hi-IN"));
         incoming.insert("autoSummarize".into(), json!(false));
         incoming.insert("noiseSuppression".into(), json!(false));
         incoming.insert("echoSuppression".into(), json!(true));
@@ -312,8 +310,13 @@ mod tests {
         let (rejected, result) = store.merge(&incoming).await;
         result.unwrap();
         assert_eq!(rejected, vec!["somethingInvented"]);
-        assert_eq!(store.get_str("sttLanguage").await.as_deref(), Some("auto"));
+        assert_eq!(store.get_str("sarvamLanguage").await.as_deref(), Some("hi-IN"));
         assert_eq!(store.get_bool("autoSummarize").await, Some(false));
+        // Whisper-era settings are gone: writing one is an unknown-key warning now.
+        let (rejected, _) = store
+            .merge(&Map::from_iter([("whisperModel".into(), json!("large-v3"))]))
+            .await;
+        assert_eq!(rejected, vec!["whisperModel"]);
 
         // Reload from disk to prove it actually persisted.
         let reloaded = SettingsStore {
@@ -323,8 +326,8 @@ mod tests {
             credentials_path: dir.join("credentials.json"),
         };
         assert_eq!(
-            reloaded.get_str("sttLanguage").await.as_deref(),
-            Some("auto")
+            reloaded.get_str("sarvamLanguage").await.as_deref(),
+            Some("hi-IN")
         );
         assert_eq!(reloaded.get_bool("autoSummarize").await, Some(false));
         assert_eq!(reloaded.get_bool("noiseSuppression").await, Some(false));
@@ -376,7 +379,7 @@ mod tests {
         incoming.insert("geminiApiKeySet".into(), json!(true));
         incoming.insert("sarvamApiKey".into(), json!("sk_LEAKED"));
         incoming.insert("sarvamApiKeySet".into(), json!(true));
-        incoming.insert("sttLanguage".into(), json!("hi"));
+        incoming.insert("sarvamLanguage".into(), json!("hi"));
         let (rejected, result) = store.merge(&incoming).await;
         result.unwrap();
 

@@ -270,9 +270,9 @@ export function SettingsModal({
                                 <SettingRow id="display-name" label="Your name" description="Used to personalize your workspace." stacked>
                                     <Input id="display-name" autoComplete="given-name" maxLength={80} placeholder="How should Alpha greet you?" value={preferences.displayName} onChange={event => setPreferences({ displayName: event.target.value })} />
                                 </SettingRow>
-                                <SettingRow id="workspace-name" label="Workspace name" stacked>
+                                {/* <SettingRow id="workspace-name" label="Workspace name" stacked>
                                     <Input id="workspace-name" maxLength={80} placeholder="My workspace" value={preferences.workspaceName} onChange={event => setPreferences({ workspaceName: event.target.value })} />
-                                </SettingRow>
+                                </SettingRow>*/}
                                 <SettingRow id="text-size" label="Text size" description="Comfortable reading across notes, transcripts, and chat." stacked>
                                     <Select value={preferences.textSize} onValueChange={value => setPreferences({ textSize: value })}>
                                         <SelectTrigger id="text-size"><SelectValue /></SelectTrigger>

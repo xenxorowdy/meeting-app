@@ -1,0 +1,91 @@
+{
+  "id": "a6eca559-c534-473b-ad59-b567193fcd3b",
+  "title": "Meeting 20/08/2026, 20:00:44",
+  "startedAt": 1787236244292,
+  "endedAt": null,
+  "durationSeconds": 0,
+  "summaryMarkdown": "",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "205e15ee-85df-4a42-8fb6-39cefb44d14e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 14360,
+      "endMs": 26480,
+      "text": "Breaking news ahead of the Dutch Grand Prix, Max Verstappen has officially committed his future to Red Bull Racing until the end of the 2030 Formula One season.",
+      "confidence": 1.0
+    },
+    {
+      "id": "c75a69db-00cf-40a7-b421-51c2b15d9c38",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 26720,
+      "endMs": 32740,
+      "text": "Red Bull confirmed the news this morning ending months of speculation about Verstappen's future.",
+      "confidence": 1.0
+    },
+    {
+      "id": "10823f5a-a71f-42ca-8362-dd863271643b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 49920,
+      "endMs": 57160,
+      "text": "enjoying the holidays. Of course we also were talking in the background and we've decided to",
+      "confidence": 1.0
+    },
+    {
+      "id": "706a54c5-72c1-4d7a-b984-6841168d5218",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 57160,
+      "endMs": 61620,
+      "text": "yet to extend the contract with the team. So, of course, very pleased for that.",
+      "confidence": 1.0
+    },
+    {
+      "id": "bfbc5dce-acdc-4b1c-8767-e4f1769ecbce",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 61620,
+      "endMs": 66400,
+      "text": "Yeah, the discussions have been good, and I mean, I feel really at home here, plus...",
+      "confidence": 1.0
+    },
+    {
+      "id": "11bc3f44-eb33-4f12-a6b1-d34d3653ae00",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 66400,
+      "endMs": 78880,
+      "text": "I'm getting to work with Lorona for over a year. It's been for me, it is very straight forward and very enjoyable. So to be able to then agree on the new deal is really nice.",
+      "confidence": 1.0
+    },
+    {
+      "id": "bc1d646d-047a-4ddb-9f1a-7b6614a0e9e9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 78880,
+      "endMs": 83080,
+      "text": "His previous contract was due to expire at the end of 2028.",
+      "confidence": 1.0
+    },
+    {
+      "id": "6838fdbd-54c7-4f2f-b5be-53ceffc5b7d5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 83080,
+      "endMs": 87000,
+      "text": "but Verstappen has now committed to four more seasons with the team.",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787236244292,
+  "folder": "2026-08-20 Meeting 20-08-2026, 20-00-44"
+}

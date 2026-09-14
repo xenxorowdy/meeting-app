@@ -35,7 +35,7 @@ providers are migrated behind the same API.
 
 - **Native Audio Capture**: ScreenCaptureKit (macOS) & WASAPI Loopback (Windows) over 16-byte binary streaming IPC.
 - **Audio DSP & VAD**: Zero-copy 16 kHz resampler, integer sum-of-squares RMS VAD, spectral noise cancellation on the microphone, and acoustic echo suppression against the meeting audio.
-- **Speech-to-Text (STT)**: WhisperKit (Apple Neural Engine) and `whisper.cpp` / ONNX (Windows/Intel).
+- **Speech-to-Text (STT)**: Sarvam Saaras — realtime streaming WebSocket transcription during the meeting, with optional post-meeting diarization over the completed recording.
 - **Diarization Engine**: Guaranteed physical `"You"` attribution on mic + live voiceprint clustering on meeting audio + provider diarization and meeting-client names when available. See [Who said what](#who-said-what).
 - **Storage Layer**: one visible folder per meeting on disk (see [The meeting library](#the-meeting-library)), written atomically, with multi-format export (Markdown, JSON); SQLite/FTS5 remains behind the compatibility implementation during migration.
 - **AI Summarizer**: Structured meeting intelligence through the Claude Code CLI (no API key required), with a keyword heuristic as the offline fallback. See [Meeting summaries](#meeting-summaries).
@@ -89,9 +89,8 @@ them with `{"regenerate": true}`.
 
 ## Transcription providers
 
-The Transcription settings offer three distinct flows:
+The Transcription settings offer two distinct flows:
 
-- **Whisper** transcribes microphone and meeting-audio segments live on the device.
 - **Sarvam Saaras (batch)** waits until the meeting ends, uploads the completed mixed WebM recording as one batch, requests speaker diarization, replaces the transcript with timestamped speaker turns, and then runs the normal summary pipeline.
 - **Sarvam Saaras (live streaming)** opens one realtime WebSocket per capture stream and sends 16 kHz PCM while the meeting runs. Turns arrive as they are spoken: `transcript.partial` is emitted to clients as a `transcript_interim` event and discarded, `transcript.final` is committed as a normal `transcript_turn`. A dropped socket reconnects with backoff; audio spoken while it is down is not transcribed.
 
@@ -193,7 +192,7 @@ floor per frequency band is tracked as a minimum over the last few seconds, the 
 ratio is smoothed the decision-directed way so the filter does not chatter, and each band is attenuated by
 what is left. Steady room noise — a fan, an air conditioner, street hum — drops far enough to fall back under
 the VAD's speech threshold, which matters more than the loudness itself: audio the VAD wrongly opens on is
-handed to Whisper, and Whisper answers noise with confident invented sentences. Meeting audio is not filtered.
+handed to the transcriber, which answers noise with confident invented sentences. Meeting audio is not filtered.
 It arrives as a digital loopback with no room in it, and filtering it would only cost quality.
 
 **Echo suppression** drops microphone audio that is the meeting coming back through the speakers. Everything

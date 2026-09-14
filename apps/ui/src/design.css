@@ -14,6 +14,8 @@
     font-display: swap;
 }
 .ks-app {
+    /* One shared motion curve; matches Tailwind's apple-standard timing. */
+    --ks-ease: cubic-bezier(0, 0, 0.2, 1);
     --ks-bg: #0e0e0f;
     --ks-surface: #161618;
     --ks-raised: #1e1e21;
@@ -260,20 +262,13 @@
     font-size: 14px;
     font-weight: 600;
 }
-.ks-brand-mark {
-    width: 24px;
-    height: 24px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--ks-accent-line);
-    background: var(--ks-accent-soft);
-    border-radius: 6px;
+/* Logo mark bars breathe while a session is live (sign-in hero, brand row). */
+.ks-logo-bar {
+    transform-box: fill-box;
+    transform-origin: center;
 }
-.ks-brand-mark i {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--ks-accent);
+.ks-logo-bar.is-live {
+    animation: ks-logo-breathe 1.5s var(--ks-ease, cubic-bezier(0, 0, 0.2, 1)) infinite;
 }
 .ks-login-intro {
     margin-top: 64px;
@@ -290,6 +285,141 @@
     font-size: 14px;
     color: var(--ks-muted);
     line-height: 1.65;
+}
+.ks-login-intro h1 span {
+    color: var(--ks-secondary);
+}
+.ks-welcome-preview {
+    max-width: 340px;
+    margin-top: 40px;
+    padding: 16px;
+    border: 1px solid var(--ks-line);
+    border-radius: 14px;
+    background: var(--ks-surface);
+}
+.ks-welcome-preview-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ks-text);
+}
+.ks-welcome-preview-head svg {
+    width: 16px;
+    height: 16px;
+}
+.ks-welcome-preview-head .ks-tag {
+    margin-left: auto;
+}
+.ks-welcome-flow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    color: var(--ks-secondary);
+    font-size: 11px;
+    white-space: nowrap;
+}
+.ks-welcome-flow span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.ks-welcome-flow svg {
+    width: 10px;
+    height: 10px;
+    color: var(--ks-ok);
+}
+.ks-welcome-flow i {
+    flex: 1;
+    height: 1px;
+    min-width: 8px;
+    background: var(--ks-line);
+}
+.ks-welcome-preview-question {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--ks-accent-line);
+    border-radius: 8px;
+    background: var(--ks-accent-faint);
+    color: var(--ks-text);
+    font-size: 12px;
+}
+.ks-welcome-preview-question svg {
+    width: 13px;
+    height: 13px;
+    color: var(--ks-accent);
+}
+.ks-welcome-preview > p {
+    margin-top: 12px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--ks-muted);
+}
+.ks-welcome-footer {
+    padding-top: 40px;
+    color: var(--ks-muted);
+    font:
+        11px/1.6 'DM Mono',
+        monospace;
+}
+.ks-login-form h2 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.3px;
+}
+.ks-welcome-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-bottom: 20px;
+    border: 1px solid var(--ks-accent-line);
+    border-radius: 10px;
+    background: var(--ks-accent-soft);
+    color: var(--ks-accent);
+}
+.ks-welcome-icon svg {
+    width: 16px;
+    height: 16px;
+}
+.ks-welcome-steps {
+    display: grid;
+    gap: 18px;
+    margin: 28px 0 32px;
+    padding: 0;
+    list-style: none;
+    text-align: left;
+}
+.ks-welcome-steps li {
+    display: flex;
+    gap: 14px;
+}
+.ks-welcome-steps li > span {
+    flex-shrink: 0;
+    padding-top: 2px;
+    color: var(--ks-accent);
+    font:
+        10px 'DM Mono',
+        monospace;
+    letter-spacing: 0.5px;
+}
+.ks-welcome-steps strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ks-text);
+}
+.ks-welcome-steps p {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--ks-muted);
 }
 .ks-testimonial {
     max-width: 320px;
@@ -455,6 +585,24 @@
     margin-top: 12px !important;
     color: var(--ks-secondary);
     font-size: 11px;
+}
+.ks-auth-message.is-error {
+    color: var(--ks-danger);
+}
+.ks-auth-submit:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+.ks-session-restore {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--ks-muted);
+    font:
+        12px/1.5 'DM Mono',
+        monospace;
 }
 .ks-workspace {
     height: 100%;
@@ -865,12 +1013,12 @@
     min-width: 0;
 }
 .ks-chat-head-text h2 {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1.3;
 }
 .ks-chat-head-text p {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--ks-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -881,13 +1029,13 @@
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--ks-muted);
 }
 .ks-chat-scope select {
     max-width: 180px;
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: 12px;
 }
 .ks-meeting-chat .ks-chat-head {
     padding-right: 40px;
@@ -898,7 +1046,7 @@
     border-bottom: 1px solid var(--ks-line);
     background: var(--ks-accent-faint);
     color: var(--ks-secondary);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
 }
 .ks-chat-log {
@@ -914,7 +1062,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--ks-muted);
 }
 .ks-chat-thinking {
@@ -924,7 +1072,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 12px;
+    font-size: 13px;
 }
 .ks-chat-thinking-row .ks-balls {
     color: var(--ks-accent);
@@ -942,13 +1090,13 @@
 }
 .ks-chat-empty h3 {
     margin-top: 10px;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--ks-text);
 }
 .ks-chat-empty > p {
     margin-top: 6px;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.6;
 }
 .ks-chat-starters {
@@ -961,10 +1109,21 @@
 .ks-chat-starters button {
     border: 1px solid var(--ks-line);
     border-radius: 16px;
-    padding: 6px 12px;
+    padding: 7px 13px;
     background: var(--ks-surface);
     color: var(--ks-secondary);
-    font-size: 11px;
+    font-size: 12px;
+    transition:
+        background 0.15s var(--ks-ease, ease-out),
+        color 0.15s var(--ks-ease, ease-out),
+        border-color 0.15s var(--ks-ease, ease-out),
+        transform 0.15s var(--ks-ease, ease-out);
+}
+.ks-chat-starters button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+.ks-chat-starters button:active:not(:disabled) {
+    transform: translateY(0);
 }
 .ks-chat-starters button:hover:not(:disabled) {
     background: var(--ks-accent-soft);
@@ -982,11 +1141,11 @@
     max-width: 100%;
     padding: 12px 14px;
     border: 1px solid var(--ks-line);
-    border-radius: 12px;
+    border-radius: 14px;
     background: var(--ks-surface);
     color: var(--ks-secondary);
-    font-size: 12px;
-    line-height: 1.65;
+    font-size: 13.5px;
+    line-height: 1.6;
 }
 .ks-chat-row-user .ks-chat-bubble {
     max-width: 82%;
@@ -1002,12 +1161,13 @@
 }
 .ks-chat-ai-label {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     color: var(--ks-accent);
     font:
-        9px 'DM Mono',
+        10px 'DM Mono',
         monospace;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
 }
 .ks-chat-citation {
     display: inline-flex;
@@ -1021,9 +1181,12 @@
     border-radius: 20px;
     color: var(--ks-secondary);
     background: var(--ks-surface);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 500;
     font-style: normal;
+    transition:
+        background 0.15s var(--ks-ease, ease-out),
+        border-color 0.15s var(--ks-ease, ease-out);
 }
 .ks-chat-citation span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ks-chat-citation svg { flex-shrink: 0; }
@@ -1033,12 +1196,12 @@
 .ks-source-preview p { margin-top: 8px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; max-height: 180px; overflow: auto; }
 .ks-chat-coverage {
     margin-top: 8px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--ks-muted);
 }
 .ks-chat-sources {
     margin-top: 10px;
-    font-size: 11px;
+    font-size: 12px;
 }
 .ks-chat-sources summary {
     cursor: pointer;
@@ -1058,20 +1221,23 @@
     border-radius: 8px;
     padding: 8px 10px;
     background: var(--ks-bg);
+    transition:
+        background 0.15s var(--ks-ease, ease-out),
+        border-color 0.15s var(--ks-ease, ease-out);
 }
 .ks-chat-source:hover:not(:disabled) {
     border-color: var(--ks-accent-line);
 }
 .ks-chat-source-title {
     display: block;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--ks-text);
 }
 .ks-chat-source-meta {
     display: block;
     margin-top: 2px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--ks-muted);
 }
 .ks-chat-source q {
@@ -1080,8 +1246,8 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin-top: 6px;
-    font-size: 11px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.55;
     color: var(--ks-secondary);
 }
 .ks-chat-response-actions {
@@ -1094,7 +1260,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--ks-secondary);
 }
 .ks-chat-copy {
@@ -1103,12 +1269,12 @@
 .ks-chat-copy-status {
     display: block;
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--ks-muted);
 }
 .ks-chat-followup-label {
     margin: 10px 0 6px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--ks-muted);
 }
 .ks-chat-followups {
@@ -1119,8 +1285,11 @@
 .ks-chat-followups button {
     border: 1px solid var(--ks-line);
     border-radius: 16px;
-    padding: 6px 10px;
+    padding: 6px 11px;
     text-align: left;
+    transition:
+        background 0.15s var(--ks-ease, ease-out),
+        border-color 0.15s var(--ks-ease, ease-out);
 }
 .ks-chat-followups button:hover:not(:disabled),
 .ks-chat-citation:hover:not(:disabled),
@@ -1144,7 +1313,7 @@
     border-top: 1px solid var(--ks-danger-line);
     background: var(--ks-danger-faint);
     color: var(--ks-danger);
-    font-size: 11px;
+    font-size: 12px;
 }
 .ks-chat-error button {
     margin-left: 8px;
@@ -1156,8 +1325,7 @@
 }
 .ks-chat-composer {
     display: flex;
-    align-items: flex-end;
-    gap: 8px;
+    flex-direction: column;
     flex-shrink: 0;
     padding: 12px 16px;
     border-top: 1px solid var(--ks-line);
@@ -1169,8 +1337,16 @@
     max-height: 140px;
     resize: none;
     field-sizing: content;
-    font-size: 12px;
+    border: 0;
+    background: none;
+    padding: 9px 4px 9px 2px;
+    font-size: 13.5px;
     line-height: 1.5;
+}
+/* The wrap draws the focus ring; the textarea stays quiet inside it. */
+.ks-chat-composer textarea:focus {
+    border: 0;
+    box-shadow: none;
 }
 .ks-chat-send {
     display: inline-flex;
@@ -1179,18 +1355,28 @@
     width: 34px;
     height: 34px;
     flex-shrink: 0;
-    border-radius: 8px;
+    border-radius: 9px;
     border: 1px solid var(--ks-accent-line);
     background: var(--ks-accent-soft);
     color: var(--ks-accent);
+    transition:
+        background 0.15s var(--ks-ease, ease-out),
+        transform 0.15s var(--ks-ease, ease-out),
+        box-shadow 0.15s var(--ks-ease, ease-out);
 }
 .ks-chat-send:hover:not(:disabled) {
     background: var(--ks-accent-line);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px var(--ks-accent-soft);
+}
+.ks-chat-send:active:not(:disabled) {
+    transform: translateY(0) scale(0.96);
+    box-shadow: none;
 }
 .ks-chat-history {
     flex-shrink: 0;
     padding: 0 16px 12px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--ks-muted);
 }
 .ks-chat-history summary {
@@ -1206,7 +1392,7 @@
     flex: 1;
     min-width: 0;
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: 12px;
 }
 .ks-chat-history p {
     margin-top: 10px;
@@ -1730,156 +1916,20 @@
     display: flex;
     overflow: hidden;
 }
-.ks-transcript {
-    position: relative;
-    overflow-y: auto;
-    flex: 1;
-    padding: 24px 32px;
-}
-.ks-transcript-tools {
-    position: absolute;
-    top: 6px;
-    right: 12px;
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    opacity: 0;
-}
-.ks-transcript:hover .ks-transcript-tools,
-.ks-transcript-tools:focus-within {
-    opacity: 1;
-}
-.ks-transcript-tools input {
-    padding: 4px 8px;
-}
-.ks-turn {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    max-width: 760px;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 64px;
-}
-.ks-turn > div {
-    flex: 1;
-    min-width: 0;
-}
-.ks-turn-heading {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-    margin-bottom: 4px;
-}
-.ks-speaker-name {
-    font-size: 12px;
-    font-weight: 500;
-    background: none;
-    border: 0;
-    padding: 0;
-}
-.ks-speaker-name:disabled {
-    opacity: 1 !important;
-}
-.ks-turn time {
-    font:
-        10px 'DM Mono',
-        monospace;
-    color: var(--ks-muted);
-}
-.ks-turn p {
-    font-size: 12px;
-    line-height: 1.65;
-    color: var(--ks-secondary);
-    white-space: pre-wrap;
-}
-.ks-copy-turn {
-    margin-left: auto;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ks-muted);
-    opacity: 0;
-}
-.ks-turn:hover .ks-copy-turn,
-.ks-copy-turn:focus-visible {
-    opacity: 1;
-}
-.ks-copy-turn svg {
-    width: 11px;
-    height: 11px;
-}
-.ks-cited {
-    background: var(--ks-accent-faint);
-    outline: 1px solid var(--ks-accent-line);
-    border-radius: 6px;
-}
-.ks-rename {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-.ks-rename input {
-    padding: 2px 6px;
-}
-.ks-rename button {
-    border: 0;
-    background: none;
-    color: var(--ks-accent);
-}
-.ks-turn-interim .ks-speaker-name {
-    color: var(--ks-secondary);
-}
-.ks-turn-interim p {
-    color: var(--ks-secondary);
-}
-.ks-turn-interim p::after {
-    content: '';
-    display: inline-block;
-    width: 2px;
-    height: 0.95em;
-    margin-left: 3px;
-    vertical-align: -0.14em;
-    border-radius: 2px;
-    background: var(--ks-accent);
-    animation: ks-caret 1.1s steps(1, end) infinite;
-}
-.ks-interim-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 7px 2px 6px;
-    border-radius: 999px;
-    background: var(--ks-accent-soft);
-    color: var(--ks-accent);
-    font-size: 10px;
-    letter-spacing: 0.02em;
-}
 .ks-word {
     animation: ks-word-in 0.26s ease-out both;
-}
-.ks-listening {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 0 8px;
-    color: var(--ks-accent);
-    font-size: 11px;
-    letter-spacing: 0.02em;
-}
-.ks-listening > span {
-    color: var(--ks-muted);
 }
 .ks-empty {
     padding: 40px 0;
     color: var(--ks-muted);
 }
 .ks-empty h3 {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--ks-text);
 }
 .ks-empty p {
-    font-size: 12px;
+    font-size: 13px;
     margin-top: 6px;
 }
 .ks-empty-page {
@@ -1920,7 +1970,7 @@
 }
 .ks-task > span {
     flex: 1;
-    font-size: 12px;
+    font-size: 13px;
 }
 .ks-task small,
 .ks-task time {
@@ -1977,7 +2027,7 @@
     padding: 16px;
     background: var(--ks-surface);
     color: var(--ks-secondary);
-    font-size: 12px;
+    font-size: 13px;
 }
 .ks-summary-card header {
     display: flex;
@@ -2000,6 +2050,15 @@
     border-radius: 50%;
     background: currentColor;
 }
+.ks-summary-lead {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.ks-summary-lead > div:first-child {
+    min-width: 0;
+    flex: 1;
+}
 .ks-summary > .ks-text-button {
     margin-top: 16px;
 }
@@ -2015,7 +2074,7 @@
 }
 .ks-decisions p {
     color: var(--ks-secondary);
-    font-size: 12px;
+    font-size: 13px;
     margin-bottom: 8px;
 }
 .ks-sections {
@@ -2040,19 +2099,28 @@
     font-size: 12px;
     color: var(--ks-secondary);
     line-height: 1.5;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 6px;
+    align-items: baseline;
 }
 .ks-bullet::before {
     content: '•';
     color: var(--ks-muted);
-    margin-right: 6px;
 }
 .ks-bullet-row {
-    display: inline-flex;
+    display: flex;
     align-items: flex-start;
     gap: 4px;
+    min-width: 0;
+}
+.ks-bullet-row > span:first-child {
+    flex: 1;
+    min-width: 0;
 }
 .ks-sub-bullets {
-    margin: 4px 0 0 22px;
+    grid-column: 2;
+    margin: 4px 0 0;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -2872,6 +2940,15 @@
         border-left: 0;
     }
 }
+@keyframes ks-logo-breathe {
+    0%,
+    100% {
+        transform: scaleY(1);
+    }
+    50% {
+        transform: scaleY(0.55);
+    }
+}
 @keyframes ks-caret {
     0%,
     45% {
@@ -2945,7 +3022,6 @@
     .ks-meeting-tabs > button {
         padding: 12px;
     }
-    .ks-transcript,
     .ks-detail-scroll {
         padding: 24px 16px;
     }
@@ -2988,11 +3064,171 @@
         font-size: 9px;
     }
 }
+/* --- Composer shell, jump-to-latest, disclaimer, overline label --- */
+
+.ks-chat-input-wrap {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    padding: 4px 4px 4px 12px;
+    border: 1px solid var(--ks-line);
+    border-radius: 12px;
+    background: var(--ks-surface);
+    transition:
+        border-color 0.15s var(--ks-ease, ease-out),
+        box-shadow 0.15s var(--ks-ease, ease-out);
+}
+.ks-chat-input-wrap:focus-within {
+    border-color: var(--ks-accent-line);
+    box-shadow: 0 0 0 3px var(--ks-accent-faint);
+}
+.ks-chat-composer-hint {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    margin-top: 6px;
+    padding: 0 2px;
+    color: var(--ks-muted);
+    font-size: 11px;
+}
+.ks-chat-count {
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+.ks-chat-latest {
+    flex-shrink: 0;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding: 5px 12px;
+    border: 1px solid var(--ks-line-strong);
+    border-radius: 999px;
+    background: var(--ks-raised);
+    color: var(--ks-secondary);
+    font-size: 11px;
+    box-shadow: 0 4px 12px var(--ks-shadow-soft);
+    transition:
+        background 0.15s var(--ks-ease, ease-out),
+        color 0.15s var(--ks-ease, ease-out);
+}
+.ks-chat-latest:hover {
+    background: var(--ks-accent-soft);
+    color: var(--ks-text);
+}
+.ks-chat-latest svg {
+    width: 12px;
+    height: 12px;
+}
+.ks-chat-disclaimer {
+    flex-shrink: 0;
+    padding: 0 16px 8px;
+    color: var(--ks-muted);
+    font-size: 10.5px;
+    text-align: center;
+}
+/* The overline used by the sign-in story and the chat empty state. */
+.ks-eyebrow {
+    display: block;
+    color: var(--ks-accent);
+    font:
+        10px 'DM Mono',
+        monospace;
+    letter-spacing: 1.2px;
+}
+
+/* --- Message entrance: a small fade-up, calm enough to never distract --- */
+@keyframes ks-message-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+.ks-chat-row {
+    animation: ks-message-in 0.16s var(--ks-ease, cubic-bezier(0, 0, 0.2, 1)) both;
+}
+.ks-chat-log {
+    scroll-behavior: smooth;
+}
 @media (prefers-reduced-motion: reduce) {
     .ks-app * {
         animation: none !important;
         transition: none !important;
     }
+    .ks-chat-log {
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Personal > Text size > Large: reading surfaces scale up; chrome labels,
+   timestamps, and meta text stay put so the layout keeps its shape. */
+:root[data-text-size='large'] .ks-chat-bubble,
+:root[data-text-size='large'] .ks-chat-composer textarea,
+:root[data-text-size='large'] .ks-task > span,
+:root[data-text-size='large'] .ks-summary-card,
+:root[data-text-size='large'] .ks-decisions p {
+    font-size: 15.5px;
+}
+:root[data-text-size='large'] .ks-chat-empty h3 {
+    font-size: 17px;
+}
+:root[data-text-size='large'] .ks-chat-empty > p,
+:root[data-text-size='large'] .ks-chat-head-text h2,
+:root[data-text-size='large'] .ks-empty h3 {
+    font-size: 15px;
+}
+
+/* TranscriptView speaks Tailwind's type tokens; the Large setting scales them
+   inside the meeting panel only. */
+:root[data-text-size='large'] .ks-meeting-panel .text-body {
+    font-size: 16.5px;
+    line-height: 1.55;
+}
+:root[data-text-size='large'] .ks-meeting-panel .text-callout {
+    font-size: 14.5px;
+}
+:root[data-text-size='large'] .ks-meeting-panel .text-footnote {
+    font-size: 13.5px;
+}
+:root[data-text-size='large'] .ks-chat-starters button,
+:root[data-text-size='large'] .ks-chat-source q,
+:root[data-text-size='large'] .ks-chat-source-title,
+:root[data-text-size='large'] .ks-chat-sources,
+:root[data-text-size='large'] .ks-chat-note,
+:root[data-text-size='large'] .ks-chat-thinking-row,
+:root[data-text-size='large'] .ks-chat-live,
+:root[data-text-size='large'] .ks-chat-head-text p,
+:root[data-text-size='large'] .ks-chat-scope,
+:root[data-text-size='large'] .ks-chat-scope select,
+:root[data-text-size='large'] .ks-chat-copy,
+:root[data-text-size='large'] .ks-chat-followups button,
+:root[data-text-size='large'] .ks-empty p {
+    font-size: 13.5px;
+}
+:root[data-text-size='large'] .ks-chat-citation,
+:root[data-text-size='large'] .ks-chat-coverage,
+:root[data-text-size='large'] .ks-chat-source-meta,
+:root[data-text-size='large'] .ks-chat-copy-status,
+:root[data-text-size='large'] .ks-chat-followup-label,
+:root[data-text-size='large'] .ks-chat-error {
+    font-size: 12.5px;
+}
+
+/* The Reduce motion preference works with the operating system setting. */
+:root[data-reduced-motion='true'] .ks-app * {
+    animation: none !important;
+    transition: none !important;
+}
+:root[data-reduced-motion='true'] .ks-chat-log {
+    scroll-behavior: auto !important;
 }
 .sr-only {
     position: absolute;

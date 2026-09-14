@@ -1,0 +1,51 @@
+{
+  "id": "b512ca7c-a342-4370-9b2d-6dd35500d19f",
+  "title": "Meeting 31/08/2026, 15:11:25",
+  "startedAt": 1788169285865,
+  "endedAt": 1788169310221,
+  "durationSeconds": 24,
+  "summaryMarkdown": "Meeting **Meeting 31/08/2026, 15:11:25** completed with 2 spoken turns across You.",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {
+    "transcriptionProvider": "whisper"
+  },
+  "recording": {
+    "bytes": 2930943,
+    "durationMs": 23213,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:6739:0",
+    "startedAtMs": 1788169287007,
+    "videoPath": "b512ca7c-a342-4370-9b2d-6dd35500d19f/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "34f4c2a0-5c4e-4364-8320-331b9ac05c53",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 3020,
+      "endMs": 5780,
+      "text": "Tu peux s'amajiner à ta ou au pisme à la théâtre.",
+      "confidence": 1.0,
+      "language": "ar"
+    },
+    {
+      "id": "dbd81514-3248-40b1-940a-e91eb99ed9ff",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 8100,
+      "endMs": 10680,
+      "text": "مجھے جب کسی اور سے کام کروانا ہے تو تب ہی میں لے",
+      "confidence": 1.0,
+      "language": "ur"
+    }
+  ],
+  "createdAt": 1788169285865,
+  "folder": "2026-08-31 Meeting 31-08-2026, 15-11-25"
+}

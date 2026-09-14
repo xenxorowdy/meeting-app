@@ -1,0 +1,244 @@
+{
+  "id": "cd231926-1a2f-455a-97f1-15f33db29040",
+  "title": "Meeting 30/08/2026, 19:00:32",
+  "startedAt": 1788096632511,
+  "endedAt": 1788096717823,
+  "durationSeconds": 85,
+  "summaryMarkdown": "The meeting was primarily a social call with some music playing in the background. Speaker 1 introduced Vicky, their BFF cum trader, who is soon to marry his girlfriend. Speaker 3 congratulated Vicky and mentioned that Minty is a lucky girl. Speaker 1 also mentioned being single. Towards the end, Speaker 1 urged Rocky to hurry up as they were getting late and then introduced themselves as Rocky Randhawa.\n\n### Discussion topics\n- Introduction of Vicky\n- Marriage announcement\n- Personal status\n- Urging Rocky to hurry",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "Rocky",
+      "priority": "Medium",
+      "task": "Hurry up"
+    }
+  ],
+  "keyDecisions": [],
+  "topics": [
+    "Introduction of Vicky",
+    "Marriage announcement",
+    "Personal status",
+    "Urging Rocky to hurry"
+  ],
+  "emailDraft": "Subject: Meeting Catch-up\n\nHi everyone,\n\nIt was good to connect. We had a brief chat and I introduced Vicky, my BFF cum trader, who is getting married soon. \n\nBest,\n[Your Name]",
+  "metadata": {
+    "diarized": true,
+    "transcriptionProvider": "sarvam"
+  },
+  "recording": {
+    "bytes": 11494858,
+    "durationMs": 84570,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:6904:0",
+    "startedAtMs": 1788096633252,
+    "videoPath": "cd231926-1a2f-455a-97f1-15f33db29040/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "a260711f-cf3f-4d9a-aeed-e2de81a434ad",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 751,
+      "endMs": 5551,
+      "text": "In my pocket, she telling me it's gonna shower.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "1166acfd-9283-4369-ba4d-2758d9506385",
+      "channel": "mixed",
+      "speaker": "viky",
+      "startMs": 751,
+      "endMs": 22151,
+      "text": "In my pocket see Kelly meet it's gonna shower. Call up my homies it's on it pop it till like it's meant to be ours. We keep the pain away shock cause we calling to try and control every hour. Look mama I'll be just like a power. You spin my head right round like round. When you go down when you go downtown.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "570aab5c-20d5-4c52-8e3a-e209cd8c51c3",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 5551,
+      "endMs": 22131,
+      "text": "It's meant to be ours. We keep the pain away, short cause we calling the cannon for drone every hour. Look mama, I hold you just like a power. You spin my head right round, right round. When you go down, when you go downtown.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "323f6898-ce98-4346-91fa-e00af18dd541",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 24511,
+      "endMs": 25871,
+      "text": "Jet Jet",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "cbc41e95-ff18-4e26-9334-4f26be1f5886",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 33411,
+      "endMs": 34931,
+      "text": "और भी क्या चल रहा है देश में?",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "fde88b59-3441-4ce5-b533-314b608a961c",
+      "channel": "mixed",
+      "speaker": "Speaker 4",
+      "startMs": 33471,
+      "endMs": 33791,
+      "text": "Horlicks",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "6224e2ae-0d9e-4410-8107-f17d14585613",
+      "channel": "mixed",
+      "speaker": "viky",
+      "startMs": 34711,
+      "endMs": 40771,
+      "text": "Music",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "8afe70fb-233f-4e43-a20a-b7a3ce0f7910",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 42471,
+      "endMs": 42711,
+      "text": "Hello",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "c4dd630e-f80c-43dd-8922-6c3a4ca31c91",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 43531,
+      "endMs": 44031,
+      "text": "Yes",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "1a2eeb08-3992-4711-84f4-97f107291d4c",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 46631,
+      "endMs": 47291,
+      "text": "Yes",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "40ce78b5-ed05-4d53-89fb-331cad21ed81",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 47331,
+      "endMs": 53251,
+      "text": "And nahi vo main kehna lag raha tha ye Vicky hai, my BFF cum trader, soon to do marriage with study girlfriend Vicky.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "c5f6f89e-0c8b-4405-a34b-f71b2cbf84e5",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 55831,
+      "endMs": 59171,
+      "text": "Congratulations. Minty is a lucky girl.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "bf384221-078b-484c-aa7b-762641beaf7f",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 61271,
+      "endMs": 62271,
+      "text": "and you are",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "18ac0b4b-abfc-4ed5-a79b-7fee787e96c9",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 62871,
+      "endMs": 63351,
+      "text": "Single",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "a64d9727-dbd7-4764-9cb0-7808d66ee7af",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 64691,
+      "endMs": 65331,
+      "text": "Thank you for you.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "774801fa-c5cb-4abf-9059-7bbb3c46b6c3",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 65791,
+      "endMs": 66311,
+      "text": "Okay",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "3e9eca86-5997-4c0a-be67-b1e92f706bc7",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 69891,
+      "endMs": 70371,
+      "text": "Like",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "73438605-d2d3-48b9-bc9b-51d51c682638",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 70391,
+      "endMs": 70851,
+      "text": "Bye",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "2c33245d-e0ed-4367-b159-d0da844c9d4d",
+      "channel": "mixed",
+      "speaker": "alia",
+      "startMs": 74451,
+      "endMs": 81711,
+      "text": "Rocky jaldi kar yaar late ho rahe hain. Ab yaar kaam bhi kar lete hain yaha pe kabhi kabhi official signatures. Hello Rocky Randhawa this side.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "ab024b26-4532-4a5e-b580-951d0ca1275a",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 81711,
+      "endMs": 82151,
+      "text": "Hello",
+      "confidence": 1.0,
+      "language": "en-IN"
+    }
+  ],
+  "createdAt": 1788096632511,
+  "folder": "2026-08-30 Meeting 30-08-2026, 19-00-32"
+}

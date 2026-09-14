@@ -1,0 +1,133 @@
+{
+  "id": "4bbfea30-4a96-49ba-9140-00fb82f77f43",
+  "title": "Meeting 05/09/2026, 14:29:51",
+  "startedAt": 1788598791672,
+  "endedAt": 1788598886159,
+  "durationSeconds": 94,
+  "summaryMarkdown": "The meeting was brief and conversational, with the local user expressing some personal thoughts and asking about purchases. There were no clear decisions or action items established.\n\n### Discussion topics\n- Personal thoughts and reflections\n- Purchases, specifically a bridal lehenga",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [
+    "Personal thoughts and reflections",
+    "Purchases, specifically a bridal lehenga"
+  ],
+  "emailDraft": "Subject: Meeting 05/09/2026, 14:29:51\n\nHi team,\n\nThank you for the brief chat today. It was good to connect.\n\nBest regards,\n[Your Name]",
+  "metadata": {
+    "transcriptionProvider": "sarvam-realtime"
+  },
+  "recording": {
+    "bytes": 6573390,
+    "durationMs": 93176,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:7004:0",
+    "startedAtMs": 1788598792922,
+    "videoPath": "4bbfea30-4a96-49ba-9140-00fb82f77f43/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "4dfed237-265d-4c15-a43d-b9e66e7a66de",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1492,
+      "endMs": 3640,
+      "text": "Okay",
+      "confidence": 1.0
+    },
+    {
+      "id": "f62d5fe7-362e-4552-8e81-1fb8fcd70952",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 8148,
+      "endMs": 13312,
+      "text": "Are, it's nothing like that, man. Why do you think like that?",
+      "confidence": 1.0
+    },
+    {
+      "id": "8f4986d4-ee42-4e04-85f5-8046cbe6d950",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 24852,
+      "endMs": 28808,
+      "text": "Are baba, essay kyon sochun?",
+      "confidence": 1.0
+    },
+    {
+      "id": "3fe2abf9-c3cf-4c2e-9182-aa38720da9e1",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 49204,
+      "endMs": 53248,
+      "text": "I don't know why I keep thinking about this.",
+      "confidence": 1.0
+    },
+    {
+      "id": "b7ded71a-414f-4c8d-a3a2-8bd8631ec0e1",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 58548,
+      "endMs": 62504,
+      "text": "और और कुछ अच्छा लगा आज?",
+      "confidence": 1.0
+    },
+    {
+      "id": "1c0b56ee-48c6-4607-a4ba-1b93e124ba34",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 62388,
+      "endMs": 64064,
+      "text": "Hello",
+      "confidence": 1.0
+    },
+    {
+      "id": "6f17601f-1474-4396-bfbc-d12ea032f111",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 66068,
+      "endMs": 68848,
+      "text": "Baki aur kya kya liya?",
+      "confidence": 1.0
+    },
+    {
+      "id": "0abc9af2-f62b-43bd-92b9-9e6f0111861b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 73012,
+      "endMs": 74880,
+      "text": "Matlab",
+      "confidence": 1.0
+    },
+    {
+      "id": "c8ec2fb8-1626-4f2b-a063-eb140b7bb39d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 75828,
+      "endMs": 80184,
+      "text": "Curly bridal lehenga liya aur kuch nahi liya",
+      "confidence": 1.0
+    },
+    {
+      "id": "09c549ef-719d-46cc-a90e-95b509a1f3a2",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 80788,
+      "endMs": 83512,
+      "text": "Kintu lagta hai?",
+      "confidence": 1.0
+    },
+    {
+      "id": "f52ec119-a386-4b30-9ada-04768ab0b865",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 83668,
+      "endMs": 87360,
+      "text": "Okay",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1788598791672,
+  "folder": "2026-09-05 Meeting 05-09-2026, 14-29-51"
+}

@@ -8,6 +8,8 @@ pub const MAX_HEADER_BYTES: usize = 16 * 1024;
 pub const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_WS_BYTES: usize = 2 * 1024 * 1024;
 
+const OPAQUE_ORIGINS: [&str; 2] = ["null", "file://"];
+
 // Deliberately no Debug: tokens must never end up in logs.
 pub struct SecurityConfig {
     pub hosted: bool,
@@ -26,7 +28,7 @@ impl SecurityConfig {
         )
     }
 
-    fn new(host: &str, token: Option<&str>, origins: Option<&str>, allow_null: Option<&str>) -> io::Result<Self> {
+    pub(crate) fn new(host: &str, token: Option<&str>, origins: Option<&str>, allow_null: Option<&str>) -> io::Result<Self> {
         let hosted = !is_loopback_host(host);
         let token = token.filter(|value| !value.is_empty());
         if hosted && token.is_none() {
@@ -56,20 +58,14 @@ impl SecurityConfig {
     pub fn origin_allowed(&self, origin: Option<&str>) -> bool {
         match origin {
             None => true, // Native clients do not send Origin; bearer validation still applies.
-            Some("null") => self.allow_null_origin,
+            Some(value) if OPAQUE_ORIGINS.contains(&value) => self.allow_null_origin,
             Some(value) => self.origins.iter().any(|origin| origin == value),
         }
     }
 
     pub fn authorized(&self, headers: &HashMap<String, String>, websocket: bool) -> bool {
         let Some(expected) = self.token_hash else { return true; };
-        let bearer = headers.get("authorization").and_then(|v| v.strip_prefix("Bearer ")).map(str::as_bytes);
-        let protocol_token = if websocket {
-            headers.get("sec-websocket-protocol").and_then(|value| value.split(',').map(str::trim)
-                .find_map(|protocol| protocol.strip_prefix("alpha-token.")))
-                .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
-        } else { None };
-        bearer.or(protocol_token.as_deref()).is_some_and(|token| {
+        bearer_or_protocol_token(headers, websocket).is_some_and(|token| {
             let supplied: [u8; 32] = Sha256::digest(token).into();
             bool::from(expected.ct_eq(&supplied))
         })
@@ -81,6 +77,29 @@ impl SecurityConfig {
             .and_then(|url| url.host_str().map(str::to_string))
             .is_some_and(|host| is_loopback_host(host.trim_matches(['[', ']'])))
     }
+}
+
+/// The candidate access token a client presented: the bearer header, or —
+/// for websocket upgrades, where browsers cannot set headers — the token
+/// smuggled through the subprotocol list. Callers decide what it is worth.
+pub fn bearer_or_protocol_token(headers: &HashMap<String, String>, websocket: bool) -> Option<String> {
+    let bearer = headers
+        .get("authorization")
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_string)
+        .filter(|token| !token.is_empty());
+    let protocol_token = if websocket {
+        headers
+            .get("sec-websocket-protocol")
+            .and_then(|value| value.split(',').map(str::trim)
+                .find_map(|protocol| protocol.strip_prefix("alpha-token.")))
+            .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .filter(|token| !token.is_empty())
+    } else {
+        None
+    };
+    bearer.or(protocol_token)
 }
 
 fn is_loopback_host(host: &str) -> bool {
@@ -122,16 +141,48 @@ mod tests {
     }
 
     #[test]
+    fn the_token_extractor_prefers_bearer_and_scopes_protocols_to_upgrades() {
+        let mut headers = HashMap::new();
+        assert_eq!(bearer_or_protocol_token(&headers, false), None);
+        headers.insert("authorization".into(), "Bearer tok-1".into());
+        assert_eq!(bearer_or_protocol_token(&headers, false).as_deref(), Some("tok-1"));
+        assert_eq!(bearer_or_protocol_token(&headers, true).as_deref(), Some("tok-1"));
+        headers.remove("authorization");
+        headers.insert(
+            "sec-websocket-protocol".into(),
+            format!("alpha, alpha-token.{}", URL_SAFE_NO_PAD.encode("tok-2")),
+        );
+        assert_eq!(bearer_or_protocol_token(&headers, true).as_deref(), Some("tok-2"));
+        assert_eq!(bearer_or_protocol_token(&headers, false), None);
+        headers.insert("sec-websocket-protocol".into(), "alpha, alpha-token.%%%".into());
+        assert_eq!(bearer_or_protocol_token(&headers, true), None);
+    }
+
+    #[test]
     fn origins_are_exact_and_null_requires_hosted_opt_in() {
         let config = hosted();
         assert!(config.origin_allowed(Some("https://app.example.com")));
-        for origin in ["null", "https://app.example.com.evil.test", "http://app.example.com", "https://evil.test"] {
+        for origin in ["null", "file://", "https://app.example.com.evil.test", "http://app.example.com", "https://evil.test"] {
             assert!(!config.origin_allowed(Some(origin)));
         }
         assert!(config.origin_allowed(None));
         assert!(SecurityConfig::new("0.0.0.0", Some(TOKEN), Some("*"), None).is_err());
         assert!(SecurityConfig::new("0.0.0.0", Some(TOKEN), Some("https://app.example.com/path"), None).is_err());
-        assert!(SecurityConfig::new("0.0.0.0", Some(TOKEN), None, Some("true")).unwrap().origin_allowed(Some("null")));
+        let opted_in = SecurityConfig::new("0.0.0.0", Some(TOKEN), None, Some("true")).unwrap();
+        assert!(opted_in.origin_allowed(Some("null")));
+        assert!(opted_in.origin_allowed(Some("file://")));
+    }
+
+    #[test]
+    fn a_local_backend_accepts_both_spellings_of_a_file_origin() {
+        let local = SecurityConfig::new("127.0.0.1", None, None, None).unwrap();
+        assert!(local.origin_allowed(Some("null")));
+        assert!(local.origin_allowed(Some("file://")));
+        assert!(!local.origin_allowed(Some("https://evil.test")));
+
+        let closed = SecurityConfig::new("127.0.0.1", None, None, Some("false")).unwrap();
+        assert!(!closed.origin_allowed(Some("null")));
+        assert!(!closed.origin_allowed(Some("file://")));
     }
 
     #[test]

@@ -59,6 +59,7 @@ export function useMeetingSession() {
     const [connection, setConnection] = useState('connecting');
     const [sessionState, setSessionState] = useState(SESSION_STATES.IDLE);
     const [activeMeeting, setActiveMeeting] = useState(null);
+    const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
     const [durationSeconds, setDurationSeconds] = useState(0);
     const [systemAudioSeen, setSystemAudioSeen] = useState(false);
     const [interimTurns, setInterimTurns] = useState([]);
@@ -553,6 +554,38 @@ export function useMeetingSession() {
         [adoptMeeting, sessionState]
     );
 
+    const regenerateSummary = useCallback(async meetingId => {
+        if (!meetingId) return { ok: false, message: 'Open a meeting before regenerating its summary.' };
+        setIsGeneratingSummary(true);
+        try {
+            const response = await apiRequest(`/api/meetings/${meetingId}/summarize`, {
+                method: 'POST',
+                body: { regenerate: true },
+            });
+            const summary = response?.summary;
+            if (!response?.success || !summary) throw new Error('The backend did not return a meeting summary.');
+            setActiveMeeting(current =>
+                current?.id === meetingId
+                    ? {
+                          ...current,
+                          summaryMarkdown: summary.rawMarkdown || '',
+                          summarySections: summary.sections || [],
+                          actionItems: summary.actionItems || [],
+                          keyDecisions: summary.keyDecisions || [],
+                          topics: summary.topics || [],
+                          emailDraft: summary.emailDraft || '',
+                      }
+                    : current
+            );
+            return { ok: true };
+        } catch (cause) {
+            setError(cause.message);
+            return { ok: false, message: cause.message };
+        } finally {
+            setIsGeneratingSummary(false);
+        }
+    }, []);
+
     // The backend exposes no meeting-update route yet, so edits stay in this session.
     const addNote = useCallback(
         async text => {
@@ -685,6 +718,7 @@ export function useMeetingSession() {
         isConnected: connection === 'online',
         sessionState,
         activeMeeting,
+        isGeneratingSummary,
         interimTurns,
         durationSeconds,
         subscribeAudioLevels: levels.subscribe,
@@ -702,6 +736,7 @@ export function useMeetingSession() {
         resumeMeeting,
         stopMeeting,
         loadMeeting,
+        regenerateSummary,
         updateActiveMeeting,
         renameSpeaker,
         toggleMicMute,

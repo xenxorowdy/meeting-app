@@ -1,6 +1,6 @@
 //! Sarvam Saaras batch transcription with speaker diarization.
 //!
-//! This is deliberately separate from the live WhisperKit service. Sarvam sees
+//! This is deliberately separate from the live Sarvam streaming service. Sarvam sees
 //! the completed mixed recording once, returns timestamped speaker turns, and
 //! only then does the normal meeting-summary pipeline run.
 

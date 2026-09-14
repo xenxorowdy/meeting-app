@@ -29,9 +29,12 @@ mod calendar;
 use calendar::CalendarService;
 
 mod security;
-use security::SecurityConfig;
+use security::{bearer_or_protocol_token, SecurityConfig, MAX_BODY_BYTES, MAX_HEADER_BYTES, MAX_WS_BYTES};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{WebSocketStream, tungstenite::{Message, protocol::{Role, WebSocketConfig}}};
+
+mod accounts;
+use accounts::AccountStore;
 
 mod library;
 mod workspace;
@@ -469,6 +472,7 @@ struct AppState {
     calendar: Arc<CalendarService>,
     podcast: Arc<PodcastService>,
     chat: Arc<chat::ChatService>,
+    accounts: Arc<AccountStore>,
 }
 
 impl AppState {
@@ -1490,6 +1494,7 @@ async fn main() -> io::Result<()> {
     let chat = chat::ChatService::new(store.library.read().await.root().to_path_buf());
     let session = Arc::new(Mutex::new(Session::default()));
     chat.start(store.clone(), session.clone());
+    let accounts = Arc::new(AccountStore::load().await);
     let state = AppState {
         started_at: now_ms(),
         session,
@@ -1502,6 +1507,7 @@ async fn main() -> io::Result<()> {
         settings: settings.clone(),
         calendar: calendar.clone(),
         podcast: podcast.clone(),
+        accounts,
     };
 
     println!("[Alpha Core Backend] Rust API listening on http://{host}:{port}");
@@ -1525,14 +1531,52 @@ async fn main() -> io::Result<()> {
 }
 
 async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result<()> {
-    let request = read_http_request(&mut stream).await?;
-    if request
+    let request = match read_http_request(&mut stream).await {
+        Ok(request) => request,
+        Err(ReadRequestError::Io(cause)) => return Err(cause),
+        Err(ReadRequestError::Rejected(status, message)) => {
+            write_http_response(
+                &mut stream,
+                status,
+                "application/json; charset=utf-8",
+                &json!({"error": message}).to_string(),
+                &[],
+            )
+            .await?;
+            return Ok(());
+        }
+    };
+    let websocket = request
         .headers
         .get("upgrade")
         .map(|v| v.eq_ignore_ascii_case("websocket"))
         .unwrap_or(false)
-        && request.path == "/ws"
-    {
+        && request.path == "/ws";
+    let denial = access_decision(&request, &state.security, websocket);
+    // A session token minted by /api/auth/login is an alternative to the static
+    // deployment token, so a 401 gets one more chance through the account store.
+    let denial = match denial {
+        Some((401, _)) => {
+            let valid_session = match bearer_or_protocol_token(&request.headers, websocket) {
+                Some(token) => state.accounts.session_account(&token).await.is_some(),
+                None => false,
+            };
+            if valid_session { None } else { denial }
+        }
+        denial => denial,
+    };
+    if let Some((status, message)) = denial {
+        write_http_response(
+            &mut stream,
+            status,
+            "application/json; charset=utf-8",
+            &json!({"error": message}).to_string(),
+            &cors_headers(&request, &state.security),
+        )
+        .await?;
+        return Ok(());
+    }
+    if websocket {
         return websocket_session(
             stream,
             request
@@ -1540,14 +1584,96 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
                 .get("sec-websocket-key")
                 .map(String::as_str)
                 .unwrap_or(""),
+            request
+                .headers
+                .get("sec-websocket-protocol")
+                .is_some_and(|value| value.split(',').any(|p| p.trim() == "alpha")),
             state,
         )
         .await;
     }
     let (status, content_type, body) = route(&request, &state).await;
-    let response = format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS\r\nConnection: close\r\n\r\n", body.len());
+    let mut extra = cors_headers(&request, &state.security);
+    if request.method == "OPTIONS" {
+        extra.extend([
+            ("Access-Control-Allow-Methods".to_string(), "GET, POST, PATCH, DELETE, OPTIONS".to_string()),
+            ("Access-Control-Allow-Headers".to_string(), "Content-Type, Authorization".to_string()),
+            ("Access-Control-Max-Age".to_string(), "86400".to_string()),
+        ]);
+    }
+    write_http_response(&mut stream, status, content_type, &body, &extra).await
+}
+
+/// Reject a request before it reaches routing. Distinct from an `io::Error`,
+/// which closes the connection without a response.
+async fn write_http_response<W: AsyncWriteExt + Unpin>(
+    stream: &mut W,
+    status: u16,
+    content_type: &str,
+    body: &str,
+    extra_headers: &[(String, String)],
+) -> io::Result<()> {
+    let mut response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    for (name, value) in extra_headers {
+        response.push_str(&format!("{name}: {value}\r\n"));
+    }
+    response.push_str("Connection: close\r\n\r\n");
     stream.write_all(response.as_bytes()).await?;
     stream.write_all(body.as_bytes()).await
+}
+
+/// Paths that must be reachable before any credential exists: the health probe
+/// and the two endpoints that mint credentials in the first place.
+fn is_public_path(path: &str) -> bool {
+    path == "/health" || path == "/api/auth/register" || path == "/api/auth/login"
+}
+
+/// The gate every request passes before routing: the Host header (DNS
+/// rebinding), the browser origin, and — except for public paths — the
+/// workspace token. Returns the failure to answer with.
+fn access_decision(
+    req: &HttpRequest,
+    security: &SecurityConfig,
+    websocket: bool,
+) -> Option<(u16, String)> {
+    if !security.host_allowed(req.headers.get("host").map(String::as_str)) {
+        return Some((403, "Unrecognized Host header".into()));
+    }
+    if !security.origin_allowed(req.headers.get("origin").map(String::as_str)) {
+        return Some((403, "This origin is not allowed to connect to this backend".into()));
+    }
+    if req.method == "OPTIONS" {
+        return None; // Preflights carry no credentials by design.
+    }
+    if !websocket && is_public_path(&req.path) {
+        return None; // Health probes and sign-in cannot present a token yet.
+    }
+    if !security.authorized(&req.headers, websocket) {
+        return Some((
+            401,
+            "A valid access token is required. Send it as 'Authorization: Bearer …'.".into(),
+        ));
+    }
+    None
+}
+
+/// CORS for allowed browser origins only. Native clients send no Origin and
+/// get no header at all; a hosted deployment never answers with '*'.
+fn cors_headers(req: &HttpRequest, security: &SecurityConfig) -> Vec<(String, String)> {
+    match req
+        .headers
+        .get("origin")
+        .filter(|origin| security.origin_allowed(Some(origin)))
+    {
+        Some(origin) => vec![
+            ("Access-Control-Allow-Origin".into(), origin.clone()),
+            ("Vary".into(), "Origin".into()),
+        ],
+        None => Vec::new(),
+    }
 }
 
 struct HttpRequest {
@@ -1558,7 +1684,18 @@ struct HttpRequest {
     body: Vec<u8>,
 }
 
-async fn read_http_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
+enum ReadRequestError {
+    Io(io::Error),
+    Rejected(u16, String),
+}
+
+impl From<io::Error> for ReadRequestError {
+    fn from(cause: io::Error) -> Self {
+        Self::Io(cause)
+    }
+}
+
+async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, ReadRequestError> {
     let mut buffer = Vec::with_capacity(4096);
     let mut header_end = None;
     loop {
@@ -1572,10 +1709,10 @@ async fn read_http_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
             header_end = Some(pos + 4);
             break;
         }
-        if buffer.len() > 1024 * 1024 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "request headers too large",
+        if buffer.len() > MAX_HEADER_BYTES {
+            return Err(ReadRequestError::Rejected(
+                431,
+                "Request headers are too large".into(),
             ));
         }
     }
@@ -1597,6 +1734,12 @@ async fn read_http_request(stream: &mut TcpStream) -> io::Result<HttpRequest> {
         .get("content-length")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(0);
+    if content_length > MAX_BODY_BYTES {
+        return Err(ReadRequestError::Rejected(
+            413,
+            "The request body is too large".into(),
+        ));
+    }
     let mut body = buffer[header_end..].to_vec();
     while body.len() < content_length {
         let mut chunk = vec![0u8; content_length - body.len()];
@@ -1643,6 +1786,34 @@ fn percent_decode(value: &str) -> String {
         })
         .collect()
 }
+/// The payload a successful register or login returns. The token is shown once
+/// here and never again — the backend only stores its hash.
+fn auth_grant_json(grant: accounts::AuthGrant) -> Value {
+    json!({
+        "success": true,
+        "token": grant.token,
+        "expiresAt": grant.expires_at,
+        "account": grant.account,
+    })
+}
+
+fn build_stamp() -> &'static Value {
+    static STAMP: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    STAMP.get_or_init(|| {
+        let executable = env::current_exe().ok();
+        let modified_ms = executable
+            .as_ref()
+            .and_then(|path| std::fs::metadata(path).ok())
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|since| since.as_millis() as i64);
+        json!({
+            "executable": executable.map(|path| path.to_string_lossy().into_owned()),
+            "modifiedMs": modified_ms,
+        })
+    })
+}
+
 fn json_response(status: u16, value: Value) -> (u16, &'static str, String) {
     (status, "application/json; charset=utf-8", value.to_string())
 }
@@ -1655,8 +1826,53 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/health") => json_response(
             200,
-            json!({"status":"ok","version":VERSION,"uptimeSeconds":((now_ms()-state.started_at).max(0)/1000)}),
+            json!({
+                "status": "ok",
+                "version": VERSION,
+                "uptimeSeconds": ((now_ms() - state.started_at).max(0) / 1000),
+                "build": build_stamp(),
+            }),
         ),
+        ("POST", "/api/auth/register") => {
+            match state
+                .accounts
+                .register(
+                    body.get("name").and_then(Value::as_str).unwrap_or_default(),
+                    body.get("email").and_then(Value::as_str).unwrap_or_default(),
+                    body.get("password").and_then(Value::as_str).unwrap_or_default(),
+                )
+                .await
+            {
+                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Err((status, error)) => json_response(status, json!({"error": error})),
+            }
+        }
+        ("POST", "/api/auth/login") => {
+            match state
+                .accounts
+                .login(
+                    body.get("email").and_then(Value::as_str).unwrap_or_default(),
+                    body.get("password").and_then(Value::as_str).unwrap_or_default(),
+                )
+                .await
+            {
+                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Err((status, error)) => json_response(status, json!({"error": error})),
+            }
+        }
+        ("POST", "/api/auth/logout") => {
+            if let Some(token) = bearer_or_protocol_token(&req.headers, false) {
+                state.accounts.logout(&token).await;
+            }
+            json_response(200, json!({"success": true}))
+        }
+        ("GET", "/api/auth/session") => {
+            let account = match bearer_or_protocol_token(&req.headers, false) {
+                Some(token) => state.accounts.session_account(&token).await,
+                None => None,
+            };
+            json_response(200, json!({"account": account}))
+        }
         ("GET", "/api/folders") | ("POST", "/api/folders") => {
             match workspace::folders(&state.store, (req.method == "POST").then_some(&body)).await {
                 Ok(result) => json_response(200, result),
@@ -2203,10 +2419,22 @@ fn export_markdown(meeting: &Meeting) -> String {
     out
 }
 
-async fn websocket_session(stream: TcpStream, key: &str, state: AppState) -> io::Result<()> {
+async fn websocket_session(
+    stream: TcpStream,
+    key: &str,
+    alpha_protocol: bool,
+    state: AppState,
+) -> io::Result<()> {
     let (mut reader, mut writer) = stream.into_split();
     let accept = websocket_accept(key);
-    let response=format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n");
+    // Echoing a protocol the client never offered makes browsers fail the
+    // handshake, so only confirm the one the client asked for.
+    let protocol = if alpha_protocol {
+        "\r\nSec-WebSocket-Protocol: alpha"
+    } else {
+        ""
+    };
+    let response=format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}{protocol}\r\n\r\n");
     writer.write_all(response.as_bytes()).await?;
     let mut receiver = state.events.subscribe();
     let initial =
@@ -2313,7 +2541,7 @@ async fn read_ws_frame<R: AsyncReadExt + Unpin>(stream: &mut R) -> io::Result<Op
         let mut b = [0u8; 8];
         stream.read_exact(&mut b).await?;
         len = u64::from_be_bytes(b) as usize;
-        if len > 16 * 1024 * 1024 {
+        if len > MAX_WS_BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "websocket frame too large",
@@ -2652,6 +2880,134 @@ mod tests {
         assert!(!meetings.is_empty());
         for meeting in &meetings {
             assert!(!meeting.id.is_empty());
+        }
+    }
+
+    mod access {
+        use super::super::{access_decision, cors_headers, HttpRequest};
+        use crate::security::SecurityConfig;
+        use std::collections::HashMap;
+
+        const TOKEN: &str = "test-only-token-with-at-least-32-characters";
+
+        fn request(method: &str, path: &str, headers: &[(&str, &str)]) -> HttpRequest {
+            HttpRequest {
+                method: method.into(),
+                path: path.into(),
+                query: HashMap::new(),
+                headers: headers
+                    .iter()
+                    .map(|(key, value)| (key.to_string(), value.to_string()))
+                    .collect(),
+                body: Vec::new(),
+            }
+        }
+
+        fn hosted() -> SecurityConfig {
+            SecurityConfig::new("0.0.0.0", Some(TOKEN), Some("https://app.example.com"), None)
+                .unwrap()
+        }
+
+        #[test]
+        fn a_hosted_backend_requires_the_token_for_every_route_except_health_and_preflight() {
+            let security = hosted();
+            let host = [("host", "backend.example.com")];
+            assert_eq!(
+                access_decision(&request("GET", "/api/status", &host), &security, false)
+                    .map(|(status, _)| status),
+                Some(401)
+            );
+            assert_eq!(
+                access_decision(&request("GET", "/health", &host), &security, false),
+                None
+            );
+            assert_eq!(
+                access_decision(&request("OPTIONS", "/api/status", &host), &security, false),
+                None
+            );
+            let authorized = [("host", "backend.example.com"), ("authorization", &format!("Bearer {TOKEN}"))];
+            assert_eq!(
+                access_decision(&request("GET", "/api/status", &authorized), &security, false),
+                None
+            );
+        }
+
+        #[test]
+        fn a_websocket_needs_the_token_even_though_it_is_not_a_health_route() {
+            use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+            let security = hosted();
+            let host = [("host", "backend.example.com")];
+            assert_eq!(
+                access_decision(&request("GET", "/ws", &host), &security, true)
+                    .map(|(status, _)| status),
+                Some(401)
+            );
+            let subprotocol = (
+                "sec-websocket-protocol",
+                format!("alpha, alpha-token.{}", URL_SAFE_NO_PAD.encode(TOKEN)),
+            );
+            let authorized = [("host", "backend.example.com"), (subprotocol.0, subprotocol.1.as_str())];
+            assert_eq!(
+                access_decision(&request("GET", "/ws", &authorized), &security, true),
+                None
+            );
+        }
+
+        #[test]
+        fn disallowed_origins_and_rebinding_hosts_are_refused_before_auth() {
+            let security = hosted();
+            let evil_origin = [
+                ("host", "backend.example.com"),
+                ("authorization", &format!("Bearer {TOKEN}")),
+                ("origin", "https://evil.test"),
+            ];
+            assert_eq!(
+                access_decision(&request("GET", "/api/status", &evil_origin), &security, false)
+                    .map(|(status, _)| status),
+                Some(403)
+            );
+
+            // A local backend is the one that must refuse a non-loopback Host,
+            // since a rebinding attack targets services bound to 127.0.0.1.
+            let local = SecurityConfig::new("127.0.0.1", None, None, None).unwrap();
+            assert_eq!(
+                access_decision(
+                    &request("GET", "/api/status", &[("host", "evil.test:48900")]),
+                    &local,
+                    false
+                )
+                .map(|(status, _)| status),
+                Some(403)
+            );
+            assert_eq!(
+                access_decision(
+                    &request("GET", "/api/status", &[("host", "127.0.0.1:48900")]),
+                    &local,
+                    false
+                ),
+                None
+            );
+        }
+
+        #[test]
+        fn cors_only_ever_allows_an_origin_on_the_list() {
+            let security = hosted();
+            let allowed = request(
+                "GET",
+                "/api/status",
+                &[("host", "backend.example.com"), ("origin", "https://app.example.com")],
+            );
+            let headers = cors_headers(&allowed, &security);
+            assert!(headers.contains(&(
+                "Access-Control-Allow-Origin".to_string(),
+                "https://app.example.com".to_string()
+            )));
+            assert!(headers.contains(&("Vary".to_string(), "Origin".to_string())));
+
+            // Native clients send no Origin; a response for them must not widen
+            // access for somebody else.
+            let native = request("GET", "/api/status", &[("host", "backend.example.com")]);
+            assert!(cors_headers(&native, &security).is_empty());
         }
     }
 }

@@ -1,0 +1,261 @@
+{
+  "id": "4c844fe1-943f-4879-9354-09c9ba00d5fa",
+  "title": "Meeting 31/08/2026, 15:11:58",
+  "startedAt": 1788169318582,
+  "endedAt": 1788169494931,
+  "durationSeconds": 176,
+  "summaryMarkdown": "Meeting **Meeting 31/08/2026, 15:11:58** completed with 23 spoken turns across You, Others.",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {
+    "transcriptionProvider": "whisper"
+  },
+  "recording": {
+    "bytes": 37435446,
+    "durationMs": 174726,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "screen:1:0",
+    "startedAtMs": 1788169319287,
+    "videoPath": "4c844fe1-943f-4879-9354-09c9ba00d5fa/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "8ee9741b-eaca-4881-9f25-900b11f75acb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 7400,
+      "endMs": 9140,
+      "text": "तो जाता है क्यों?",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "5edd088a-76f8-4ea7-887e-8d3b65ccc2d6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 15440,
+      "endMs": 19020,
+      "text": "یہ کھیلنے کے لئے فوتوکول کس لیپ تاہرے نہیں ہے",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "1a3ea8e4-a9a4-4237-b08f-a5c00804bd44",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 56040,
+      "endMs": 58800,
+      "text": "यह बुक भी कर लूगा तब भी नहीं है",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "72fb32aa-d2dc-4082-8d7b-089fda962940",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 69720,
+      "endMs": 73860,
+      "text": "अरे हम हिंदी उर्दू सब सेम ही है ना?",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "ff8b5d94-b244-49f5-92f1-66d8a95187e2",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 73860,
+      "endMs": 76960,
+      "text": "तो आटो डिटेक के अग पर डाला हुआ है",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "7f7828b0-4fa3-49f2-bdfb-d2f97c94bc18",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 76960,
+      "endMs": 79560,
+      "text": "So, you understand Urdu?",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "2e770cce-90bd-4c14-8d15-fddf56dab7f6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 88500,
+      "endMs": 90340,
+      "text": "थोड़ा हेवी मोडल देना पड़ेगा",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "49c7deed-e48b-4c8a-9c69-31bbe8dd8bab",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 93620,
+      "endMs": 95620,
+      "text": "पर फिर भी चॉल रहा है",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "9f16584a-8fda-4080-92cd-c2454371a4e6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 101320,
+      "endMs": 104460,
+      "text": "अब ये टर्बो यूस कर रहा हूं तो इतना सही नहीं है।",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "40343ebd-5c32-45e9-903d-e39cdee98c73",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 104940,
+      "endMs": 107700,
+      "text": "फिर भी अगर देखे",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "487467eb-3e79-4280-8193-e431d9b71de9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 107700,
+      "endMs": 110740,
+      "text": "आपन जो जो बोल रहे हो सब कुछ आई रहे हैं यहां पर",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "ee975669-ea82-4711-993b-4da0805f7944",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 111240,
+      "endMs": 115060,
+      "text": "E aí",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "7e5d0384-e3ef-4b5c-8f43-712f94293ea4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 111840,
+      "endMs": 115720,
+      "text": "आप इब बन मैट्टेंट कुरा हो कर दो, ना? आप यह बनते हैं.",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "7538a726-2d2e-4303-9a99-7f25f5f3b7df",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 115120,
+      "endMs": 122780,
+      "text": "How much of the ladew sarai? 80 80 80 80 80 80",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "5ed69f95-39c0-43bd-aa19-c772f02e3b90",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 115720,
+      "endMs": 125400,
+      "text": "This is the architecture. This is the recording. This is the location.",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "698fa0c0-58a8-435c-a8ca-d793d2af6f90",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 126080,
+      "endMs": 133660,
+      "text": "नो चीज ने",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "96b4f221-15cc-4bf3-b988-76346d45dabf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 125500,
+      "endMs": 133360,
+      "text": "Metro Metro Metro Metro Metro Metro Metro Metro Metro Metro Metro Metro Metro I guess that I'm already in a justice",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "925b83f3-69c5-4629-87e1-93fac5f5c9c0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 133380,
+      "endMs": 137960,
+      "text": "यह जाम लगा हुआ है यह देखो पेपर में भी आ गया अच्छा आपको वापीस आना है",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "b65a759e-f66b-4b78-9655-0870e686e4b5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 137960,
+      "endMs": 144240,
+      "text": "अगली तक पहुंचे आप वार्टो मिलते हैं",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "4f252c45-43b6-4cd8-95a3-e2874122a24b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 148700,
+      "endMs": 150540,
+      "text": "ابھی یہ بول رہا ہے نا اچھا اچھا",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "2933797d-7fe3-4371-889c-f719e48a81c3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 153400,
+      "endMs": 157020,
+      "text": "अब ट्रांस्क्रिप्ट अब ये हो गया ना अब ये देख लिए",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "a88d4b61-e0b4-43d6-abe2-a4b1d177591d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 157020,
+      "endMs": 158720,
+      "text": "यहाँ परमे गया",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "f66a18c3-1d52-4011-a391-185fd1b62189",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 164640,
+      "endMs": 174980,
+      "text": "What do you think of me? It means that it's a lot of things. It's like a granola. - Yes. - Do something like that. - It's a small thing.",
+      "confidence": 1.0,
+      "language": "hi"
+    }
+  ],
+  "createdAt": 1788169318582,
+  "folder": "2026-08-31 Meeting 31-08-2026, 15-11-58"
+}

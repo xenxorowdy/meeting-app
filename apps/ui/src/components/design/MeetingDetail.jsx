@@ -1,8 +1,7 @@
-import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowLeft,
     Check,
-    Copy,
     Download,
     HelpCircle,
     Mic,
@@ -12,13 +11,13 @@ import {
     Pencil,
     Play,
     Quote,
-    Search,
+    Sparkles,
     Square,
     Volume2,
     VolumeX,
-    X,
 } from 'lucide-react';
 import { formatMs, initialsFor } from '@/lib/speakers';
+import { TranscriptView } from '@/components/TranscriptView';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 import { ResizableChatPanel } from '@/components/ResizableChatPanel';
 
@@ -26,8 +25,6 @@ const RecordingPlayer = lazy(() => import('@/components/RecordingPlayer').then(m
 const SummaryEditor = lazy(() => import('@/components/SummaryEditor').then(module => ({ default: module.SummaryEditor })));
 import { LiveNotes } from '@/components/LiveNotes';
 import { MarkdownText } from '@/components/MarkdownText';
-import { JumpingBalls } from '@/components/JumpingBalls';
-import { StreamingText } from '@/components/StreamingText';
 import { dateLabel, durationLabel, leadParagraph, speakerColor, taskValue, turnIndex, turnsForIds } from './designHelpers';
 
 export function Avatar({ name }) {
@@ -39,189 +36,6 @@ export function Avatar({ name }) {
 }
 
 const EMPTY_TURNS = [];
-
-const TurnRow = memo(function TurnRow({
-    turn,
-    cited,
-    renaming,
-    name,
-    copied,
-    isConnected,
-    onName,
-    onStartRename,
-    onCancelRename,
-    onSubmitRename,
-    onCopy,
-}) {
-    return (
-        <article data-turn-id={turn.id} className={`ks-turn ${cited ? 'ks-cited' : ''}`}>
-            <Avatar name={turn.speaker} />
-            <div>
-                <div className="ks-turn-heading">
-                    {renaming ? (
-                        <form
-                            className="ks-rename"
-                            onSubmit={event => {
-                                event.preventDefault();
-                                onSubmitRename(turn.speaker, name);
-                            }}
-                        >
-                            <input aria-label="Speaker name" autoFocus value={name} onChange={event => onName(event.target.value)} />
-                            <button aria-label="Save speaker name">
-                                <Check />
-                            </button>
-                            <button type="button" aria-label="Cancel speaker rename" onClick={onCancelRename}>
-                                <X />
-                            </button>
-                        </form>
-                    ) : (
-                        <button className="ks-speaker-name" disabled={!isConnected} title="Rename speaker" onClick={() => onStartRename(turn.speaker)}>
-                            {turn.speaker}
-                        </button>
-                    )}
-                    <time>{formatMs(turn.startMs)}</time>
-                    <button className="ks-copy-turn" aria-label={`Copy what ${turn.speaker} said`} onClick={() => onCopy(turn)}>
-                        {copied ? <Check /> : <Copy />}
-                    </button>
-                </div>
-                <p>
-                    <StreamingText text={turn.text} stream={Boolean(turn.live)} />
-                </p>
-            </div>
-        </article>
-    );
-});
-
-function Transcript({ turns, interimTurns = [], isRecording, citationFocus, onRenameSpeaker, isConnected }) {
-    const [query, setQuery] = useState('');
-    const [showSearch, setShowSearch] = useState(false);
-    const [copied, setCopied] = useState(null);
-    const [renaming, setRenaming] = useState(null);
-    const [name, setName] = useState('');
-    const [error, setError] = useState('');
-    const [follow, setFollow] = useState(true);
-    const end = useRef(null);
-    const list = useRef(null);
-    useEffect(() => {
-        if (isRecording && follow) end.current?.scrollIntoView({ block: 'nearest' });
-    }, [turns, interimTurns, isRecording, follow]);
-    useEffect(() => {
-        const ids = citationFocus?.turnIds || [];
-        const target = [...(list.current?.querySelectorAll('[data-turn-id]') || [])].find(node => ids.includes(node.dataset.turnId));
-        target?.scrollIntoView({ block: 'center' });
-    }, [citationFocus]);
-    const needle = query.trim().toLowerCase();
-    const filtered = useMemo(
-        () => (needle ? turns.filter(turn => `${turn.speaker} ${turn.text}`.toLowerCase().includes(needle)) : turns),
-        [turns, needle]
-    );
-    const pending = needle ? EMPTY_TURNS : interimTurns.filter(turn => turn.text);
-
-    const startRename = useCallback(speaker => {
-        setRenaming(speaker);
-        setName(speaker);
-    }, []);
-    const cancelRename = useCallback(() => setRenaming(null), []);
-    const submitRename = useCallback(
-        async (speaker, next) => {
-            const result = await onRenameSpeaker(speaker, next);
-            if (result?.ok) setRenaming(null);
-            else setError(result?.message || 'Could not rename speaker.');
-        },
-        [onRenameSpeaker]
-    );
-    const copyTurn = useCallback(async turn => {
-        try {
-            await navigator.clipboard.writeText(turn.text);
-            setCopied(turn.id);
-        } catch {
-            setError('Could not copy this passage.');
-        }
-    }, []);
-    return (
-        <div
-            className="ks-transcript"
-            ref={list}
-            onScroll={event => {
-                const el = event.currentTarget;
-                setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
-            }}
-        >
-            <div className="ks-transcript-tools">
-                {showSearch && (
-                    <input
-                        autoFocus
-                        aria-label="Search transcript"
-                        placeholder="Search transcript…"
-                        value={query}
-                        onChange={event => setQuery(event.target.value)}
-                    />
-                )}
-                <button
-                    className="ks-icon-button"
-                    aria-label={showSearch ? 'Close transcript search' : 'Search transcript'}
-                    onClick={() => {
-                        setShowSearch(!showSearch);
-                        setQuery('');
-                    }}
-                >
-                    {showSearch ? <X /> : <Search />}
-                </button>
-            </div>
-            {error && (
-                <p className="ks-error" role="alert">
-                    {error}
-                </p>
-            )}
-            {filtered.map((turn, index) => (
-                <TurnRow
-                    key={turn.id || index}
-                    turn={turn}
-                    cited={Boolean(citationFocus?.turnIds?.includes(turn.id))}
-                    renaming={renaming === turn.speaker}
-                    name={name}
-                    copied={copied === turn.id}
-                    isConnected={isConnected}
-                    onName={setName}
-                    onStartRename={startRename}
-                    onCancelRename={cancelRename}
-                    onSubmitRename={submitRename}
-                    onCopy={copyTurn}
-                />
-            ))}
-            {pending.map(turn => (
-                <article key={turn.id} className="ks-turn ks-turn-interim" aria-live="polite">
-                    <Avatar name={turn.speaker} />
-                    <div>
-                        <div className="ks-turn-heading">
-                            <span className="ks-speaker-name">{turn.speaker}</span>
-                            <span className="ks-interim-tag">
-                                <JumpingBalls size="sm" />
-                                speaking
-                            </span>
-                        </div>
-                        <p>
-                            <StreamingText text={turn.text} stream />
-                        </p>
-                    </div>
-                </article>
-            ))}
-            {!filtered.length && !pending.length && (
-                <div className="ks-empty">
-                    <h3>{query ? 'No matching passages' : isRecording ? 'Listening to your meeting…' : 'No transcript yet'}</h3>
-                    <p>{query ? 'Try another search.' : 'Speech will appear here with speaker names and timestamps.'}</p>
-                </div>
-            )}
-            {isRecording && !pending.length && (
-                <div className="ks-listening" role="status">
-                    <JumpingBalls />
-                    <span>Listening</span>
-                </div>
-            )}
-            <div ref={end} />
-        </div>
-    );
-}
 
 function useOutsideClose(active, onClose) {
     const ref = useRef(null);
@@ -446,6 +260,7 @@ export function MeetingDetail({
     onBack,
     onExport,
     onUpdate,
+    onRegenerateSummary,
     onSelectMeeting,
     onRenameSpeaker,
     onAddNote,
@@ -453,6 +268,8 @@ export function MeetingDetail({
 }) {
     const [tab, setTab] = useState(initialTab || 'transcript');
     const [chatOpen, setChatOpen] = useState(false);
+    const [chatDraft, setChatDraft] = useState(null);
+    const [replayCitation, setReplayCitation] = useState(null);
     const [editing, setEditing] = useState(false);
     const [title, setTitle] = useState('');
     const [advanced, setAdvanced] = useState(false);
@@ -472,7 +289,36 @@ export function MeetingDetail({
     const tasks = meeting?.actionItems || [];
     const screenCapture = Boolean(session.recordingState?.active) && session.recordingState.mode !== 'audio';
     const jumpToTurn = turn => onSelectMeeting?.(meeting, { meetingId: meeting.id, turnIds: [turn.id], startMs: turn.startMs });
+    // A recording turns every timestamp into a seek control. The citation goes
+    // straight to the player instead of through App, so the transcript tab the
+    // user is reading is not rebuilt for a jump inside the same meeting.
+    const seekToTurn = turn => {
+        setReplayCitation({ meetingId: meeting.id, turnIds: [turn.id], startMs: turn.startMs });
+        setTab('replay');
+    };
+    // Quoting a turn opens the meeting chat with the passage pre-filled, so the
+    // question is already half-asked.
+    const askAboutTurn = turn => {
+        const quote = turn.text.length > 400 ? `${turn.text.slice(0, 400)}…` : turn.text;
+        setChatDraft({
+            key: `${turn.id}-${Date.now()}`,
+            text: `At ${formatMs(turn.startMs)}, ${turn.speaker} said: “${quote}”\n\n`,
+        });
+        setChatOpen(true);
+    };
     const sourceIndex = useMemo(() => turnIndex(meeting?.transcript), [meeting?.transcript]);
+    const summarySourceIds = useMemo(() => {
+        const ids = new Set();
+        for (const section of meeting?.summarySections || []) {
+            for (const bullet of section.bullets || []) {
+                for (const id of bullet.sourceTurnIds || []) {
+                    ids.add(id);
+                    if (ids.size === 6) return [...ids];
+                }
+            }
+        }
+        return [...ids];
+    }, [meeting?.summarySections]);
 
     if (!meeting && !recording)
         return (
@@ -620,13 +466,16 @@ export function MeetingDetail({
                 </div>
                 <div id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="ks-meeting-panel">
                     {tab === 'transcript' && (
-                        <Transcript
+                        <TranscriptView
                             turns={turns}
                             interimTurns={interimTurns}
-                            isRecording={session.isRecording}
+                            isLive={session.isRecording}
                             citationFocus={citationFocus}
                             isConnected={isConnected}
                             onRenameSpeaker={onRenameSpeaker}
+                            onAsk={askAboutTurn}
+                            onSeek={seekToTurn}
+                            seekable={Boolean(meeting?.recording?.videoPath) && !recording}
                         />
                     )}
                     {tab === 'tasks' && <Tasks meeting={meeting} onUpdate={onUpdate} />}
@@ -642,7 +491,8 @@ export function MeetingDetail({
                                             key={meeting?.id}
                                             meeting={meeting}
                                             onUpdateMeeting={onUpdate}
-                                            isGenerating={session.isProcessing}
+                                            onRegenerateSummary={() => onRegenerateSummary?.(meeting?.id)}
+                                            isGenerating={session.isProcessing || session.isGeneratingSummary}
                                         />
                                     </Suspense>
                                 </div>
@@ -652,7 +502,7 @@ export function MeetingDetail({
                                         <header>
                                             <span>
                                                 <i />
-                                                AI SUMMARY
+                                                TRANSCRIPT SUMMARY
                                             </span>
                                             <button className="ks-icon-button" aria-label="Edit summary" onClick={() => setAdvanced(true)}>
                                                 <Pencil />
@@ -660,7 +510,14 @@ export function MeetingDetail({
                                         </header>
                                         {meeting?.summarySections?.length > 0 ? (
                                             <>
-                                                <MarkdownText markdown={leadParagraph(meeting.summaryMarkdown)} />
+                                                <div className="ks-summary-lead">
+                                                    <MarkdownText markdown={leadParagraph(meeting.summaryMarkdown)} />
+                                                    <SourceCitation
+                                                        label="Representative passages for this summary"
+                                                        turns={turnsForIds(sourceIndex, summarySourceIds)}
+                                                        onJump={jumpToTurn}
+                                                    />
+                                                </div>
                                                 <Sections sections={meeting.summarySections} index={sourceIndex} onJump={jumpToTurn} />
                                             </>
                                         ) : (
@@ -669,7 +526,9 @@ export function MeetingDetail({
                                                     meeting?.summaryMarkdown ||
                                                     (session.isProcessing
                                                         ? 'Preparing your meeting summary…'
-                                                        : 'Your summary will appear after this meeting has been processed.')
+                                                        : session.autoSummarize === false
+                                                          ? 'Auto-summarize is off. Turn on “Summarize when a recording ends” in Settings to generate a recap.'
+                                                          : 'No summary is available for this meeting yet.')
                                                 }
                                             />
                                         )}
@@ -695,7 +554,7 @@ export function MeetingDetail({
                             <RecordingPlayer
                                 key={meeting?.id}
                                 meeting={meeting}
-                                citationFocus={citationFocus}
+                                citationFocus={replayCitation || citationFocus}
                                 isConnected={isConnected}
                                 onRenameSpeaker={onRenameSpeaker}
                                 nameSuggestions={session.nameSuggestions}
@@ -723,6 +582,7 @@ export function MeetingDetail({
                         isLive={!meeting.endedAt}
                         isConnected={isConnected}
                         onSelectMeeting={onSelectMeeting}
+                        draft={chatDraft}
                     />}
             </ResizableChatPanel>
         </div>

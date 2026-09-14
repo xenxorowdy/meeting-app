@@ -13,6 +13,7 @@
         "start:ui": "npm run --prefix apps/ui dev",
         "start:backend": "npm run --prefix apps/core-backend start",
         "test:backend": "npm run --prefix apps/core-backend test",
+        "test:auth": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/auth-flow.test.js test/auth-client.test.js",
         "test:podcast": "node --test test/podcast-projects.test.js test/recorder-paths.test.js",
         "test:shell": "node --test test/widget-window.test.js test/menubar-tray.test.js",
         "test:ui": "node --test test/calendar-events.test.js test/meeting-chat.test.js test/live-transcript.test.js test/audio-levels.test.js",
@@ -29,7 +30,7 @@
         "meeting assistant",
         "transcription",
         "diarization",
-        "whisper",
+        "sarvam",
         "claude"
     ],
     "author": "Alpha Team",

@@ -1,0 +1,7 @@
+target
+.git
+.alpha-meeting-assistant
+.env
+Dockerfile
+fly.toml
+test

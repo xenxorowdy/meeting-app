@@ -88,7 +88,7 @@ pub mod audio {
 
 
     /// RIFF/WAVE container around signed 16-bit little-endian mono PCM, which is
-    /// what every Whisper front end on this machine expects to be handed.
+    /// what every transcriber front end on this machine expects to be handed.
     pub fn encode_wav(pcm: &[u8], sample_rate: u32) -> Vec<u8> {
         let data_len = pcm.len() as u32;
         let mut wav = Vec::with_capacity(44 + pcm.len());
@@ -156,9 +156,9 @@ pub mod audio {
 
 /// Voice activity detection and utterance segmentation.
 ///
-/// Whisper is an utterance-level model: handing it arbitrary 20 ms frames wastes
-/// the Neural Engine and produces nothing useful, so speech has to be gathered
-/// into segments first. Frames before the trigger are kept in a pre-roll ring
+/// Streaming transcribers work at the utterance level: handing them arbitrary
+/// 20 ms fragments wastes the provider and produces nothing useful, so speech
+/// has to be gathered into segments first. Frames before the trigger are kept in a pre-roll ring
 /// because the onset of a word is usually below the speech threshold, and a
 /// trailing hangover keeps a brief pause inside one segment instead of chopping
 /// a sentence in half.
@@ -464,7 +464,7 @@ pub mod vad {
 
 /// Post-processing for recogniser output.
 pub mod transcript {
-    /// Whisper marks non-speech audio with bracketed tags — `[BLANK_AUDIO]`,
+    /// Transcribers mark non-speech audio with bracketed tags — `[BLANK_AUDIO]`,
     /// `(silence)`, `[Music]` — and a VAD that triggered on room noise will
     /// produce exactly those. They are not turns, so a segment whose text is
     /// nothing but tags is dropped, and tags around real speech are stripped.

@@ -69,7 +69,7 @@ function CitationCard({ citation, onOpen }) {
     );
 }
 
-export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null }) {
+export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, draft = null }) {
     const chat = useMeetingChat(scope, isConnected);
     const [sourceError, setSourceError] = useState(null);
     const log = useRef(null);
@@ -113,6 +113,14 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
         setSourceError(null);
         setConfirmDelete(false);
     }, [scopeKey(scope), chat.thread?.id]);
+    // A quoted transcript turn (or any caller) hands us a pre-filled question.
+    // The key changes on every seed, so quoting the same turn twice re-seeds.
+    useEffect(() => {
+        if (!draft?.text) return;
+        chat.setQuestion(draft.text);
+        composer.current?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draft?.key]);
     const openSource = async citation => {
         setSourceError(null);
         try {

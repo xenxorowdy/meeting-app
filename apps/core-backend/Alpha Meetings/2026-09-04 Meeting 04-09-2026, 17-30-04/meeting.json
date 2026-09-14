@@ -1,0 +1,3985 @@
+{
+  "id": "3e760e9a-7a27-4781-a953-ac21efd7349e",
+  "title": "Meeting 04/09/2026, 17:30:04",
+  "startedAt": 1788523204978,
+  "endedAt": 1788524708428,
+  "durationSeconds": 1503,
+  "summaryMarkdown": "Meeting **Meeting 04/09/2026, 17:30:04** completed with 389 spoken turns across You, Others.",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "I need to wrap up a card and make a picture."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "And then it will be done. - I don't know what else is that we need enough for the patient."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "But what are you doing? You need to make a record"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "I will be making changes."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "You can just change it by telling them that this is how it works. Just use this. They will use this and change the design system and it will automatically change."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "Digital internet will slow down here"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "There's actually two different lines of it. One is a band named Radian, which we will continue using as we were. I think this one would be the CTF and then these would all be the shades and banners. But then you've got this other green for your badges."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "this will enter you"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "But those will not be too generic. Those will, I think, be very specific. Now, again, one sort of question will be,"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "It was too specific, then we don't need to keep it designed. That's what I'm telling you. Most of the things have been too specific."
+    }
+  ],
+  "keyDecisions": [
+    "There's actually two different lines of it. One is a band named Radian, which we will continue using as we were. I think this one would be the CTF and then these would all be the shades and banners. But then you've got this other green for your badges.",
+    "So generally we will throw this model with this minimum high limit."
+  ],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {
+    "transcriptionProvider": "whisper"
+  },
+  "recording": {
+    "bytes": 222158721,
+    "durationMs": 1502362,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:117:0",
+    "startedAtMs": 1788523206054,
+    "videoPath": "3e760e9a-7a27-4781-a953-ac21efd7349e/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "bdf18997-b3ae-4b1b-b0a7-ee72697d64ad",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1720,
+      "endMs": 4180,
+      "text": "to at least just to be known as well as this.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4293bc06-bfa4-4d52-9878-8626b8a67b86",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1100,
+      "endMs": 3800,
+      "text": "to these text fields also",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d7d15324-9b64-4979-a21b-615dd0d93c14",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 7360,
+      "endMs": 9620,
+      "text": "for both mouse and keyboard navigation.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ff89b571-3d89-45f9-a501-80b0f88fad2c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 6760,
+      "endMs": 9060,
+      "text": "for both mouse and keyboard navigation.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "410d7de6-b447-48ef-b7cf-e4cf427f46c3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 12960,
+      "endMs": 17740,
+      "text": "I'm going to go to the lab. I'm going to go to the lab.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "86f92dd2-1ba0-4e6b-8d4e-c42d7d63773c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 12200,
+      "endMs": 17000,
+      "text": "I need to wrap up a card and make a picture.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fe661b5a-906f-4f92-9a34-f514f07f30db",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 17760,
+      "endMs": 23100,
+      "text": "And then it will be done. - I don't know what else is that we need enough for the patient.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d8865b33-5d85-42cd-bba7-0443d1ffc29c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 23720,
+      "endMs": 27780,
+      "text": "full page moda right it is called",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c2e31b79-a22c-4dbe-a22d-3592be73d8cb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 18540,
+      "endMs": 31380,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f4d06dcd-3e29-4629-8c62-5e56aa15275e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 28340,
+      "endMs": 30740,
+      "text": "and paint it with your job.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f7c152b8-4efd-47c6-8448-362d52cbe952",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 32140,
+      "endMs": 36200,
+      "text": "something that's nice from the left hand side of the right hand side.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9fcbe58f-d8c1-4e43-800b-9a0b1066bed2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 31180,
+      "endMs": 37760,
+      "text": "It's something that slides from the left and side to the right. We have a lot of segments in the UAE.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8864ad84-8142-48a1-9657-77ca86a403c3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 37960,
+      "endMs": 40800,
+      "text": "We are making a model",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4f8b3307-fb7f-439e-bf8a-b9e339b4f7b9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 41000,
+      "endMs": 43500,
+      "text": "look as a page itself.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "70619e94-e6f7-4b57-a2d7-2b7fd393a190",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 39220,
+      "endMs": 45000,
+      "text": "but it's very easy to do it",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "aa3af442-93d1-4fee-962c-7f5d0c233db9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 45440,
+      "endMs": 50560,
+      "text": "But what are you doing? You need to make a record",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8312d0fb-cf10-43ad-a715-3152a70238a4",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 44040,
+      "endMs": 50200,
+      "text": "So it's a hack from our side, but it does give us some benefits that we want to keep using.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7730a257-af28-4d27-b1a2-25eef4dd3eab",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 50420,
+      "endMs": 55120,
+      "text": "So in that case, actually, there is something which has been going",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3e0ddb54-de28-4b82-bf00-d20e4e487933",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 55540,
+      "endMs": 57740,
+      "text": "What is difficult about this?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "27bc7ed6-b828-46b1-a677-c3d99ad81f9e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 61440,
+      "endMs": 65700,
+      "text": "You should read it here, if you have a name or not, you should see it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2554f078-e610-4f7f-995f-674f30105007",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 57480,
+      "endMs": 65880,
+      "text": "you have this thing called a content slot, right? So here you can put your title and description and what have you, so you can also hide it if you want.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "63536f1c-fc0a-47d2-a9cc-df68e62b4993",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 65880,
+      "endMs": 67700,
+      "text": "And here you can",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "af09e985-8597-4eb7-b703-470d25cb2c24",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 67700,
+      "endMs": 70580,
+      "text": "start slotting and dropping in whatever you want to.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "328bba72-c578-4c34-82f6-cc96213ddfef",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 69940,
+      "endMs": 71560,
+      "text": "I don't know.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6da05ecd-9258-4f28-8c22-b0d35f18d2cf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 70580,
+      "endMs": 72880,
+      "text": "So actually,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f83834b1-ba33-4b2c-9d22-0e31bdd8a7d3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 74260,
+      "endMs": 77440,
+      "text": "Yeah, I think that might go as long as",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a92b5a1c-2e1b-4b06-839f-27cf0f5f309e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 77440,
+      "endMs": 79520,
+      "text": "we are able to",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c8614be0-1cd0-4167-83c3-60152637277a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 79520,
+      "endMs": 81280,
+      "text": "for this",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8fd3b384-980c-44f5-95da-3fd58a0d83d5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 77800,
+      "endMs": 83460,
+      "text": "I will be making changes.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9d279dba-2bdf-4abf-8b43-6dcf25e6aef3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 83460,
+      "endMs": 85180,
+      "text": "and",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "31a956ff-6c79-4d1a-80c7-cc439d46824f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 85180,
+      "endMs": 87240,
+      "text": "It's last 20 minutes.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d791da47-f843-4a4e-a1c5-4ecf63c76516",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 87240,
+      "endMs": 91320,
+      "text": "Whatever I see I think the same goes is possible.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c131920e-270c-4a62-861c-7a23047b8f4c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 85700,
+      "endMs": 91000,
+      "text": "whatever is getting rendered is slottable.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d71a6d47-ee36-44c4-83b6-6cdc1a2afeaf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 92520,
+      "endMs": 95500,
+      "text": "But then do you have cancer? I am continuing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "207864ea-c422-4b81-94d7-9ae15f4e0c4f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 95500,
+      "endMs": 99480,
+      "text": "No, no, no. That is what I meant. That is what I meant. Every element is thought about.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "22bff803-ef2a-40d5-9151-63d43211d38e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 101120,
+      "endMs": 105160,
+      "text": "So it just gives you the bare bones on the floor and the more of it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a8dd999c-edeb-4a7b-9e00-e47be9ca1348",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 107220,
+      "endMs": 109880,
+      "text": "everything inside are other components.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d2383b0b-193b-4d6e-9b20-1453438e78c2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 115460,
+      "endMs": 121660,
+      "text": "Also, we've got badges of two different kinds, right? Because we have these unique use cases",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "aedc6dcf-b96a-43ba-bb1c-d837dabf8bfc",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 121660,
+      "endMs": 129300,
+      "text": "where you're going to start using these bell-shaped badges that everyone use. But then we also got some use cases in lab systems",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b2afe89c-0215-4189-b193-da56d36d27d3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 129420,
+      "endMs": 135680,
+      "text": "specifically there, you want something which is like an outline with a tool there, which",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ce0f8d91-91b3-4982-8bc1-7e8de14f4495",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 135680,
+      "endMs": 137720,
+      "text": "There are too many types.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b4413389-17fc-4ee1-a8a7-24b9fa70e351",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 137720,
+      "endMs": 140180,
+      "text": "then it would not standardize.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7c304b0d-a8d7-450a-b3ff-658cb8a2a25f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 140180,
+      "endMs": 143260,
+      "text": "you have this circular edge like",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "aee014ef-bea9-4c04-8bcf-ce5a6b13ac6f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 143260,
+      "endMs": 147380,
+      "text": "which looks like proper pills and then there's this",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c606c88f-9f77-449f-baea-6e295552c1c5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 147380,
+      "endMs": 155740,
+      "text": "rectangular slightly more rectangular shaped like these are solid solid uh yeah kind of it looks like a button and then you also have this",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9e282812-6565-4621-9f6e-a868b247b5a9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 155740,
+      "endMs": 159440,
+      "text": "ones which are outlined.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "016b077c-049e-447c-bdbc-38972306a4e3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 163000,
+      "endMs": 165320,
+      "text": "What do you think?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5750c397-0c38-4eb4-8253-0c2f98653f75",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 159440,
+      "endMs": 171140,
+      "text": "So I think we can solve this problem by not having these because I agree it doesn't look like a button, but then also we have to",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0c0c2310-fd96-4b09-9704-03183591a48d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 171580,
+      "endMs": 174800,
+      "text": "push on that change, that change especially with the labs.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2d91a04d-4e45-42a7-894c-f9e277f29363",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 176600,
+      "endMs": 178860,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7b3c37f2-8732-4716-b738-07e3c24860ca",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 175040,
+      "endMs": 179300,
+      "text": "That is going to happen at a lot of places.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "79e783d2-d9a0-4126-bd17-a78eca85f8ad",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 182260,
+      "endMs": 188820,
+      "text": "I'm not going to be too happy to hear about it. It's okay. But anyway, we're doing the design system, what we are doing behind.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8743e406-b479-4c72-aec7-da76211e0a39",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 185900,
+      "endMs": 190300,
+      "text": "- You can do hook. - Look at who? - Hook, hook, hook.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "30e6c8f4-a77d-41fb-9da0-92f205c52580",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 189300,
+      "endMs": 200000,
+      "text": "You can just change it by telling them that this is how it works. Just use this. They will use this and change the design system and it will automatically change.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2afe257f-fac1-47e5-9672-99eafee04576",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 201180,
+      "endMs": 203000,
+      "text": "I can see you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "87b153a0-0887-468c-aecc-60ec1db3589e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 206040,
+      "endMs": 209400,
+      "text": "Digital internet will slow down here",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "59820494-424f-4f99-93b0-e1645edca186",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 203740,
+      "endMs": 209340,
+      "text": "now we control the standard",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "94337144-e637-459e-8ab4-6a386a8257b5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 209400,
+      "endMs": 211060,
+      "text": "Do you want to have a PSC?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f7d1a1a5-b0b8-45c4-b695-3a1a316cb14e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 210520,
+      "endMs": 215020,
+      "text": "But at this time, we have done this thing where you got back",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "835f262e-4437-4e2f-89bb-d9798c5ff730",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 217480,
+      "endMs": 222280,
+      "text": "digital scans",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ab14d2d9-c71b-405c-9f53-f2e4074f3481",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 216680,
+      "endMs": 231680,
+      "text": "There's actually two different lines of it. One is a band named Radian, which we will continue using as we were. I think this one would be the CTF and then these would all be the shades and banners. But then you've got this other green for your badges.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "53005acc-d6dc-4fd3-99ff-0869eaca32f5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 231680,
+      "endMs": 235240,
+      "text": "in case you want something which is like success,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c874726b-facf-4996-9e97-2d23a5183d24",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 235240,
+      "endMs": 237760,
+      "text": "like all those things, but not on brand.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d038aa3e-1ace-4ae2-9edf-1904293e52ef",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 237760,
+      "endMs": 240260,
+      "text": "It is just called me dream.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4d81d35f-ceb8-452f-a5cc-fabb993411e6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 238420,
+      "endMs": 241560,
+      "text": "A few add case status.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7b8118f3-906f-41ee-928f-915dd823517b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 244880,
+      "endMs": 248660,
+      "text": "Are we using pink and all these colors?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0a8dac1f-b9b4-48b4-aeba-519296875dd4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 248340,
+      "endMs": 250880,
+      "text": "Okay, I'm going to go to Heartland QM.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "537abcc0-d92d-42e6-9942-3741a1022610",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 249300,
+      "endMs": 251460,
+      "text": "planning to use",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8b4b57a8-5356-4037-bd9a-6268ee05c221",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 251460,
+      "endMs": 255580,
+      "text": "They are OK LCH, there's like a new color system in which",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "674c03bd-703f-4318-8458-a2e45b659cc3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 256440,
+      "endMs": 258620,
+      "text": "do it like based on",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b58993a9-411e-4c50-917b-3dfe8951790b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 266140,
+      "endMs": 269040,
+      "text": "Fixed all of them.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3375ed33-dcd8-44a3-af6e-669e9f09bef1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 258620,
+      "endMs": 273620,
+      "text": "visual perception instead of the mathematical sRGB because we didn't use to look the same. So you might think that why is this looking so dirty and mustardy, but at least it is consistent",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "88bb3b3d-64c5-41cc-8bbf-c6a43a06dfb7",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 276540,
+      "endMs": 278780,
+      "text": "but",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f9f5cbbf-3323-4f5c-be0b-c24b73fb87cb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 278780,
+      "endMs": 281020,
+      "text": "I'm going to go",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3640c0c5-f3a9-4d42-a3c4-276e248b868e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 273620,
+      "endMs": 283640,
+      "text": "kind of follows the same contrast ratio. So if as a developer I am assigning a 350, I can be like, I can rest assured knowing that that contrast values would be the same.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "92dfc6a8-944a-44dc-895a-3372001d6f7f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 288900,
+      "endMs": 290600,
+      "text": "Duded, dudered",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4de4d9e5-9032-4ceb-9972-79ed34380cea",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 294060,
+      "endMs": 296440,
+      "text": "digital dentures",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dd0f7b4d-a2c4-4de1-b385-3935f5b9c9b3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 299820,
+      "endMs": 302340,
+      "text": "so you can load the filter",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4b1d760c-9312-43bd-89aa-b27334a8ef8b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 304880,
+      "endMs": 307260,
+      "text": "Never fails loading on here.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0176be51-87a1-4f30-98b0-e2c71db9de19",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 302440,
+      "endMs": 308660,
+      "text": "So what's next on the design system? After this, we have more sophisticated stuff.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "50734e63-488b-424b-83a3-e985487b1670",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 308660,
+      "endMs": 310480,
+      "text": "This is it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2a638893-742f-4f16-9a75-076c53d8fb3b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 316140,
+      "endMs": 318380,
+      "text": "but",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2b9cd7cc-9ffe-43a8-b215-5ef2aff9f2d0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 310920,
+      "endMs": 318620,
+      "text": "I think this is mostly and whatever is required can be requested and added.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b94e7eb6-5941-4c96-9ebf-a42261236e82",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 323780,
+      "endMs": 325860,
+      "text": "this will enter you",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c37bbed0-fc70-4c7f-9b87-85c1d662052c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 318620,
+      "endMs": 326820,
+      "text": "But those will not be too generic. Those will, I think, be very specific. Now, again, one sort of question will be,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d841ca44-419e-4a54-b808-cc96f1c708fa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 327600,
+      "endMs": 330440,
+      "text": "and decide accordingly.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "38c87f83-297a-4b69-b176-425cc1185c36",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 330440,
+      "endMs": 337040,
+      "text": "It was too specific, then we don't need to keep it designed. That's what I'm telling you. Most of the things have been too specific.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f0f9704a-5d8e-4017-add9-89a728b93c64",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 336820,
+      "endMs": 340760,
+      "text": "I don't know if I'm going to talk to the plot.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cea50e72-f845-4ac0-892a-6d7fa12a2a79",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 337620,
+      "endMs": 341760,
+      "text": "which kind of uses this, like composes from this",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5e932c77-fb4d-4fda-a724-5921552ec376",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 341760,
+      "endMs": 343440,
+      "text": "I think that was",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "387a4893-461a-427a-a1f5-255a664352f6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 347980,
+      "endMs": 353040,
+      "text": "or price comparison in this thing, the product details page.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8a39cd34-fc14-4d99-acab-de4b046145b2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 353120,
+      "endMs": 360180,
+      "text": "and the product card. These are like one of things, right? You don't have the product card anywhere else. You don't have the same kind of...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "91efbb2f-3a76-4f01-b7ce-b1ef57a90188",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 360180,
+      "endMs": 362600,
+      "text": "come by example table anywhere else.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9f23dff5-f77f-49dd-ba46-6f02711e9646",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 362600,
+      "endMs": 365480,
+      "text": "Because in the list page, you have comparison, but that looks",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1fd9ef7b-8f8e-4e41-b6b0-e89f0d7ef7a6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 367100,
+      "endMs": 371480,
+      "text": "the product details page comparison is entered. List page.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2fe02895-8cd0-4011-97bb-b7a03a239d99",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 375860,
+      "endMs": 380360,
+      "text": "I think we have written it from initial days. It is the same thing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "89956032-52df-4146-9524-56c47b4d988b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 380360,
+      "endMs": 389180,
+      "text": "yeah about that i was actually hoping is there possibility of turning the product pop-up into a product dts page",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bfc66e33-9a42-477c-a93b-134a739128f3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 389180,
+      "endMs": 391540,
+      "text": "Because then we have to",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8e9b5fb1-87f7-4e02-9eed-84c93da8d782",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 391640,
+      "endMs": 398860,
+      "text": "Reload the data there. It makes things slightly less efficient for us.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4753ef34-b53d-4a61-8c54-a00e8582afcc",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 399320,
+      "endMs": 407560,
+      "text": "Because the data is there in that context and if you change the page, that means you're losing the previous context. It's a new URL you are loading.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "677d44a0-e63a-4cae-9969-a18e406a8c62",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 415140,
+      "endMs": 417480,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3bbd999b-4a3d-4b03-a29a-5ce76c053a52",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 409060,
+      "endMs": 417140,
+      "text": "But we can still make it look like a full coverage.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6f25dd64-7640-4dfb-a0bb-f886a1a2b80b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 417880,
+      "endMs": 420580,
+      "text": "That's why I was kind of, I had to stand",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ac76dcf1-c23d-488a-9a77-bc7c6d8a9ebb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 425780,
+      "endMs": 427380,
+      "text": "Okay.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ca407fc6-e8d4-41b2-8ec4-2e49d13d1f02",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 427580,
+      "endMs": 430220,
+      "text": "still",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "aacda7c3-31f2-48d3-9479-7e66a97098a2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 420580,
+      "endMs": 435580,
+      "text": "and what I want card because like you said, the product cards have a lot of stuff going on. So basically, I want to keep an approach where I have all the like a super set of all the possible things that can be jammed into a card.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "97483a13-3372-4771-8a5a-b7c5161c689b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 435580,
+      "endMs": 443000,
+      "text": "and then roll backwards like okay can you just remove this thing can you show the card again like i saw that yeah it was like",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e67fdf18-5a53-420a-bde9-4870901fefce",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 443300,
+      "endMs": 447020,
+      "text": "They call it all stay living on pain.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cacce8a8-601d-44c9-a646-0dadbaf825aa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 448600,
+      "endMs": 453340,
+      "text": "Because you think that will be like the base of our product card? Yeah.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "61c2185a-42e1-4c2d-b50a-fc4282a881c3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 453340,
+      "endMs": 456140,
+      "text": "So this is like a very",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4f597992-8db9-4a66-a94e-658214a8585f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 457760,
+      "endMs": 461340,
+      "text": "But will this be a product card?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "eecff3fc-ae12-411a-8660-9007fc93d0f6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 463120,
+      "endMs": 465360,
+      "text": "This is the product",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e3e464d0-4956-4388-83ca-28bfc8ad7493",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 465680,
+      "endMs": 467760,
+      "text": "card list, card list.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "078a77f4-f1b6-47a4-a7a6-ebfb50f8e4d8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 468720,
+      "endMs": 471740,
+      "text": "Product list card or product reserve card?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "44010129-ace6-4aee-b828-ca70b2ae8df7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 471840,
+      "endMs": 473640,
+      "text": "Good day, the grid.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "04ab7291-5759-451b-90aa-83efe252756d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 473640,
+      "endMs": 476540,
+      "text": "That is a listing. That is a list one.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2297fc7a-be76-46ca-8778-8a9e9c646338",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 476640,
+      "endMs": 479020,
+      "text": "and these other following questions.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ce94c141-945e-471b-9dd0-4647ef4070db",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 480320,
+      "endMs": 482800,
+      "text": "Well, I mean, this is...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a5496096-0ef8-41aa-87d0-dccdc838367b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 483860,
+      "endMs": 489060,
+      "text": "looked on you. This is another thing we can publish. and that is cool.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9eadc82b-9451-49ea-ad1f-f01b6d888134",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 489140,
+      "endMs": 491260,
+      "text": "No, I'm thinking so",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "afff5024-95d9-4ea9-951e-34af78a7a4d9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 491260,
+      "endMs": 499540,
+      "text": "So if you try to nail down the specifics and try to accommodate everything,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fd98b948-396f-44e1-be54-66aa5e2cca0f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 498600,
+      "endMs": 502000,
+      "text": "Three. How do you do that? Three minutes.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c55d171e-1316-46df-be40-b5050de3defa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 499540,
+      "endMs": 503620,
+      "text": "in your design for a card that has like",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f88a8f13-a8e8-49fe-bda3-1f2a70ec983f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 502000,
+      "endMs": 505300,
+      "text": "37",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "33d133ab-b23a-46b5-83dd-49b25e3e53cd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 503620,
+      "endMs": 506260,
+      "text": "a lot of variations.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c978d34c-20fc-4e04-8ed5-4fe8b169ac0d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 508400,
+      "endMs": 510540,
+      "text": "I think it's a big deal.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ff424e07-91e1-47bd-9ca7-9461efa7e154",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 506820,
+      "endMs": 512860,
+      "text": "You are trying to win a fight that will have new villains every other day.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "89f337af-13d0-4479-9dcd-4bcb030034d3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 510540,
+      "endMs": 514020,
+      "text": "I'm going to go",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bd065c48-32a9-4797-80bc-2d6463745812",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 514520,
+      "endMs": 519280,
+      "text": "The concept is you make it as composable as possible.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b0236955-5e82-4ee6-971d-74fba7dc1435",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 519280,
+      "endMs": 521440,
+      "text": "you give the right space",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7dfa41ac-8916-4fe8-a30c-366c4e398592",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 521700,
+      "endMs": 527100,
+      "text": "and basically handle the layout. Don't control the layout.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8fedfde1-9091-4e27-95b5-19c6eb84218d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 527140,
+      "endMs": 537460,
+      "text": "Let the implementer choose that. But that implementer is also you. You create a product card yourself. But the layout is not rigid.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2c7b3fc4-f85d-4113-9033-ff2f0354504f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 538300,
+      "endMs": 542080,
+      "text": "I think that is the right approach.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3fb96d4e-5a4d-4fa4-a29c-8f158d4fa2a8",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 543000,
+      "endMs": 545860,
+      "text": "They will go second to the picture",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d2af5cdd-a604-4145-910f-41d70a9b8785",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 542080,
+      "endMs": 548240,
+      "text": "nail down the design on the base of the design system, I think you will be",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2c9d3007-b08e-4f91-815e-80165c3c36e6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 547200,
+      "endMs": 553160,
+      "text": "I'm going to go ahead and repeat on the phone. So it's one page here, two page here.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7728c3a9-293c-4d3d-a593-c8984108055f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 548840,
+      "endMs": 554380,
+      "text": "it will have a lot of variations, a lot. And that is a very bad thing to start off with.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4014c976-acc9-40a3-a1ec-f7cc22d40452",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 559740,
+      "endMs": 562820,
+      "text": "Composibility, I think, is more important.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b2db3cd1-9920-4aef-963a-c4f7c97da933",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 562980,
+      "endMs": 565980,
+      "text": "basically a set of",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bf1ef0cd-5624-4995-b880-903d47f8f05a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 565980,
+      "endMs": 574120,
+      "text": "good rules to follow so that your card does not end up looking too messy. Yeah, that makes sense. That's actually the approach I was thinking of taking.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "327e8bd0-eb53-4530-99a4-8dddab0662c8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 575180,
+      "endMs": 589500,
+      "text": "even if people are mixing and matching in elements they should all come to it so they they won't anyway mix and match just because they want to it it will have to go through a design design error inspection or whatever right does that have to work",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "eda6fb4a-18b2-4d31-84d1-6551a7acd5a0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 589500,
+      "endMs": 591520,
+      "text": "So, diabetes again,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5c79f311-aee7-4dc5-ad35-1c10fc5ba75b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 594380,
+      "endMs": 601720,
+      "text": "When can we stop these things jumping around in the UI? I see things jumping around all the time.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "348afa8a-7022-47de-bae9-ad280caebacf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 602220,
+      "endMs": 606520,
+      "text": "That is a common problem which I see, which makes it look",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e458199e-2f87-4470-b99f-639a05cea08d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 606520,
+      "endMs": 607900,
+      "text": "Not very polished.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "85649413-a5f9-46be-9823-738789ae295b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 607660,
+      "endMs": 610300,
+      "text": "I'm taking my group of guys on.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0e79bb7f-f8bd-4679-8641-ec45f5f31b96",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 608560,
+      "endMs": 612760,
+      "text": "It starts from the home page. The moment you land on the home page,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "735cfbba-83d4-46be-b81c-200386785174",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 612760,
+      "endMs": 616260,
+      "text": "This right to the search bar.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b4c3665b-f373-4d0a-84c1-8160fa169e17",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 616260,
+      "endMs": 626380,
+      "text": "There's a jump there. So the main thing is config-based. Config-based, but you need to have like placeholders there, right? You shouldn't have like things jumping around.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1d2c56f4-9cc9-41e9-8752-3865191f16d7",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 622700,
+      "endMs": 628000,
+      "text": "I also played",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3e68b25b-758c-4e25-bbab-3e4beee920de",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 626560,
+      "endMs": 629960,
+      "text": "So this is where it is with the new",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3d8a6e9f-b19c-4ad5-b4cc-53f6e0fd4d77",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 630560,
+      "endMs": 643720,
+      "text": "not exactly i",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "31db595b-5de3-4257-9793-5c03a06f3394",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 643720,
+      "endMs": 648440,
+      "text": "And that is collapsing. So the two ways you have this.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0ef07df5-5ec2-4e22-961b-e775d9ceefeb",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 648480,
+      "endMs": 652560,
+      "text": "You block that space. Freebase using JS.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d1f5c710-b151-46c7-a8b4-13b5577a3f7a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 653160,
+      "endMs": 659400,
+      "text": "to alter CSS properties or you use CSS identity. CSS will give you two bits.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5ca1eb7a-275a-4ea4-8686-d99979141041",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 665500,
+      "endMs": 667420,
+      "text": "- You can also do that.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "122dcc4f-c905-41eb-b531-0581288f06bc",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 659400,
+      "endMs": 674400,
+      "text": "you make the visibility as invisible or you hide it from the document. If you hide it from the wrong, it goes away. But if you take the visibility, it retains its position in the document flow. But the problem is it is necessary.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8761c4b2-691f-46b8-870b-0a55a5f30d6c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 674400,
+      "endMs": 676520,
+      "text": "CSS property on the downloadable.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b77cfb5d-7be0-4509-a655-eca7cdeed69d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 676520,
+      "endMs": 684980,
+      "text": "You can go on the HTML. And access everything. No, that you cannot do. But how else will you know what...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7dd1e4d1-697b-4b90-a54d-6581c359801e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 684980,
+      "endMs": 692360,
+      "text": "was its position and space. Because anyways, you will not get the data because that problem actually is a recursive problem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "86973000-4c85-46e1-b9fa-dfd0f14e9599",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 694940,
+      "endMs": 698220,
+      "text": "the elements downstream will also have the same problem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "90ca6131-5e0b-4749-9576-bdd2b0b99fcd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 698220,
+      "endMs": 702420,
+      "text": "so eventually that data won't resolve right so everything will collapse",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1863f3fd-f446-4cf2-8342-73499a49bc1d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 705400,
+      "endMs": 708120,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2aec217b-7d38-4b9f-9874-0f3d3562054c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 702620,
+      "endMs": 709320,
+      "text": "So the top part, even if you have the underlying elements, that will eventually collapse because there is no content inside.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e705dceb-c369-4b05-8e6d-46796492acb9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 711040,
+      "endMs": 713580,
+      "text": "But you want to create that",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2e79676a-33cc-4da0-b958-7faf96a15558",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 713580,
+      "endMs": 719200,
+      "text": "skeleton that is there. So I think you have to have that min height or whatever this thing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "34b74bce-dd2b-41bc-9978-2fd57e3ad5de",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 720660,
+      "endMs": 724640,
+      "text": "But then you have to do it individually for every item.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ca394153-f73a-4bab-ac25-23bd91003bae",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 725220,
+      "endMs": 729000,
+      "text": "Anything that you are wrapping with.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e378c889-b83f-452f-b66e-408eeda00295",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 730160,
+      "endMs": 736300,
+      "text": "contract is very simple right if you don't have a mean height mean width then it will collapse right",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "395eff8e-3104-4a9a-adc9-1671811432e2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 736300,
+      "endMs": 738860,
+      "text": "what's the one and then it will shift everything around.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8a9c3e4a-257c-4739-9c68-cfd795e0687a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 738860,
+      "endMs": 745560,
+      "text": "I'm talking about most of the places where this problem arises right now, it's dated",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4fbe30cb-e28e-47f8-b480-3725ecb7816f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 743040,
+      "endMs": 749960,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "63a73883-878a-4ec2-a102-97bde603fc98",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 746800,
+      "endMs": 749500,
+      "text": "permission has to be part of this interface.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "eaed45a9-2610-4341-9478-c16848fe7238",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 749960,
+      "endMs": 751900,
+      "text": "I'm not going to go into this.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "975a0b5d-9226-4a9b-bd3f-1a70f7e85bdd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 749500,
+      "endMs": 753740,
+      "text": "This thing has to be part of this.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9d49bd73-0716-4383-8915-cdd256e699bb",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 753740,
+      "endMs": 757900,
+      "text": "particular thing, whatever you're having, the component to get to the other,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "18837098-2f08-4494-a666-c59369cc56d0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 758080,
+      "endMs": 763260,
+      "text": "So it will receive that minimum. Yeah, yeah. Otherwise, how would you know?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bb2380b0-3ef2-4aa7-a26c-9372b031a776",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 763300,
+      "endMs": 766100,
+      "text": "Because you don't have content.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "93d7d084-db91-47e8-99e3-4d5998fdd395",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 753320,
+      "endMs": 768320,
+      "text": "I",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dc07b355-c455-4b8e-9ddd-8d951df6ac92",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 768760,
+      "endMs": 772160,
+      "text": "So you don't know otherwise how much it would have taken,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "388daa0e-9364-441d-b4dc-8f9523fc225d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 768320,
+      "endMs": 774840,
+      "text": "Yeah, it is kind of weird.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "080cb9bf-694e-4233-a792-aa5a9d82c95c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 774840,
+      "endMs": 777840,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9a6f4296-f0ca-456b-b8b3-15bc8f80ceed",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 772340,
+      "endMs": 778580,
+      "text": "Now the same thing happens, let's say there is a larger UI section that is created within",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2d844fb2-bd39-4e0a-806d-3ec816342aff",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 778580,
+      "endMs": 780300,
+      "text": "and",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f809358a-a8ea-4c16-812c-1b729270b28d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 780340,
+      "endMs": 783940,
+      "text": "And if you just keep a skeleton there,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3d808af1-fbcb-4819-8266-7c15143d4214",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 781660,
+      "endMs": 786040,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cbac09d3-54e3-4b2d-a01f-b6b7e5cc1b31",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 786100,
+      "endMs": 787740,
+      "text": "Yes, but yes.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3be9e4dd-4fc2-4289-b63a-adbaa58bb036",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 783940,
+      "endMs": 792960,
+      "text": "You may have to hide it. You have it there. So that whoever is implementing, they decide. So again, it becomes an optional parameter.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f34c9d64-041a-4510-8aaf-763eadc67544",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 792960,
+      "endMs": 799900,
+      "text": "yeah it's optional that's what i'm telling either you completely like it completely disappears like it doesn't even show anything",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "71702c33-5dd2-4118-bc5a-ee95dd432b9a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 801500,
+      "endMs": 804820,
+      "text": "It's essentially a blank thing. It doesn't render anything.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "75ed4849-ee04-4c90-8bcb-f2b22c0fac93",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 807160,
+      "endMs": 808980,
+      "text": "or it renders",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e36aa33b-914c-44ae-b266-36f005a2211a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 809120,
+      "endMs": 811240,
+      "text": "And it has a mean height.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0e0bcdb7-7a15-4b5e-bac5-806bbc769f67",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 811660,
+      "endMs": 816220,
+      "text": "It vendors a empty block with a main height and level.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "afcf0020-678f-4347-8bf2-7708f74986b2",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 803580,
+      "endMs": 818580,
+      "text": "You told me, you told me",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "94f68d24-449c-415e-aeea-ce2752ccefde",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 816620,
+      "endMs": 822560,
+      "text": "But before entering, we'll have to figure out, right? We need to show it or not. That is the problem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ef4d98fd-c09a-4430-bcb0-966218d1d1b0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 818580,
+      "endMs": 825960,
+      "text": "I think you want to see it. I don't have to worry.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7f5523c7-54a1-4d63-ba27-4a08ba5e44bd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 822560,
+      "endMs": 831820,
+      "text": "If you give a wind light at least dark and we don't need to show it. Essentially, it can be a mulch. It can be that empty.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0355bd1a-803d-4251-8413-0bbb54ef1354",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 831820,
+      "endMs": 833220,
+      "text": "this thing right back.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b0f9495b-bbe6-4458-8b1d-648cbc020bee",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 834020,
+      "endMs": 844800,
+      "text": "Most of the times. That's a default. Yeah. That's a default. Otherwise, you have something, some element which takes some. It already gets.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b740a4c2-8c97-41bf-93b8-5738f2f79472",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 848740,
+      "endMs": 851200,
+      "text": "I don't know what I'm going to say.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "efa0a62c-6a59-4d35-9ceb-e0f2b6b3220c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 851200,
+      "endMs": 853280,
+      "text": "- Jerry!",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0e02a586-4bbd-4a8f-bb62-d0601bd9c32c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 844800,
+      "endMs": 852980,
+      "text": "I'm logging into the QHP. What is something wrong? Rerode. Scroll a bit down. Rerode and scroll a bit down.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a9c51077-8503-4df0-9e95-d425ae3cfa95",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 855000,
+      "endMs": 856640,
+      "text": "Just go over down.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d3a2c90c-57a7-428b-bf3c-380b63e48463",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 856640,
+      "endMs": 860640,
+      "text": "The right side also, right? The curve. Can you go on?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c965dc6e-2c6f-4be8-9e3a-e1eea248293a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 865780,
+      "endMs": 875140,
+      "text": "you know",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "30cef076-554b-42ff-8ac9-a97fb9c111f0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 861040,
+      "endMs": 876040,
+      "text": "So see, scroll and be there. Also the budgets, right? The budget cards were... The budget card is not there. You see this at the right side.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5984bf2b-3bb0-43e7-b862-33eeed8bcfd7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 876040,
+      "endMs": 881840,
+      "text": "The budget was not dead, suddenly it appears and pushes.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9e30f64a-ccb9-42ad-9da9-e9468ea05374",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 881840,
+      "endMs": 887820,
+      "text": "But still you'll be able to see when if you don't slow down that jumping behavior is there.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3cd8d77f-98f9-4bf9-b8b5-1d35645b1aaf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 887820,
+      "endMs": 890920,
+      "text": "Because it looks very amateur, right?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f0953c97-0d6f-48d9-bcc3-023721f5b9d3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 892060,
+      "endMs": 899660,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fa3caf65-4f4a-49a7-93b7-cfd8df6e3546",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 891060,
+      "endMs": 899720,
+      "text": "So I think we should also plan like the common which every group has should be at the top",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2b87c7fe-f317-4a74-be73-e73d06d6e7f6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 899720,
+      "endMs": 904180,
+      "text": "whatever it is we have to solve this problem in a standard way because",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c17feb61-10a6-4476-a64d-f509bbafe680",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 900000,
+      "endMs": 906780,
+      "text": "Yeah, yeah.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ecf39963-2029-432b-9ccc-558632bb76f1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 904180,
+      "endMs": 908220,
+      "text": "So generally we will throw this model with this minimum high limit.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "57eaf775-986f-41f3-9c31-a0335688d972",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 908220,
+      "endMs": 917900,
+      "text": "Yeah, whatever, but this should be part of the design system. I mean, we should instill this rigor through the design system that whatever you are having, like if we can.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6777a4a0-47cf-4366-b0ad-08cd8f0df5cb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 918280,
+      "endMs": 925140,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "85cea565-8dff-4e24-8edd-faad2bc7c958",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 918080,
+      "endMs": 928760,
+      "text": "Because I'm assuming this would be composed out of a card, whatever you're seeing. This is a derivation of a card. You're taking a card and then putting your own stuff on it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0535f35f-95d0-4d53-aa03-730a86c261a8",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 925240,
+      "endMs": 929780,
+      "text": "but if you like the movement supply different sizes",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a884b94f-122b-45fd-8aeb-eefc0d5d2263",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 929780,
+      "endMs": 931680,
+      "text": "What do you think?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b315c914-8181-43a2-807b-4b48bc4aa2e3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 928760,
+      "endMs": 933580,
+      "text": "So the car itself has this behavior that it will",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d86278b7-810d-4a3d-bc46-9ae96c2321eb",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 933780,
+      "endMs": 936860,
+      "text": "obligate you to",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b497b596-e902-4181-9136-e3be901dd2cc",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 931680,
+      "endMs": 940980,
+      "text": "I don't know.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "63e597e3-bbb8-495d-b350-105f3645c4c9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 937360,
+      "endMs": 945240,
+      "text": "Do this thing, put this. I am thinking a level up. So the card itself is rendered based on some permission.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b402a4e8-119d-4a0e-9230-beb4bf3c5992",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 946080,
+      "endMs": 947840,
+      "text": "Some permission?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "02adc2da-1ee7-44f9-a774-0a638a0d779e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 947840,
+      "endMs": 954340,
+      "text": "render this card or render now, right? That has to go away. That will be part of your idea.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b44295cb-92e7-4a3e-8e00-db9dab08b318",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 951400,
+      "endMs": 955940,
+      "text": "Yeah Yeah Yeah",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "23dff090-d0ad-4e53-b120-56dd9ae075c7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 954340,
+      "endMs": 959280,
+      "text": "Right. Now the IAM has to implement it, not the design system.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "01a2d424-5daa-4a34-9a1a-c49bba68fa2c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 961200,
+      "endMs": 964880,
+      "text": "Design system has to expose this thing right.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9c586191-016a-427d-aea1-dca37a5be022",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 955940,
+      "endMs": 966820,
+      "text": "foreign",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "591ca99f-6a2b-4cce-a13a-a49a66000022",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 965540,
+      "endMs": 971280,
+      "text": "design system? No. So you're telling IM as a blank placeholder? Yes.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3c42dbed-e2fa-4770-a000-3229f43b3a9a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 971280,
+      "endMs": 973500,
+      "text": "I will render a blank placeholder.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8fb94442-6282-4b9b-943b-5a7f8d3c91d3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 973500,
+      "endMs": 976120,
+      "text": "that will not let the space for left.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a3ce59b4-3eec-461b-804b-3b6e495e7dad",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 968200,
+      "endMs": 977000,
+      "text": "I saw a photo. I think I saw a light in front of me. The camera has looked at it, but I saw it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "945a1745-b49e-4a61-a6df-626434048ef7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 976120,
+      "endMs": 978320,
+      "text": "IEM will take in because",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "664ff34b-7a8d-4064-bc5a-fe83864e82b3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 977000,
+      "endMs": 981740,
+      "text": "with stuff that you need to do, though, expensive money.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "98928737-9fa7-412a-a211-0446b0140ee7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 979840,
+      "endMs": 982760,
+      "text": "See, that is a generic wrapper for you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b16897ac-765a-4677-b9f2-e9e15552daaa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 982760,
+      "endMs": 984240,
+      "text": "You don't know?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "909fa41d-ef06-472e-94de-9d107a44da8e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 984960,
+      "endMs": 986860,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4050d63b-fdfb-4b5f-90e2-89b17c38473c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 984240,
+      "endMs": 986220,
+      "text": "I mean, what would be done?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "75d0cf05-89ce-4d8b-907b-9541f100b59c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 986860,
+      "endMs": 989700,
+      "text": "How was it?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dc998298-c77b-405d-9e70-abc81f361dcf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 986220,
+      "endMs": 988980,
+      "text": "a child or children.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5e4c291a-56b0-48a2-9f0b-b2042773925b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 988980,
+      "endMs": 991740,
+      "text": "In that case, you have to be able to",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dce45bc2-7767-4a8f-be56-c2c011077244",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 989700,
+      "endMs": 992500,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ea37ad5f-1d92-4607-a398-c216fa25bcbb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 992500,
+      "endMs": 995380,
+      "text": "Okay, because this wasn't that one actually.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b13d87ab-1312-4fb6-a54d-1ad7e2cf939d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 991780,
+      "endMs": 998300,
+      "text": "The same min property. Exactly. You have to be able to look at what the child is actually.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "53c2e0cc-dd99-45cb-89ef-1faffb774c80",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 998300,
+      "endMs": 1001880,
+      "text": "Correct. Inspect it and see what is the main end.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c2a75aab-2f23-48dc-8c78-c1ce3b0112d4",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1001880,
+      "endMs": 1004020,
+      "text": "the swing properties of it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "73f046bd-1d25-4e9b-968d-06090165b9c0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1004020,
+      "endMs": 1005440,
+      "text": "and then",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6e33551d-26f5-4a71-819c-185827fc4603",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1005440,
+      "endMs": 1008180,
+      "text": "So we take that away.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "548fe23f-82d2-48fd-89b5-eb7456d6b9de",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1005920,
+      "endMs": 1010320,
+      "text": "but",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "339b18f7-6e74-4ada-b72e-9065050d2fe5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1010660,
+      "endMs": 1012460,
+      "text": "I can only spell it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a4ab7323-20f3-493f-a7d2-cfb85ac8bf51",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1012460,
+      "endMs": 1014380,
+      "text": "I don't know.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4dd4f27b-ae3b-4ee4-b946-298ce04e0086",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1016560,
+      "endMs": 1018360,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "145bc481-4a75-4fd4-8aae-9dd12f9cf5e1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1008180,
+      "endMs": 1018420,
+      "text": "Oh, you are, we can actually do that. That's what I'm telling you because that's where it will decide. It is not your logic to know what is the main, because that will change with every component.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "885e8f8a-7b9f-4d73-9d9f-1737b4bc78d5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1018500,
+      "endMs": 1020300,
+      "text": "And now it's appearing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3c2a26e4-4584-40b6-b37c-2511fe3067c3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1022800,
+      "endMs": 1025680,
+      "text": "He has a lot.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "38a90a1b-dc7a-4c86-863a-ddde14665c1a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1020300,
+      "endMs": 1026780,
+      "text": "mean height, mean width is different for every component, every page, right? Wherever your IM wrapper is.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c7b32936-b0a1-4ca4-9327-63f5a381d0e9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1026540,
+      "endMs": 1030040,
+      "text": "I understand that was a good idea.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6242f1f0-d856-4c78-899a-3fa9f958ef64",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1027120,
+      "endMs": 1030500,
+      "text": "So what you have to do is see what is the meaning of",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7b821d6b-d8f9-4183-99f1-55e943b5d0d1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1030500,
+      "endMs": 1033140,
+      "text": "the child and then",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bf09b1ab-6c23-484f-bcd1-5afbcedffdf0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1030040,
+      "endMs": 1038140,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4d4e54a2-76b3-413b-9926-d9b87fed6205",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1033340,
+      "endMs": 1038320,
+      "text": "Apply that to your one level up.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b485ba60-ac20-4efc-94ba-3282ffa1f798",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1041180,
+      "endMs": 1043580,
+      "text": "I mean, that would be the basic thing to do.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "93c1d17f-5f84-4f83-9d17-68c95690f73b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1038380,
+      "endMs": 1045460,
+      "text": "He does, I think your hands broke. We should see this broke for you. So what do you think?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "edd2973d-bbed-4cd7-b153-76a634b2d84f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1043580,
+      "endMs": 1049100,
+      "text": "that will be a variable because then you have to do min i mean this is where you do the min height min width",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b6914abd-a3b3-4fbf-a065-656edfccab35",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1049100,
+      "endMs": 1050560,
+      "text": "It actually is limited.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "59c4ce21-bc34-4bea-a850-1642619a903b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1050760,
+      "endMs": 1052600,
+      "text": "Rapper would just",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "707f1905-0d09-4599-9a2e-a5232673fe71",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1047320,
+      "endMs": 1055440,
+      "text": "for example he said we have a relaxed regularity just tell me I say we have a relaxed regularity",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "782d7cc8-fca2-4cbd-a941-3768981e5c31",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1052600,
+      "endMs": 1055600,
+      "text": "extract those properties and apply to itself.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f42132d0-a939-4a0c-bc36-14b962676793",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1055600,
+      "endMs": 1062540,
+      "text": "- What a lucky thing. - I'm gonna be free. - Hey, 30 legs, let's party, let's party.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ceed5f0a-791f-46f5-92be-216c9cb00bd3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1056520,
+      "endMs": 1067700,
+      "text": "It doesn't even have to add that point. Take them in. It will just consider the property isn't there. I mean, the provision is there to calculate these things.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8d4dad4e-cce4-4ad5-90ce-e77437a53818",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1066260,
+      "endMs": 1070160,
+      "text": "- He's not even there. - So that is one of his goals for you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c4d764a3-4850-4595-9bd8-9ad97a4c8d26",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1067700,
+      "endMs": 1073360,
+      "text": "and pull it on. - No, but data will not be loaded. I mean, it has to have them in understand.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "521f387b-398e-4fce-a8d2-ec73658ef71b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1070800,
+      "endMs": 1076080,
+      "text": "The white woman of it. Zero taxes. I'm a little bit.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "86e715b9-549c-4ab4-a805-308c44e1cc8d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1076200,
+      "endMs": 1078820,
+      "text": "It will not render. You have to do this without rendering it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2bd4fb68-2b20-494f-8fd4-b13673a2714c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1080560,
+      "endMs": 1086800,
+      "text": "It will render some blanks will be missing, some data which misses will collapse.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d1ff2e9f-b8e8-48e6-8e5c-8b8441d1f0e5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1087900,
+      "endMs": 1093760,
+      "text": "I mean, ideally you don't want to render it. No, we won't render. I'm talking internally.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c9176157-88a4-4b2c-92d0-7029391fd7ea",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1095160,
+      "endMs": 1101140,
+      "text": "- Who are you? - You. - Then what do you mean? - You, is it? - No. - Is that a different thing?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "81d69590-6f83-455a-b505-6830717810c7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1093940,
+      "endMs": 1108940,
+      "text": "without painting it has a DOM element. Yeah, so that's what you have to statically inspect that. But the thing is, if it has some data that is behind some permission gate, it doesn't have that. Because if your gate is again the whole thing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4b4f736b-bf7c-4b97-a772-f13ba5ea204c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1109400,
+      "endMs": 1112880,
+      "text": "then why do you like the child the children itself doesn't have to kid",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "eab7ed06-89dd-4d0b-b22c-29f4b986987e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1109780,
+      "endMs": 1114620,
+      "text": "Now it's only there. It's a super market. It's just very old.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "370d9757-ee95-4f17-8233-d09d30d6d896",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1113240,
+      "endMs": 1116480,
+      "text": "Because the whole thing is gated, right?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ba273b23-4ed4-4e0c-9ae7-b85d66b1b25d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1116480,
+      "endMs": 1119780,
+      "text": "talking about the specific data that is behind some permissions.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a14e35a5-3ecb-490c-8b86-8127b53681bc",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1119880,
+      "endMs": 1128940,
+      "text": "In this case, let's say the numbers of the home widget, right? It comes from the backend. And if that is gated, you don't have a number.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fd9e80dc-de1b-4299-b9ca-f79e8ab185ff",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1128940,
+      "endMs": 1130740,
+      "text": "The U.S. didn't collapse it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0907d41d-453b-41e2-8221-dcdb3368578b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1130740,
+      "endMs": 1133440,
+      "text": "The backup is not even called.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "693b31f5-386f-41f0-8a3c-c1379a2a8d07",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1119400,
+      "endMs": 1134400,
+      "text": "All",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3612f926-b42d-4fb3-861b-7d55da5649f0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1133440,
+      "endMs": 1148440,
+      "text": "Yeah, because that is not good, you don't have a number and the URL will collapse there. Yeah. Right. If you can do it's not that you don't have the number that is why URL collapsed because you have wrapped it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f63e88c9-08aa-421d-9cf1-cba06f08faea",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1143160,
+      "endMs": 1154760,
+      "text": "yes",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1eb0a2c2-3ed6-4770-9b96-3d53320dd9f8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1148440,
+      "endMs": 1154080,
+      "text": "around the gate which says that this means this commission and you don't have this permission. Everything else is irrelevant.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b696b868-d76c-44df-b92d-102df403810b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1159280,
+      "endMs": 1164220,
+      "text": "and it goes to the speed. - What do you mean?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cf658d0e-0c9d-463d-bdff-de4d7bbb87d7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1154080,
+      "endMs": 1164080,
+      "text": "Like it will not even see what is there inside, what it was trying to render inside. It won't see that. Yeah, what you need to see is the immediate child's",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a3416d72-ad7c-4b8c-8f3a-fb776fe70ff8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1164080,
+      "endMs": 1168500,
+      "text": "What I'm saying is the downstream sunshine downstream.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "19d75f38-0ba7-4387-b52d-b0a37449f52d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1165900,
+      "endMs": 1171420,
+      "text": "so",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7e7a47ca-d428-4a55-91d5-4ca27eeec7e8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1168500,
+      "endMs": 1173280,
+      "text": "might have something that collapsed because of some permission wasn't there.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cf797d9a-b529-46a1-8022-f4c1a04d2ffa",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1171420,
+      "endMs": 1177900,
+      "text": "that is",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f2df4ffc-fb1d-4817-b97a-7feefb93df49",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1174520,
+      "endMs": 1178720,
+      "text": "or that some data didn't load. So you're telling this...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dc11035d-016b-4e69-a7d9-2333a177fecc",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1178740,
+      "endMs": 1185860,
+      "text": "See, we have a session around our folks and have a couple of thoughts that is just to",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e9ab53fe-932c-4bc6-a7b5-17dfb914c490",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1180440,
+      "endMs": 1186060,
+      "text": "is gating it, but it is still rendering because your permissions match. Your permissions format",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "486068ed-9766-42d3-8809-d084f100b706",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1186060,
+      "endMs": 1188880,
+      "text": "rendering this thing, but somewhere some ancestor",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "771549ca-f426-4880-8a99-c10af11ffbd1",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1186200,
+      "endMs": 1190520,
+      "text": "Like you have a police No",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dbaec59e-8ccb-4e99-8eb8-208f141a41a5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1188880,
+      "endMs": 1190340,
+      "text": "is gated.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "24342b57-fa35-4b15-aca3-827dc00eef0f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1190340,
+      "endMs": 1193040,
+      "text": "and it will not be able to load. Correct.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "af21c9e6-5d85-49db-b890-a27e3ee27e7e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1190560,
+      "endMs": 1194140,
+      "text": "- Ooh, my finger. - Probably one thing,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c7be6058-b1fe-4a55-ad43-364a5620ca3a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1197400,
+      "endMs": 1201020,
+      "text": "You got to know what happened. You got to know what happened.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a462d276-dda8-4a4c-af11-a558efdeabbd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1193180,
+      "endMs": 1200440,
+      "text": "So, it is problematic. That is one. Sorry, not answer. Some descendant. Some descendant.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6ba82314-4712-4ec5-9d0e-ba527648c17b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1200440,
+      "endMs": 1202660,
+      "text": "actually is again gated",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6f74c9ca-4d8d-46e2-8b10-c688c651d25b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1203180,
+      "endMs": 1206120,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d9f6865c-cc92-46db-8ed9-3950e0f2fa22",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1202660,
+      "endMs": 1212500,
+      "text": "And it is not passing this gate. But that is an recursive thing. But this gate has passed and you are loading this. That will have its own gate that will be able to extract.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bac31603-f163-4cae-bab2-f071aec26c6f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1208440,
+      "endMs": 1214540,
+      "text": "You can spread rumors about me, why not I?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e61bf987-59b4-4a61-aa38-4b856167c605",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1214540,
+      "endMs": 1219800,
+      "text": "- Correct. - What happened to someone called it? - And he said, - And even under quality.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0df02942-d415-42e1-8609-09de9bd20b45",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1212500,
+      "endMs": 1221240,
+      "text": "its own first children's these properties, minimum height and width. But what you're telling the top level content has loaded and",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c8f91a87-c0e3-402e-814b-e80050f07f37",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1219800,
+      "endMs": 1223240,
+      "text": "and the health care",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "28d64131-f6dc-4f4d-8a56-a5d29e39e081",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1221240,
+      "endMs": 1225380,
+      "text": "somewhere in the leaf we are not able to load? Some data.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "56134dfb-bb5a-4885-9d96-e92f117968c3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1225380,
+      "endMs": 1231160,
+      "text": "in the leaf, whatever, like in the leaf level or some other level. But other data has loaded.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "81776f4f-f0e9-4bcc-8636-639f7792c96e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1231160,
+      "endMs": 1233940,
+      "text": "inside this wrapper, I am wrapper.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c6f992a6-cacf-42c4-99fa-d5833d08da27",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1233960,
+      "endMs": 1238460,
+      "text": "So, now the data itself isn't present in the dog.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5abd67a5-58d8-4933-8840-185e17673c5e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1238460,
+      "endMs": 1241040,
+      "text": "You cannot inject some data because",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f5c2b5f6-00ac-4c24-8373-3b26f0ea15c3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1241080,
+      "endMs": 1251680,
+      "text": "That's fine. So that collapse might be there. It will be a small collapse. But it will be a few again. If you have this min height.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bc202df8-d0bc-4c7f-9ec7-0f8b351e4ca3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1251680,
+      "endMs": 1260600,
+      "text": "I mean, if it can accommodate, it's a dynamic section which can accommodate more elements. This is for example the budget stuff. This is an ID.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e8b3a20e-a452-4688-be69-12929800e7c8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1260760,
+      "endMs": 1267320,
+      "text": "This is coming from some network app, right? And it might be gated behind some permission in the backend.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e4668d9f-db10-4698-9d18-7fbc3a138a62",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1267320,
+      "endMs": 1270180,
+      "text": "which means front-end didn't receive it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ecfed2f4-8460-4d13-b173-b13a999ba2a8",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1265980,
+      "endMs": 1271000,
+      "text": "How was this Heartland?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "66e46514-e09f-4c79-95b9-6fb19b3a3594",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1270180,
+      "endMs": 1272320,
+      "text": "And now when this is not here,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dead79cb-a121-424a-8cef-20953ffac595",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1271040,
+      "endMs": 1276240,
+      "text": "No idea",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a3c1a9ba-b32c-4958-aa83-12a5ccc962e0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1272560,
+      "endMs": 1281480,
+      "text": "And when I calculate the height of this component, I will calculate this excluding this part. But then when it loads,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f1ad4b85-8c39-491b-86e5-36c887fdcde0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1281640,
+      "endMs": 1285740,
+      "text": "Now, what do you use now, Doctor?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0a0d8363-d9fe-4d0e-b570-a55fc01d3a0f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1281840,
+      "endMs": 1287660,
+      "text": "This is a part of it. So it will collapse still. There may be a collapsible. As long as you have min height.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0931a2ee-66cc-4ded-a028-690b19769d84",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1290280,
+      "endMs": 1295680,
+      "text": "No, I'm asking why I'm using it for the ITRO.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d31bc92d-5389-4158-bde5-182afa495c8a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1296880,
+      "endMs": 1299880,
+      "text": "my list and continually.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "76db3b9a-c833-4660-b756-9a2f9e7527c5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1287920,
+      "endMs": 1302920,
+      "text": "Again, then I am not able to get the prop, get it dynamically always. I cannot rely on getting it from the process. I'm not talking about dynamically getting it, computing it based on what is rendered. I'm talking about statically.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b2832d01-7fff-4e51-9339-00c87a095cf3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1302920,
+      "endMs": 1311940,
+      "text": "That is doable. That is not absolutely doable. Because dynamically you cannot do it because you don't know what is getting.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2201af2e-2aef-4167-a742-d1186f55c21c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1317340,
+      "endMs": 1319760,
+      "text": "Good boy, I think.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "819cdbaf-439b-42b1-8323-f8e852031a7d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1314740,
+      "endMs": 1319500,
+      "text": "We can do it up to a point, but this will be the problem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dd2aa344-f7d2-4df4-9b95-70be203b94c6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1319500,
+      "endMs": 1322400,
+      "text": "It would directly take the first children.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e86800e3-fc7d-4c7c-81a1-7280ed75b4ec",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1322400,
+      "endMs": 1326300,
+      "text": "and render it in some shadow DOM.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ed73755d-66fd-4a66-8f45-1d5869548324",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1326300,
+      "endMs": 1329140,
+      "text": "take its rendered props from the Earth.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "64927057-d77d-4f4e-9bcb-a10ca76ac862",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1327600,
+      "endMs": 1331980,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "37599eff-ee4b-4d88-88f9-c087d1e3e1ab",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1329140,
+      "endMs": 1331320,
+      "text": "Thank you so much.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1ee87932-9d1d-4ceb-85e5-02b01c1c9ec8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1331320,
+      "endMs": 1334020,
+      "text": "Yeah, that will be too much, but",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7b6f7b5b-bc99-467c-9485-49544174be80",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1332420,
+      "endMs": 1335160,
+      "text": "And QADV value URL in the home committee.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a0fffa49-9b4b-44f9-a9c0-992aef186cf7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1334020,
+      "endMs": 1337900,
+      "text": "It will have side effect of rendering",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "413a1799-aa5a-4e80-95dd-f9491e7dc629",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1336800,
+      "endMs": 1339160,
+      "text": "QADB 1.5%",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9c569b01-1f99-4f26-9c5f-05fc7412728e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1339160,
+      "endMs": 1341020,
+      "text": "- Who is it? - No.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "39ba2124-78c5-4697-8aa2-6e107b8a4611",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1338340,
+      "endMs": 1341980,
+      "text": "Yeah, it will. And then we share it on DAX Lite.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f5c67e8b-2840-4058-b427-9d578c0eafaa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1342940,
+      "endMs": 1345060,
+      "text": "Never pinch to the problem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "964bf091-4f57-41b1-8a0b-9c63a96175f5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1346840,
+      "endMs": 1354540,
+      "text": "So there are multiple ways first we can prioritize that AKI call which stretches all these data shown in the first stage.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7956d1fa-a8e6-4135-a14e-3f90c7c18cdd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1355800,
+      "endMs": 1361260,
+      "text": "So that we have all the data when we are showing this. That will become a bigger difference.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4ccc4591-416d-4e51-b552-5abf9c052e29",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1361260,
+      "endMs": 1363780,
+      "text": "That is all the way we can handle it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "df95ed03-2d09-4d9b-ad9d-7c1dec86031b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1360960,
+      "endMs": 1364780,
+      "text": "Thank you. Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ab2142b1-b584-41ed-8c1e-6413b3bd4bfa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1363780,
+      "endMs": 1369220,
+      "text": "You shouldn't be at the mercy of how data is loaded.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "639de7b4-6346-4cd9-b4e4-cbe4cda4de2a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1369400,
+      "endMs": 1374080,
+      "text": "Even if the data is not loaded, it's taking time, it is loaded.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8d88b48f-c944-4a10-9de8-380d70a82adf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1374080,
+      "endMs": 1377080,
+      "text": "Your UI should be resilient to all those.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2bc88f9e-5104-40b2-b6c5-31a8c50170f1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1377280,
+      "endMs": 1379560,
+      "text": "If you guys wouldn't jump it on.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "67c22247-522b-402f-917c-d8d5af90d50e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1380680,
+      "endMs": 1384180,
+      "text": "apis are taking time or they're loading fast or they are",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0f1932af-9b55-4506-ae48-ff448d7e0a15",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1384180,
+      "endMs": 1386420,
+      "text": "loading in a different sequence",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c472a439-8b1e-4deb-9fd8-2dae616e7128",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1385240,
+      "endMs": 1388220,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7cd2e6f2-9242-499c-967c-f6941c7586b2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1388500,
+      "endMs": 1397720,
+      "text": "But given that API is not something that's searching... This is something which I observe every time I log into the homepage, like right on your",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a36e444c-cc8d-4262-9e96-44a093e4940f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1397980,
+      "endMs": 1401040,
+      "text": "What are these guys doing? Maybe this is an MVP.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c8e75377-049d-4fa7-9328-3f95bb870ee8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1401680,
+      "endMs": 1404740,
+      "text": "In copy, karma, forever.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0df31b08-a682-40c7-afd3-a9f7421c6ecf",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1404740,
+      "endMs": 1406320,
+      "text": "- There's charts, we did.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "266b44f6-40a6-482e-a51f-48f4a4eb602f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1407320,
+      "endMs": 1408960,
+      "text": "sometimes like this.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5978c245-4a44-413b-856b-97a5855b5ff0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1411000,
+      "endMs": 1412660,
+      "text": "Really? Yeah, yeah.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8dff68ca-fe71-427f-be4f-f10d179e2b47",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1413520,
+      "endMs": 1417620,
+      "text": "It happens. I've seen it happen a lot. You can say it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "08a8be0d-9735-405b-bf08-c5bf1366e41c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1418120,
+      "endMs": 1422600,
+      "text": "just",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f59616f0-4819-4502-b946-da6ab5fe4de3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1421620,
+      "endMs": 1425040,
+      "text": "Okay guys, I think we are done.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b5c9d9c9-17c3-4893-82a6-208359ae3d1f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1425040,
+      "endMs": 1426760,
+      "text": "I have another meet at 6:30.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b5623d6b-bbb8-4a24-a823-cc315d40a5ef",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1429060,
+      "endMs": 1430780,
+      "text": "Anything else, guys?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b880c0cd-88b5-4267-bc8f-6005e0f8d048",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1430640,
+      "endMs": 1434420,
+      "text": "- I love that only.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f1b449cf-7d9c-4d51-bdbd-ed5c1eac9942",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1435640,
+      "endMs": 1438420,
+      "text": "Okay, let's go. - Chat.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "36a897e3-6caa-4fe5-95db-2a8da7575e34",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1434880,
+      "endMs": 1439720,
+      "text": "Okay, thanks everyone. But what about the labs adoption? I forgot to ask.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bc435ffd-5e75-4a39-862e-93feef11cb84",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1440840,
+      "endMs": 1442640,
+      "text": "How did he do that?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "34153038-477e-4b51-94cb-f219698cae55",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1440140,
+      "endMs": 1442320,
+      "text": "Labs will say that we don't have time.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "31bfc0b4-de55-43f6-80a5-2cc58c5fc2f6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1444360,
+      "endMs": 1446940,
+      "text": "What's the talk about that?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "26df6d00-618c-4826-b607-33aae05e04c3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1444260,
+      "endMs": 1446580,
+      "text": "What did you ask, Mohik?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ce36fee2-6e54-4282-a56c-1bf9062df899",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1447260,
+      "endMs": 1449100,
+      "text": "Because I insist on it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "92f3c1de-896f-45d9-98d5-82db6932a268",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1446620,
+      "endMs": 1449000,
+      "text": "design system adoption on labs.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d5ff8181-3106-40cb-9075-5cad2f1a1e05",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1450620,
+      "endMs": 1452800,
+      "text": "He's not right.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2a49ee92-59cf-4746-ae2e-ca1c8b243837",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1450220,
+      "endMs": 1452200,
+      "text": "We didn't start it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e00eb288-0527-4e7a-b230-a9574f5ff708",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1452200,
+      "endMs": 1455800,
+      "text": "That's why I'm asking, what is your plan?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e80289b3-f284-4a1a-bb49-5bf3642bd4ce",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1456360,
+      "endMs": 1458740,
+      "text": "There was no plan till now. Like...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2b14bb61-1a7d-4796-b56f-2e58f3df6ab7",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1456440,
+      "endMs": 1462860,
+      "text": "Do you plan this? I have a good idea. You know, just refer to our metric indicators as the basic things. So, you know. So, you know, you're going to do the basic things. So, you know, you're going to do the basic things.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0d3be29e-c17c-4cf9-9e88-2a4557f01942",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1462860,
+      "endMs": 1465260,
+      "text": "so",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "151c467f-f9c0-468a-924c-c1db8390bb82",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1458740,
+      "endMs": 1464540,
+      "text": "We were just waiting for Rame to finish his basic things. Why?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "26f8fd13-a92a-497a-a504-5e620b9c2f2f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1467540,
+      "endMs": 1476060,
+      "text": "First we need to get to the beginning line of the board.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e506ec86-440e-43bb-9e3f-e7af04245708",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1467960,
+      "endMs": 1481600,
+      "text": "First we need to get the hotel and all those changes out Moist. So when are you planning to do the hotel stuff? That is also pending. That will have some progress update in this Wednesday meet by Riem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "93c25ef2-0df8-4a95-9a64-f43a20a93838",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1476100,
+      "endMs": 1486540,
+      "text": "That is something that we need to do.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ee1f7019-9546-41e8-aa7a-fca564f2bc49",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 1486240,
+      "endMs": 1488380,
+      "text": "Thanks. Thanks, everyone.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8ce265ee-c6ff-4c45-a3c1-d8406b105cbf",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1492020,
+      "endMs": 1494000,
+      "text": "Yeah.",
+      "confidence": 1.0,
+      "language": "en"
+    }
+  ],
+  "createdAt": 1788523204978,
+  "folder": "2026-09-04 Meeting 04-09-2026, 17-30-04"
+}

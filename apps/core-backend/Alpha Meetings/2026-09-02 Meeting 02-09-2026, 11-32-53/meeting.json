@@ -1,0 +1,1358 @@
+{
+  "id": "98a5ae54-90cd-4447-babb-adfbec9af601",
+  "title": "Meeting 02/09/2026, 11:32:53",
+  "startedAt": 1788328973087,
+  "endedAt": 1788329504849,
+  "durationSeconds": 531,
+  "summaryMarkdown": "Meeting **Meeting 02/09/2026, 11:32:53** completed with 126 spoken turns across You, Others.",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "Yeah, this I will do it. I will hit you. It doesn't matter at all."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "we need to do a chat proposal, right? So for all these guys,"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "We need to improve the chat interface on our side, and we also need to handle files."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "We don't really handle the file thing, so this will extend."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "and we also need to scope out finite integration. So these enhancements are about to come."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "we will have to do that, right? So I'll be creating a"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "we will have to do that. So I'll be creating a..."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "scope document, right? So what we will be supporting, right? So"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "scope document, right? So what we will be supporting rates of all three different in this one."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Others",
+      "priority": "Medium",
+      "task": "But now we need to build some hybrid thing which will suffice for everybody."
+    }
+  ],
+  "keyDecisions": [
+    "we will have to do that, right? So I'll be creating a",
+    "we will have to do that. So I'll be creating a...",
+    "scope document, right? So what we will be supporting, right? So",
+    "scope document, right? So what we will be supporting rates of all three different in this one.",
+    "They think that we are done with the online support and we will be sharing within a week itself, we'll be sharing this thing with these guys."
+  ],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {
+    "transcriptionProvider": "whisper"
+  },
+  "recording": {
+    "bytes": 90915837,
+    "durationMs": 530752,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:23841:0",
+    "startedAtMs": 1788328974096,
+    "videoPath": "98a5ae54-90cd-4447-babb-adfbec9af601/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "181ff43f-9114-4dac-a058-3a63f3a3cfae",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 0,
+      "endMs": 1680,
+      "text": "Because otherwise,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "697e6923-ceb4-4f04-9bd5-ffb26748dcb1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 0,
+      "endMs": 5260,
+      "text": "Otherwise, people don't have the big picture. They are just working against...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "881fc6c3-eba5-4cdf-84c1-fb13b6f67c3c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1700,
+      "endMs": 6060,
+      "text": "People don't have the big picture. They are just working against",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a5afcf22-4abd-4250-b89e-517782d350b1",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 6060,
+      "endMs": 8080,
+      "text": "tasks day in day out",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "217c6bb2-00f4-4420-bc83-09dfd3a9b500",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 5260,
+      "endMs": 7360,
+      "text": "such day in day out",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3534e653-761d-44df-8bc1-efdd55dfed82",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 8080,
+      "endMs": 10840,
+      "text": "without any understanding why they are doing what they're doing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f4532c26-ceef-467d-b0ab-f321e0d1ccb4",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 7360,
+      "endMs": 10320,
+      "text": "without any understanding why they are doing what they're doing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2816fe59-3b92-42ff-8458-9f1f64ca1aca",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 11440,
+      "endMs": 14000,
+      "text": "No, I get it. I'll probably...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cf2c1198-1cee-488b-990b-da594ffe04f3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 11780,
+      "endMs": 14760,
+      "text": "No, I get it. I'll probably speak.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a72ee3ad-0a15-43c1-ba9d-c2f8df87114b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 14760,
+      "endMs": 18340,
+      "text": "10, 10 minutes tomorrow, I'll just walk you guys through the whole",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "79672497-658e-4724-9bf3-38ac34789fd6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 14000,
+      "endMs": 17620,
+      "text": "spend some time, 15 minutes tomorrow, I'll just walk you guys through the whole",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "3ae1f752-8a1a-49c9-8a73-bb459390679a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 18440,
+      "endMs": 20560,
+      "text": "journey of this product.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "edef6ac6-db2a-4708-8e61-38e84e1ee2d5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 17720,
+      "endMs": 19840,
+      "text": "journey of this product.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2a9f8a11-f9de-4a97-ab82-dae4a77d5205",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 20920,
+      "endMs": 24460,
+      "text": "So, Hayesha, tomorrow, one o'clock, we have that meeting.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6cda3514-2591-4351-8304-7f84665d48a8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 20200,
+      "endMs": 24440,
+      "text": "So, Hayusha, tomorrow, 1 o'clock, we have that meeting with...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a8efc582-9fc9-44c2-ad2f-8e6426c9a719",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 24440,
+      "endMs": 28700,
+      "text": "Wait, 1 o'clock? When do we have that meeting with the product?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "96649659-5786-43b5-a97e-88c37043e1f6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 30180,
+      "endMs": 32660,
+      "text": "Which product guys?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b246faef-f057-40b1-96eb-6e4849f8dbb0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 33080,
+      "endMs": 36540,
+      "text": "It's supposed to be a meeting...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "06f3d6b5-7a25-4d94-afe5-e6d08ae19e81",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 36540,
+      "endMs": 42580,
+      "text": "I'm not sure, I'll have to check the calendar. But tomorrow we are supposed to have everything ready in the...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cffc2afc-52db-4283-a67c-8ae59ead9e0b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 42580,
+      "endMs": 47760,
+      "text": "ppt and everything for uh devanchly right yeah that that i'm",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "337ee960-e426-4555-b6a1-056f4649e250",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 47760,
+      "endMs": 49620,
+      "text": "We'll have to do it for that.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "75361e6d-cbfb-469b-8322-4d346459733f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 52160,
+      "endMs": 55500,
+      "text": "Yeah, this I will do it. I will hit you. It doesn't matter at all.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "74027eff-6237-4051-9082-83d788f31922",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 57860,
+      "endMs": 62180,
+      "text": "we need to do a chat proposal, right? So for all these guys,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2bd43d03-1460-4d2d-8f82-ac5f93062eb1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 62180,
+      "endMs": 66320,
+      "text": "So one more biggest thing is going to be here.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "08cd58f1-a4b4-4b57-a939-2bcc37f0c753",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 67140,
+      "endMs": 69100,
+      "text": "extending the chat,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dac8ef78-09f1-4cd3-a6a9-0ce5d05f9056",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 71300,
+      "endMs": 73300,
+      "text": "Support Adar Radishwami.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "347ed0e0-a75b-479f-836c-e13e221db062",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 74320,
+      "endMs": 76040,
+      "text": "Maybe we should--",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "54a9e4ee-ca7e-4cab-b590-6a745f4e7653",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 76220,
+      "endMs": 80180,
+      "text": "we should have something as real time.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ae537022-b205-4ceb-9f4a-a3bed67a278d",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 80340,
+      "endMs": 85980,
+      "text": "We need to improve the chat interface on our side, and we also need to handle files.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6ce2558e-7bea-42e9-a3c4-b7f4a8079674",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 86960,
+      "endMs": 92420,
+      "text": "So, today when we are exposing it as a third party, this very case, right?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f89c9900-e5b8-4b9d-9587-317f1f978b0e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 92420,
+      "endMs": 96920,
+      "text": "We don't really handle the file thing, so this will extend.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5b968135-8836-42ac-8f3c-feb2e11e01ef",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 96920,
+      "endMs": 103520,
+      "text": "and we also need to scope out finite integration. So these enhancements are about to come.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a4fd8692-4aac-4e20-b0ab-632c3a54d9f1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 103520,
+      "endMs": 105380,
+      "text": "But today we only have this thing.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "22cedbd1-5578-40e9-aec3-d2a326504c56",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 105380,
+      "endMs": 107080,
+      "text": "So on our side,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ff0d62e5-cd35-458b-8998-a170ab83fc36",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 107080,
+      "endMs": 114500,
+      "text": "When there is a chain in the server, we don't really trigger a notification to the doctor. So that is something that we should pick it up.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a63467d9-b792-4b10-8eca-b3310f4eb1ed",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 114880,
+      "endMs": 120020,
+      "text": "There was one more thing that Victor wanted to escalate.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0f1c7fbc-8b9e-4622-a6e8-dc90f92a0ee2",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 120020,
+      "endMs": 125020,
+      "text": "Is it, isn't it simple enough to have multiple file uploads?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "95e7ac4b-440a-46e4-bf86-2a0bab62333e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 125080,
+      "endMs": 130620,
+      "text": "on the chat right now. Right now it's just one by one. It only allows one apparently.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2666d5f9-4832-4773-81d5-94441f982fc1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 131220,
+      "endMs": 134140,
+      "text": "Great idea. No, there's no one. Great.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "53080d90-d5b8-4989-90a9-c6663589a2ec",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 134200,
+      "endMs": 138060,
+      "text": "The entire thing has to be improved right now.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "67bf2b38-eb27-4e5d-88b1-00de3aa7c5a0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 140600,
+      "endMs": 146040,
+      "text": "partially rates or part by part rates or nothing is working in a positive way.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b81117ea-2b03-4091-80cd-df70c2885cfa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 138060,
+      "endMs": 145340,
+      "text": "See, it is all done, right? So partially, right? Or part by part, right? So nothing is working, right? So in a positive way.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a8f03793-8da5-4721-9ca3-6720f688c4f9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 146040,
+      "endMs": 150480,
+      "text": "we will have to do that, right? So I'll be creating a",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "946fd975-e8da-44b8-9249-59f0fffb8ffd",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 145340,
+      "endMs": 149780,
+      "text": "we will have to do that. So I'll be creating a...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "ee10f7f9-04fa-4d89-8b22-a2e9035e44a3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 150480,
+      "endMs": 153820,
+      "text": "scope document, right? So what we will be supporting, right? So",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "52746435-f05a-4bd8-8e81-ad3bcc0b9ad7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 149780,
+      "endMs": 154140,
+      "text": "scope document, right? So what we will be supporting rates of all three different in this one.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5aa9a3b6-04a8-4adc-94da-84c7af7edf7c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 155420,
+      "endMs": 157240,
+      "text": "See, usually what is happening is",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e569075f-b550-4c05-9e7d-5853f6797dd7",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 157280,
+      "endMs": 159400,
+      "text": "This is a lab of",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dc203266-8c7d-476a-9ad5-ef4ee21cac93",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 161060,
+      "endMs": 166020,
+      "text": "Burbank does not have any chart at all. DDS use finite.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2ef5d1e9-0a68-4e33-a47a-8742bbb8c29c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 166020,
+      "endMs": 171900,
+      "text": "and finite has one limitation right so where the internet chat is always bound to a specific case",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bcfcc016-526e-44f7-b93b-ae7efe5bb682",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 171900,
+      "endMs": 176020,
+      "text": "Right. So since this is being third party, they don't have such a ecosystem.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1d6a4898-cef7-4d03-a53f-06b828576005",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 177240,
+      "endMs": 181260,
+      "text": "And Royal Lab does not use any chat as well. They use emails.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d44514f8-7e46-42bc-890a-8f83eb49192a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 182900,
+      "endMs": 185920,
+      "text": "To synchronize all these guys, we should propose some",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1ca007d6-c05a-47f7-9547-8664873057e8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 187240,
+      "endMs": 195940,
+      "text": "which is what so whatever we proposed earlier right so not not many labs are happy with it except two labs right who does not have any support system altogether",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e05ed942-a359-47d0-8cb1-9f251c3a05ed",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 196040,
+      "endMs": 200800,
+      "text": "But now we need to build some hybrid thing which will suffice for everybody.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f61e2a34-4f75-4c03-ab5b-187664f033b1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 200800,
+      "endMs": 212680,
+      "text": "So where all these guys are ready to integrate. But here we need to make sure that there are no limitations are there. So we are pushing messages as soon as doctor enters. At the same time, when they enter it,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c4d998c5-9a1e-43f0-93df-efe5de64dfcb",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 212680,
+      "endMs": 217880,
+      "text": "our system should receive and we should push a notification to doctor, right? So that piece is pending.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dfe9d53c-a08e-447f-bbbf-930d89dd2ac8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 217880,
+      "endMs": 220820,
+      "text": "We need to make it real-time on our side. Second thing is,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "64ea9a53-858a-4dc2-bd35-718932b1d811",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 221340,
+      "endMs": 224100,
+      "text": "ability to support file uploads.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8984a1ff-5edb-43f9-a716-3674884ecf70",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 224600,
+      "endMs": 227140,
+      "text": "So from our side, their side,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "75c5aa59-49d9-40a2-85dd-0d764f299a79",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 227140,
+      "endMs": 234860,
+      "text": "all of that. Then finite capabilities that we should propose. What is that bare minimum thing that we can do?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9a337689-5723-4ad1-8039-3f7de0ea6121",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 236400,
+      "endMs": 242040,
+      "text": "So this is one thing that is coming along. Then we also need to do this.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "da6c7c73-3a76-431b-9d41-67c1801359e9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 243100,
+      "endMs": 244780,
+      "text": "Aspen.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "38c9bdbe-3358-4694-afac-28841dd9edf3",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 244780,
+      "endMs": 249720,
+      "text": "has spent proposal and timeline we have to submit today. We have a call with them today.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1258b07a-1159-4c0b-9b9e-57c60452887b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 251160,
+      "endMs": 256080,
+      "text": "I will do one thing. I will set up some time here, just to take you through",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "530d3c87-9d24-4278-85e1-9887a9aa8e9c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 259860,
+      "endMs": 261480,
+      "text": "að",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0ad8b0b3-f24d-486e-8e6a-e11555b8c158",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 261480,
+      "endMs": 267060,
+      "text": "I want you guys to be aware of what we're proposing, what changes that come along.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "0715642d-a549-4157-9fe6-99438c8452e5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 270060,
+      "endMs": 275940,
+      "text": "I had a brief talk about this I spent with Victor yesterday.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "cf4edba7-aa43-4624-82e0-2d6d0b419dff",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 276900,
+      "endMs": 282300,
+      "text": "As of now, what I have done, he was about to share the credentials with the",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1510e431-7134-475f-a7fa-9e068d02f72c",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 282300,
+      "endMs": 285900,
+      "text": "Aspen and the lab clear choice.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f2e41ca1-7431-4f40-8a1d-426ed05f2dca",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 286840,
+      "endMs": 294560,
+      "text": "So I've basically asked him to put that on hold because they'll freak out if they don't see all on X on that.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "728d03e5-f07c-4eae-968c-2f8c5de8f19b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 294560,
+      "endMs": 300420,
+      "text": "And apparently I'm pretty sure Vikas has already told these guys that we support All On X.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "afbdac07-b2d3-4a87-a49c-728a1b66b677",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 300420,
+      "endMs": 304680,
+      "text": "No, no, no. See, that all NX is a different game altogether. So...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2de1c534-c432-4b5c-89a6-5dfafab138cc",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 304780,
+      "endMs": 308260,
+      "text": "They know that already, that the Holonix is",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "47ea6c63-51c5-4958-a833-8a14a16d5aba",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 308260,
+      "endMs": 311720,
+      "text": "going to come later but we need to see what is required is",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "57f49190-fce8-4c4d-b3b6-59f17766192f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 311720,
+      "endMs": 319020,
+      "text": "we should show the proposed this one. And we should also give a timeline. That's our goal of today's fall.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "83e46947-a423-42ab-a8e0-b55c538592da",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 319020,
+      "endMs": 324100,
+      "text": "Yeah, but apparently there's a difference. When I told the same thing to Victor, right,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5a5e355e-54cb-451b-ada6-a547d980d3b5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 324100,
+      "endMs": 325820,
+      "text": "Yeah, Victor is...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6ae8e404-546e-4984-a4ad-4f06fcf5601a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 325820,
+      "endMs": 331240,
+      "text": "Victor is almost sure that Aspen and ClearChoice guys.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "12d87068-8bb7-4700-a352-a85e60331a8e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 331240,
+      "endMs": 339040,
+      "text": "They think that we are done with the online support and we will be sharing within a week itself, we'll be sharing this thing with these guys.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1d9abe13-9384-4dfb-9b9e-2d5c08f3de66",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 339040,
+      "endMs": 342840,
+      "text": "So I've told him to put that on hold for at least like two, three weeks.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "958e0341-35f6-41a8-aff9-015976b804a1",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 342840,
+      "endMs": 349840,
+      "text": "and not share the credentials as of now because they will again freak out and then again start escalating things there.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e5160ee8-321a-4827-a123-29c04bdb93a5",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 352460,
+      "endMs": 358640,
+      "text": "Yeah, we'll discuss that with them. Yeah, let me finish these two documentations before our next evening.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "006929b4-208a-430f-ad26-37bcb8b44e4a",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 359320,
+      "endMs": 361320,
+      "text": "and see how we should handle it",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "06a8a80a-5aa0-463c-8876-670c092017fd",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 363440,
+      "endMs": 367900,
+      "text": "So along with this, I think you and Guresh has to help me",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "55b1842e-802c-4f25-b866-fda52971e234",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 362360,
+      "endMs": 367140,
+      "text": "Okay, so along with this, Sadhita, I think you and Guresh has to help me",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8b0a4e5d-7a46-4ef2-8f4f-0f86a60d85b4",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 367140,
+      "endMs": 370960,
+      "text": "mapping all the plant cases, Burbank.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "6bc5cab4-491e-49db-a646-6647d6625613",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 367900,
+      "endMs": 371740,
+      "text": "mapping all the planned cases, Burbank.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fd0282be-e00b-4f2b-8fdb-2e5625d3cbfa",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 371740,
+      "endMs": 374300,
+      "text": "Olivia vitality and",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "9857f913-ab9c-402c-9a73-c2956a5cadaa",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 370960,
+      "endMs": 374380,
+      "text": "Olivia, Vitality and Synergy.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "14afb61a-268b-4ff2-ba15-9d0273c6e10b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 376980,
+      "endMs": 379140,
+      "text": "Implanting",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "802676ab-a6f4-4231-ac0e-68be64c37921",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 376220,
+      "endMs": 378380,
+      "text": "Implanting",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "bd29f5ee-cb82-4959-b394-3a0dda55f0df",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 379140,
+      "endMs": 381760,
+      "text": "I don't even think...",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "60632346-c0a3-4408-bb2d-cdf9d92b4dd9",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 378380,
+      "endMs": 384280,
+      "text": "I don't even think I don't even think Gurashish needs my help with it.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "2f228de6-a91d-496b-afb4-b9dec7ff8f81",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 388320,
+      "endMs": 391340,
+      "text": "Implanting should be straightforward for these labs as of now.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "622f6a3c-784a-4234-998f-4d2261de7ad8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 384420,
+      "endMs": 390800,
+      "text": "But I'll again, I'll connect and do it. Implanting should be straightforward for these labs as of now.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5b62b604-aff8-4352-895e-75ffd1863969",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 391600,
+      "endMs": 393980,
+      "text": "because they have given us the",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "18d303b5-7042-4b3a-b081-d46706ada7d2",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 394340,
+      "endMs": 397860,
+      "text": "listing right which are the hudland dental uh",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5c01fa86-b1d2-46bd-aa44-ca66a2bf3a54",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 390800,
+      "endMs": 398380,
+      "text": "Because they have given us this thing, right? Which are the Heartland Dental bundles.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fa6d02a0-4127-4f8a-a6ef-4b592392b3a7",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 399140,
+      "endMs": 405460,
+      "text": "right right yeah they'll just do that so it should not it should be straightforward but if there's any issue i'll just connect with the ratios and for whatever",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5be73390-c086-440f-bd76-305ed31d6c32",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 398380,
+      "endMs": 404960,
+      "text": "Right, right, yeah. It'll just do that. So it should be straightforward. But if there's any issue, I'll just connect with Guresh and sort it out.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5e6c760e-6921-4248-b0ae-679e2ed1c3ed",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 405500,
+      "endMs": 408380,
+      "text": "Yeah, Aisha, I refused this today.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "245ded49-dd1d-48b8-a47a-78168b768aa8",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 404960,
+      "endMs": 411260,
+      "text": "yeah uh i shall close this today olivia burbank's energy and vitality implant",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "525a5f0f-997f-4687-8dfc-af28ceafcfd0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 408380,
+      "endMs": 413560,
+      "text": "Olivia Burbank's in energy and vitality implant.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "a0f0e14a-8f0f-4aed-852d-c19611f4d650",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 416080,
+      "endMs": 419420,
+      "text": "So apart from that,",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "074d5b67-a5a6-4b9c-94f5-d858e3ad2409",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 430340,
+      "endMs": 433080,
+      "text": "Okay, I think that's all you guys have heard.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "51b70c30-c3ed-4654-95cb-94e4503da9ce",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 429940,
+      "endMs": 434300,
+      "text": "Okay, I think that's all guys I had. Anything else we should discuss?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b98deb45-d968-43d7-9183-682922789c0b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 435040,
+      "endMs": 441680,
+      "text": "in evening i'll connect with you just to go through the line items that are getting added in the",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "8c6d7739-3c8c-4db6-b871-63740e0b0f39",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 434300,
+      "endMs": 440980,
+      "text": "nothing in evening i'll connect with you just to go through the line items that are getting added in the gtm tracker and the",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dc0345b9-5efd-44a2-8194-45eb78b6f4f5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 441680,
+      "endMs": 444720,
+      "text": "the execution document.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "993f2979-9b92-4201-a6bc-c0a5b7c6c924",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 440980,
+      "endMs": 444000,
+      "text": "the execution document.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "b07e258b-e59e-4fac-bd5a-3ab68e800ea9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 444960,
+      "endMs": 453640,
+      "text": "There was some product execution. Right? Yeah. So you'll have to fill up that one. So in evening, I'll just reach out to you to go through that.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "1fcc426e-f8a9-4ac5-8e30-8e661964124e",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 444000,
+      "endMs": 459000,
+      "text": "there was some product execution document right so you'll have to fill up that so in evening I'll just reach out to you to go through that another thing that I've also asked Victor yesterday to do is he would need by December",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "dd4d8f8c-9264-4366-b323-f6b7cecc634a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 453640,
+      "endMs": 460440,
+      "text": "Another thing that I've also asked Victor yesterday to do is he would need by December",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "e482fd66-c374-4c5b-85ed-50158b5569d9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 460440,
+      "endMs": 466040,
+      "text": "certain amount of features on internal this thing internal tools",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "41c3b424-d6c6-484b-bad9-72b62273506b",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 459700,
+      "endMs": 465280,
+      "text": "certain amount of features on internal tools.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d3dc0907-d420-47ec-8113-456a41e828db",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 466040,
+      "endMs": 468340,
+      "text": "which will help him do his job.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "fc38a891-eec0-4cd4-b980-04197ebe3fee",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 465340,
+      "endMs": 467620,
+      "text": "which will help him do his job.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d7f478e2-81fc-47d2-b304-4a3794106096",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 467620,
+      "endMs": 471560,
+      "text": "So he is supposed to share that list by today evening.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "4d3b90c6-ea17-4434-9cff-0774d9b17045",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 468340,
+      "endMs": 472340,
+      "text": "So he is supposed to share that list by today evening.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7601cada-16b3-4bb6-986b-2b8aca6c830f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 471560,
+      "endMs": 477180,
+      "text": "In the same GTM tracking sheet that we have, there's a different tab there.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "c0f94b00-6bf2-4d29-8d16-ae7fd2e3692d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 472340,
+      "endMs": 483600,
+      "text": "In the same GPM tracking sheet that we have, there's a different tab there. We'll add in there itself and we'll have to go through that and include that in the execution pipeline as well.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "f18a6dec-4e24-41b3-b04a-98cbd99076ca",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 477180,
+      "endMs": 483120,
+      "text": "We'll add in there itself and we'll have to go through that and include that in the execution pipeline as well.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "68832c1d-dee5-49ab-87c0-b337ae285e9a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 489380,
+      "endMs": 493840,
+      "text": "Okay, sure guys. I'll reach out to you as a red show. I will give it a second.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5be20a5f-1e89-4f0a-b578-7a99ada7ca5f",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 488620,
+      "endMs": 493140,
+      "text": "Okay, sure guys, then I'll reach out to you guys, right? So if I have a redundancy.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "74907d48-fff7-4484-aaa6-fcafeab6fae6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 497200,
+      "endMs": 499460,
+      "text": "Thank you.",
+      "confidence": 1.0,
+      "language": "en"
+    }
+  ],
+  "createdAt": 1788328973087,
+  "folder": "2026-09-02 Meeting 02-09-2026, 11-32-53"
+}

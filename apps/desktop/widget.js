@@ -67,7 +67,7 @@ function create({ devUrl, distFile, preload, onActivateMain }) {
         maximizable: false,
         fullscreenable: false,
         skipTaskbar: true,
-        title: 'Alpha Status',
+        title: 'KESAMI Status',
         webPreferences: {
             preload,
             contextIsolation: true,

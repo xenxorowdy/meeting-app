@@ -10,11 +10,6 @@ const path = require('node:path');
 
 const BACKEND_HOST = process.env.CORE_BACKEND_HOST || '127.0.0.1';
 const BACKEND_PORT = Number(process.env.CORE_BACKEND_PORT || 48900);
-// This is large-v3-turbo (OpenAI shipped turbo as the 2024-09-30 large-v3
-// release). It is also the backend's own default now, so this only pins it for a
-// backend started with a different one; it costs ~30s to load once.
-const STT_MODEL = process.env.CORE_BACKEND_STT_MODEL || 'large-v3-turbo';
-const STT_LANGUAGE = process.env.CORE_BACKEND_STT_LANGUAGE || 'auto';
 
 const HEALTH_TIMEOUT_MS = 800;
 const BACKEND_START_TIMEOUT_MS = 90_000;
@@ -50,11 +45,26 @@ function health() {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+function isCurrentBuild(status) {
+    const running = status?.build;
+    if (!running) return false;
+    if (!running.executable || running.executable !== CORE_BACKEND_BINARY) return true;
+    const onDisk = fs.statSync(CORE_BACKEND_BINARY, { throwIfNoEntry: false })?.mtimeMs;
+    if (onDisk === undefined || typeof running.modifiedMs !== 'number') return true;
+    return Math.abs(Math.floor(onDisk) - running.modifiedMs) <= 1;
+}
+
 async function startBackend() {
     // A backend someone already started (a terminal, another window) is reused
     // rather than fighting over the port.
     const existing = await health();
     if (existing) {
+        if (!isCurrentBuild(existing)) {
+            throw new Error(
+                `a core backend from an earlier build is holding :${BACKEND_PORT}. Quit the app instance that started it (or kill the ` +
+                    `alpha-core-backend process on that port), then relaunch.`
+            );
+        }
         console.log(`[Alpha] reusing the core backend already on :${BACKEND_PORT}`);
         return existing;
     }
@@ -62,8 +72,6 @@ async function startBackend() {
     const env = {
         ...process.env,
         CORE_BACKEND_PORT: String(BACKEND_PORT),
-        CORE_BACKEND_STT_MODEL: STT_MODEL,
-        CORE_BACKEND_STT_LANGUAGE: STT_LANGUAGE,
         // The backend receives only relative recording paths. This trusted root
         // lets it resolve a completed recording for Sarvam batch STT without
         // accepting arbitrary local file paths from HTTP clients. It is also where
@@ -147,7 +155,7 @@ function createWindow() {
         minWidth: 960,
         minHeight: 620,
         show: false,
-        title: 'Alpha Meeting Assistant',
+        title: 'KESAMI',
         // The toolbar in the UI is a drag region, so the window keeps the traffic
         // lights but drops the title bar.
         titleBarStyle: 'hiddenInset',
@@ -241,7 +249,7 @@ if (!app.requestSingleInstanceLock()) {
 
         try {
             const status = await startBackend();
-            console.log(`[Alpha] core backend ${status.version} ready · transcription: ${status.stt?.engine} (${status.stt?.model})`);
+            console.log(`[Alpha] core backend ${status.version} ready on :${BACKEND_PORT}`);
         } catch (cause) {
             // The window still opens: the UI reports the backend as offline and
             // offers a retry, which is more useful than refusing to launch.

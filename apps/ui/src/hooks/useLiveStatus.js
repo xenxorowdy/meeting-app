@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiRequest, createBackendSocket, mapBackendState, mergeInterim, normalizeTurn } from '@/lib/backend';
+import { createLevelChannel } from '@/lib/levels';
 
 const MAX_TURNS = 300;
+const clampLevel = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 
 export function useLiveStatus() {
     const [connection, setConnection] = useState('connecting');
@@ -12,6 +14,11 @@ export function useLiveStatus() {
     const [durationSeconds, setDurationSeconds] = useState(0);
 
     const meetingIdRef = useRef(null);
+    // Levels arrive every 8 ms per stream; the channel rAF-coalesces them and
+    // subscribers write to the DOM directly, so the meter never re-renders.
+    const levelsRef = useRef(null);
+    if (!levelsRef.current) levelsRef.current = createLevelChannel();
+    const levels = levelsRef.current;
 
     const adopt = useCallback(async meetingId => {
         if (!meetingId || meetingId === meetingIdRef.current) return;
@@ -39,6 +46,9 @@ export function useLiveStatus() {
                     if (!status) break;
                     setSessionState(mapBackendState(status.state));
                     if (typeof status.durationSeconds === 'number') setDurationSeconds(status.durationSeconds);
+                    if (status.audioLevels) {
+                        levels.publish({ mic: clampLevel(status.audioLevels.mic), system: clampLevel(status.audioLevels.system) });
+                    }
                     adopt(status.meetingId || status.currentMeeting?.id || null);
                     break;
                 }
@@ -46,6 +56,13 @@ export function useLiveStatus() {
                 case 'state_change':
                     setSessionState(mapBackendState(data?.newState || data?.to));
                     break;
+
+                case 'audio_level': {
+                    const mic = clampLevel(data?.mic);
+                    const system = clampLevel(data?.system);
+                    levels.publish({ mic, system });
+                    break;
+                }
 
                 case 'meeting_started':
                     meetingIdRef.current = data?.id || null;
@@ -101,10 +118,13 @@ export function useLiveStatus() {
     }, [sessionState, meeting?.startedAt]);
 
     useEffect(() => {
-        if (sessionState !== 'recording') setInterimTurns([]);
-    }, [sessionState]);
+        if (sessionState !== 'recording') {
+            levels.reset();
+            setInterimTurns([]);
+        }
+    }, [sessionState, levels]);
 
     const isLive = sessionState === 'recording' || sessionState === 'paused';
 
-    return { connection, sessionState, meeting, turns, interimTurns, durationSeconds, isLive };
+    return { connection, sessionState, meeting, turns, interimTurns, durationSeconds, isLive, subscribeAudioLevels: levels.subscribe };
 }

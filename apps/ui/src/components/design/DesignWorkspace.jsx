@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { AudioLines, ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Podcast, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
+import { ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Podcast, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
+import { LogoMark } from '@/components/brand/Logo';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 
@@ -132,6 +133,7 @@ export function DesignWorkspace({
     onSelectMeeting,
     onRenameSpeaker,
     onUpdate,
+    onRegenerateSummary,
     onAddNote,
     onDeleteNote,
     citationFocus,
@@ -239,7 +241,7 @@ export function DesignWorkspace({
         <div className="ks-workspace">
             <aside className="ks-sidebar" aria-label="Workspace navigation">
                 <div className="ks-traffic drag-region">
-                    {!isDesktop && <span className="ks-sidebar-brand"><AudioLines aria-hidden="true" /> KESAMI</span>}
+                    {!isDesktop && <span className="ks-sidebar-brand"><LogoMark size={18} /> KESAMI</span>}
                 </div>
                 <div className="ks-new-meeting">
                     <button
@@ -569,6 +571,7 @@ export function DesignWorkspace({
                         onBack={() => setActiveTab('home')}
                         onExport={onExport}
                         onUpdate={onUpdate}
+                        onRegenerateSummary={onRegenerateSummary}
                         onSelectMeeting={onSelectMeeting}
                         onRenameSpeaker={onRenameSpeaker}
                         onAddNote={onAddNote}

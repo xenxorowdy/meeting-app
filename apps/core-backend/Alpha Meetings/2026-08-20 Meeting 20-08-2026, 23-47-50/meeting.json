@@ -1,0 +1,28 @@
+{
+  "id": "a52ea0ea-c28c-4629-b718-5662f9bbc4d9",
+  "title": "Meeting 20/08/2026, 23:47:50",
+  "startedAt": 1787249870553,
+  "endedAt": null,
+  "durationSeconds": 0,
+  "summaryMarkdown": "",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "b4b79992-35f5-4ced-8491-964f8a29851b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 81100,
+      "endMs": 82760,
+      "text": "What are you doing?",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787249870553,
+  "folder": "2026-08-20 Meeting 20-08-2026, 23-47-50"
+}

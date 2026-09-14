@@ -1,0 +1,99 @@
+{
+  "id": "24329236-655b-4035-87ac-18aaeea0e5c2",
+  "title": "Meeting 28/08/2026, 11:35:46",
+  "startedAt": 1787897146304,
+  "endedAt": 1787897246680,
+  "durationSeconds": 100,
+  "summaryMarkdown": "Meeting **Meeting 28/08/2026, 11:35:46** completed with 8 spoken turns across You.",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "73a58241-51ff-4dba-96b2-5e97865321b5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 740,
+      "endMs": 3320,
+      "text": "*cough* Hello?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "d4bc1844-2104-4b69-b6c1-69125ab392f5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 3780,
+      "endMs": 6920,
+      "text": "Yes, I'm also good. How are you?",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "7e71799a-d238-4e51-8ba2-cf54ee00fe11",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 10780,
+      "endMs": 12940,
+      "text": "Mera nam riyah meh.",
+      "confidence": 1.0,
+      "language": "en"
+    },
+    {
+      "id": "5c479bc1-fa0c-46dd-a350-94560b727097",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 22820,
+      "endMs": 25000,
+      "text": "تمہارا نام کیا ہے",
+      "confidence": 1.0,
+      "language": "ur"
+    },
+    {
+      "id": "ad40b04e-5138-4065-a601-bf872212f8c9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 59500,
+      "endMs": 61440,
+      "text": "Продолжение следует...",
+      "confidence": 1.0,
+      "language": "ja"
+    },
+    {
+      "id": "1aa8c012-c7a3-4b63-87f4-590ca4144e73",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 63000,
+      "endMs": 64680,
+      "text": "*coughs*",
+      "confidence": 1.0,
+      "language": "pt"
+    },
+    {
+      "id": "636daafb-1ffb-4738-a03d-71b0f19743ca",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 64920,
+      "endMs": 67400,
+      "text": "इन्दी कारेक्शन्स अही नहीं है",
+      "confidence": 1.0,
+      "language": "hi"
+    },
+    {
+      "id": "37daba36-36f7-4146-879a-107d2e6f9c9b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 74040,
+      "endMs": 75940,
+      "text": "صحیح نہیں ہے",
+      "confidence": 1.0,
+      "language": "ur"
+    }
+  ],
+  "createdAt": 1787897146304,
+  "folder": "2026-08-28 Meeting 28-08-2026, 11-35-46"
+}

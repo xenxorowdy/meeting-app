@@ -61,7 +61,7 @@ process.stdin.on('end', () => {
     backend = spawn(path.resolve(__dirname, '../apps/core-backend/target/debug/alpha-core-backend'), [], {
         cwd: root, stdio: ['ignore', 'ignore', 'ignore'],
         env: { ...process.env, ALPHA_DATA_DIR: root, ALPHA_LIBRARY_DIR: library, CORE_BACKEND_DATA_FILE: path.join(root, 'absent.json'),
-            CORE_BACKEND_PORT: String(port), CORE_BACKEND_WHISPER_BIN: path.join(root, 'missing-whisper'), ALPHA_CLAUDE_BIN: fake,
+            CORE_BACKEND_PORT: String(port), ALPHA_CLAUDE_BIN: fake,
             ALPHA_SUMMARY_PROVIDER: 'claude', ALPHA_GEMINI_API_KEY: '', ALPHA_SARVAM_API_KEY: '', ALPHA_CHAT_EMBEDDINGS: 'off', ALPHA_CHAT_CAPTURE: capture },
     });
     let spawnError;

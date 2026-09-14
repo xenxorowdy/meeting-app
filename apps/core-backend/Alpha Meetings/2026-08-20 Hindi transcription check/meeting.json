@@ -1,0 +1,172 @@
+{
+  "id": "8089fb4e-cf25-4bc9-b55b-44381e98fea5",
+  "title": "Hindi transcription check",
+  "startedAt": 1787232002542,
+  "endedAt": null,
+  "durationSeconds": 0,
+  "summaryMarkdown": "",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "0bf0718c-23df-4de3-9f34-7264a67fa0b6",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 220,
+      "endMs": 7660,
+      "text": "नमस्ते सभी को, आज हम लॉंच प्लान फाइनल करेंगे, मैं शुक्रवार तक नोर्टराइजेशन पूरा कर दूँगा.",
+      "confidence": 1.0
+    },
+    {
+      "id": "d00ac487-c08e-49a1-bd63-e85ecf84d5a0",
+      "channel": "system",
+      "speaker": "Others",
+      "startMs": 8520,
+      "endMs": 14860,
+      "text": "Team, हमें deployment अगले हफ़ते तक finish करना है. I will send the summary tonight.",
+      "confidence": 1.0
+    },
+    {
+      "id": "6e38e682-3e24-4ae3-9b11-56b53672cac5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 16460,
+      "endMs": 18700,
+      "text": "Are you at the end?",
+      "confidence": 1.0
+    },
+    {
+      "id": "2cbaa84a-5ca5-4134-a226-a63517dd551a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 19000,
+      "endMs": 25640,
+      "text": "- I'm going to get back. - I'm going to get back to the bank. - You have a credit card, you are going to get back?",
+      "confidence": 1.0
+    },
+    {
+      "id": "fd09df53-5ae5-4298-8c9e-9b4775d06a0c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 25700,
+      "endMs": 28580,
+      "text": "Obrigada.",
+      "confidence": 1.0
+    },
+    {
+      "id": "5a598ab9-286a-41ca-97db-2892785e4cf4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 32900,
+      "endMs": 40260,
+      "text": "What is today? What is your name? You don't tell me.",
+      "confidence": 1.0
+    },
+    {
+      "id": "a7140082-0361-4450-b7f6-ae227749076b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 40580,
+      "endMs": 44840,
+      "text": "मेरे साथ अच कुछ नहीं हुआ, मैं जाही नहीं रहूं कहीं पर ओफिस",
+      "confidence": 1.0
+    },
+    {
+      "id": "70bbf09f-61b0-48d5-8e41-b947108a37f6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 54560,
+      "endMs": 57920,
+      "text": "O final do hall, nós já me ó.",
+      "confidence": 1.0
+    },
+    {
+      "id": "ad0308b3-9428-4c38-ae16-f228da9eda03",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 62720,
+      "endMs": 65360,
+      "text": "Thank you.",
+      "confidence": 1.0
+    },
+    {
+      "id": "ee64c889-5e85-47fa-a651-15a3ea87865f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 65360,
+      "endMs": 67400,
+      "text": "پھر کیا کر رہی تھی یہ",
+      "confidence": 1.0
+    },
+    {
+      "id": "eee14309-e9a1-453e-8660-f6ff6a114e67",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 74660,
+      "endMs": 76880,
+      "text": "Maybe I won't do it.",
+      "confidence": 1.0
+    },
+    {
+      "id": "a057b4c6-295b-423e-946f-11e03d0ae022",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 77660,
+      "endMs": 79760,
+      "text": "What about I getting brought back?",
+      "confidence": 1.0
+    },
+    {
+      "id": "d2db7e91-0d5c-4115-ab72-a1a02d96aa77",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 80400,
+      "endMs": 83400,
+      "text": "A dek a kita bolir",
+      "confidence": 1.0
+    },
+    {
+      "id": "550ffc69-1f36-40b4-9c31-b8b8d5a067e4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 83400,
+      "endMs": 88420,
+      "text": "No, I don't think that it's not like that.",
+      "confidence": 1.0
+    },
+    {
+      "id": "2ee16b6f-43d0-4ca6-804f-8088e3d45195",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 88420,
+      "endMs": 89720,
+      "text": "But yeah...",
+      "confidence": 1.0
+    },
+    {
+      "id": "b55bd8f8-6c7e-4edb-a34d-d069c55d07d4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 90120,
+      "endMs": 94700,
+      "text": "It's another question to me and thank you.",
+      "confidence": 1.0
+    },
+    {
+      "id": "cbfd9f6a-1fb4-47a7-8ccd-011cec99f39f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 94700,
+      "endMs": 97760,
+      "text": "आहां ऐसे बोलो तुम तुम्हें कितना ज्यान रगता हूं तुम्हा",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787232002542,
+  "folder": "2026-08-20 Hindi transcription check"
+}

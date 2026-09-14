@@ -1,0 +1,161 @@
+{
+  "id": "46fda778-7fcb-4f03-a750-540a75220fe3",
+  "title": "Meeting on Aug 20, 05:28 PM",
+  "startedAt": 1787227083219,
+  "endedAt": 1787227137200,
+  "durationSeconds": 53,
+  "summaryMarkdown": "Meeting **Meeting on Aug 20, 05:28 PM** completed with 14 spoken turns across You, Sarah Chen (Lead PM), David Miller (Head of Eng).",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "task": "Let us confirm the launch checklist and make sure the action items are assigned with clear deadlines."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "Sarah Chen (Lead PM)",
+      "task": "I will coordinate the beta onboarding documentation and sample templates by Tuesday."
+    },
+    {
+      "deadline": "TBD",
+      "owner": "David Miller (Head of Eng)",
+      "task": "I will wrap up the final WASAPI loopback device change listener and notarization steps."
+    }
+  ],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "sim-turn-1787227084742-1",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 0,
+      "endMs": 4500,
+      "text": "Welcome everyone! Thanks for joining today’s sync on the alpha release.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227088757-2",
+      "channel": "system",
+      "speaker": "Sarah Chen (Lead PM)",
+      "startMs": 4500,
+      "endMs": 9000,
+      "text": "Happy to be here! The response to the bot-free architecture has been outstanding across our initial test users.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227092773-3",
+      "channel": "system",
+      "speaker": "David Miller (Head of Eng)",
+      "startMs": 9000,
+      "endMs": 13500,
+      "text": "The native audio capture layer is operating at under 2.5% CPU overhead on both macOS and Windows builds.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227096786-4",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 13500,
+      "endMs": 18000,
+      "text": "That satisfies our performance requirement. What is the current status of on-device WhisperKit integration?",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227100800-5",
+      "channel": "system",
+      "speaker": "David Miller (Head of Eng)",
+      "startMs": 18000,
+      "endMs": 22500,
+      "text": "WhisperKit runs directly on the Apple Neural Engine. Zero cloud data transmission for speech-to-text.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227104811-6",
+      "channel": "system",
+      "speaker": "Sarah Chen (Lead PM)",
+      "startMs": 22500,
+      "endMs": 27000,
+      "text": "And for summaries, we support Claude 3.5 Sonnet out of the box, with local Ollama for air-gapped corporate deployments.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227108828-7",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 27000,
+      "endMs": 31500,
+      "text": "Let us confirm the launch checklist and make sure the action items are assigned with clear deadlines.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227112838-8",
+      "channel": "system",
+      "speaker": "Sarah Chen (Lead PM)",
+      "startMs": 31500,
+      "endMs": 36000,
+      "text": "I will coordinate the beta onboarding documentation and sample templates by Tuesday.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227116848-9",
+      "channel": "system",
+      "speaker": "David Miller (Head of Eng)",
+      "startMs": 36000,
+      "endMs": 40500,
+      "text": "I will wrap up the final WASAPI loopback device change listener and notarization steps.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227120854-10",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 40500,
+      "endMs": 45000,
+      "text": "Excellent progress everyone. Let us wrap up and get these notes distributed.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227124869-11",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 45000,
+      "endMs": 49500,
+      "text": "Welcome everyone! Thanks for joining today’s sync on the alpha release.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227128883-12",
+      "channel": "system",
+      "speaker": "Sarah Chen (Lead PM)",
+      "startMs": 49500,
+      "endMs": 54000,
+      "text": "Happy to be here! The response to the bot-free architecture has been outstanding across our initial test users.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227132894-13",
+      "channel": "system",
+      "speaker": "David Miller (Head of Eng)",
+      "startMs": 54000,
+      "endMs": 58500,
+      "text": "The native audio capture layer is operating at under 2.5% CPU overhead on both macOS and Windows builds.",
+      "confidence": 1.0
+    },
+    {
+      "id": "sim-turn-1787227136907-14",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 58500,
+      "endMs": 63000,
+      "text": "That satisfies our performance requirement. What is the current status of on-device WhisperKit integration?",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787227083219,
+  "folder": "2026-08-20 Meeting on Aug 20, 05-28 PM"
+}

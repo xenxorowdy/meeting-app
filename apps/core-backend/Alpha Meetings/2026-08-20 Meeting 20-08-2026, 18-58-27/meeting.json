@@ -1,0 +1,406 @@
+{
+  "id": "9f5f4968-1d7d-4f52-b7c2-dcf0baa1028e",
+  "title": "Meeting 20/08/2026, 18:58:27",
+  "startedAt": 1787232507648,
+  "endedAt": 1787233136694,
+  "durationSeconds": 629,
+  "summaryMarkdown": "Meeting **Meeting 20/08/2026, 18:58:27** completed with 43 spoken turns across You.",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "70255ec0-bc4f-4781-b6e6-9660b73261fe",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 15040,
+      "endMs": 17100,
+      "text": "Ne, ele beni tarzı.",
+      "confidence": 1.0
+    },
+    {
+      "id": "53326386-e2db-4f2f-bf61-2a0a712f767c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 30380,
+      "endMs": 32600,
+      "text": "Cozbe gol, eu dirio",
+      "confidence": 1.0
+    },
+    {
+      "id": "93d76773-94b5-4a0b-9247-024ea4812d3c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 47880,
+      "endMs": 50480,
+      "text": "कैसी बाते गरता था वो नहीं देखा",
+      "confidence": 1.0
+    },
+    {
+      "id": "63629659-79a3-46e9-ba1a-ed4a6d7c844f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 56380,
+      "endMs": 59720,
+      "text": "A mí ya aquí, ¿eh? Tú nunca me juntas de ese.",
+      "confidence": 1.0
+    },
+    {
+      "id": "6f84e38b-f03a-4ca7-8776-1ccdf2a215f8",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 62980,
+      "endMs": 65720,
+      "text": "क्या क्या कभी घुलती हो ऐसे",
+      "confidence": 1.0
+    },
+    {
+      "id": "1b5812eb-82bd-4405-8803-a8a37b3186be",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 70800,
+      "endMs": 73420,
+      "text": "Ficou de ver o olho, meu melhor, Carvalho.",
+      "confidence": 1.0
+    },
+    {
+      "id": "46741bf6-1435-4f27-b44c-ba0a43df770f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 83620,
+      "endMs": 85220,
+      "text": "то ой да более.",
+      "confidence": 1.0
+    },
+    {
+      "id": "20c04683-7e20-4b8d-9568-000c03dae52c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 90860,
+      "endMs": 93520,
+      "text": "چھوڑو نا یہ سب باتیں",
+      "confidence": 1.0
+    },
+    {
+      "id": "e783bc7b-22cf-4602-9b34-16477816b71b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 105920,
+      "endMs": 107680,
+      "text": "منه گوشنی گولا",
+      "confidence": 1.0
+    },
+    {
+      "id": "771fcdd0-18e2-40a9-b4c7-f88a9ad7039b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 114300,
+      "endMs": 117300,
+      "text": "No, no, no, no",
+      "confidence": 1.0
+    },
+    {
+      "id": "52e5ca46-5383-4d12-b1b9-bb656fa0dcd6",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 117620,
+      "endMs": 119620,
+      "text": "Que si batte un attimo",
+      "confidence": 1.0
+    },
+    {
+      "id": "f70dc4ef-ada9-407b-a85b-806e358a53a3",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 120880,
+      "endMs": 123780,
+      "text": "तो चालो, तोज में रालो, तुमाना कभिल कर दाएंगी होता.",
+      "confidence": 1.0
+    },
+    {
+      "id": "840381b7-2715-404a-a373-1aa5e81f757b",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 123780,
+      "endMs": 125660,
+      "text": "Amejado, é",
+      "confidence": 1.0
+    },
+    {
+      "id": "7c4ee146-e6a6-4c35-9596-522199f399b9",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 128660,
+      "endMs": 131760,
+      "text": "देख लेना, अमेशा में गरता हूं कमेंट",
+      "confidence": 1.0
+    },
+    {
+      "id": "86dc3c8a-ce9b-487a-99ab-2bea3d82a1f5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 135140,
+      "endMs": 140060,
+      "text": "Like and comment and subscribe",
+      "confidence": 1.0
+    },
+    {
+      "id": "92984c8e-f0ee-43ba-bc47-d70242dd1a8d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 143580,
+      "endMs": 145980,
+      "text": "Rere kone mekonipata",
+      "confidence": 1.0
+    },
+    {
+      "id": "e43c85de-7745-40c6-9a9c-c31467364304",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 155240,
+      "endMs": 161480,
+      "text": "छोड़ो न जीलो अपन कहा से कहा पर आगे तुम्हें पता है आज आज आप बारिश गे रहे थी इतनी खतरना को आगी तो",
+      "confidence": 1.0
+    },
+    {
+      "id": "46daa41a-4e9f-430c-8581-2d30743be737",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 174080,
+      "endMs": 177800,
+      "text": "देखने की का बात आगई से मैं देखने मालक कुछ नहीं",
+      "confidence": 1.0
+    },
+    {
+      "id": "ecd6343b-2159-4522-a262-54fd84dc5b30",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 186020,
+      "endMs": 188880,
+      "text": "Mais qu'est-ce que ça va être ni gâteau?",
+      "confidence": 1.0
+    },
+    {
+      "id": "d41b4e65-8932-4e8b-a77b-0f6ed83cb851",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 198620,
+      "endMs": 200380,
+      "text": "– Quais-me vous dire? – Qu'est-ce que vous voulez?",
+      "confidence": 1.0
+    },
+    {
+      "id": "e5d6b9ef-ef2d-4df3-b09f-28a17c8993b5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 215380,
+      "endMs": 217520,
+      "text": "नहीं है सब काई से आगया है",
+      "confidence": 1.0
+    },
+    {
+      "id": "61703ee9-cb40-4070-a450-078d2f5ea10a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 222820,
+      "endMs": 224640,
+      "text": "そのまでは考えられます",
+      "confidence": 1.0
+    },
+    {
+      "id": "cd97c815-ac52-4f54-ac90-aad0b3a7a02a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 227660,
+      "endMs": 229940,
+      "text": "ممی کا سمب آیا کر رہا تھا",
+      "confidence": 1.0
+    },
+    {
+      "id": "4da75859-54b1-41bc-8bf1-328ff6b012fb",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 238080,
+      "endMs": 240520,
+      "text": "\"Mummy, what's the matter?\"",
+      "confidence": 1.0
+    },
+    {
+      "id": "46a6cdc9-8494-4c80-826b-1fb945a6afac",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 245380,
+      "endMs": 249360,
+      "text": "نہیں میں ایسے ملا کر رہا تھا کچھ بھی بول ہوئے",
+      "confidence": 1.0
+    },
+    {
+      "id": "a76196b1-0d88-495c-a5e4-6ef9bab7253f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 275960,
+      "endMs": 278980,
+      "text": "What's going on?",
+      "confidence": 1.0
+    },
+    {
+      "id": "b23399d1-4183-49a5-b6b5-b4d755649c35",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 308680,
+      "endMs": 311240,
+      "text": "कुछ भी नहीं है ऐसा ठीक है ना",
+      "confidence": 1.0
+    },
+    {
+      "id": "110bdde8-8835-4d31-b4de-334c750be97d",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 333300,
+      "endMs": 335380,
+      "text": "Não é esconder nenhum.",
+      "confidence": 1.0
+    },
+    {
+      "id": "d45beb44-b2f3-4196-95d4-71a1de86d0b5",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 346580,
+      "endMs": 348640,
+      "text": "I'll tell my question.",
+      "confidence": 1.0
+    },
+    {
+      "id": "e9694011-93bc-4d43-b482-4001deb96d74",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 361140,
+      "endMs": 364540,
+      "text": "She don't know, she don't know. Leanne, do you think?",
+      "confidence": 1.0
+    },
+    {
+      "id": "11cc01c8-1fc7-408c-b895-05170b6210de",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 368800,
+      "endMs": 374080,
+      "text": "میں نے تمہیں کیا بولا ایسا ہے تمہیں فیسے رہنے کی چھڑنا لگ رہی ہو",
+      "confidence": 1.0
+    },
+    {
+      "id": "75493519-f6b0-43ef-aa81-b8d5ae966150",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 388000,
+      "endMs": 392040,
+      "text": "है मेरे में कम है, अपकोर्स है, हर किसे में होती है",
+      "confidence": 1.0
+    },
+    {
+      "id": "c7c804f5-ee9e-4470-b474-4a772803205f",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 392420,
+      "endMs": 394320,
+      "text": "Bagoan problema huu",
+      "confidence": 1.0
+    },
+    {
+      "id": "7280b82c-f4cf-4560-b12a-e1fa4c68ae8a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 457940,
+      "endMs": 459560,
+      "text": "Mujem viniê",
+      "confidence": 1.0
+    },
+    {
+      "id": "54287558-d9d3-4901-8561-cb204a6664c0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 467920,
+      "endMs": 472820,
+      "text": "بابو جیلو سال برسک پہلے کی بات ہے",
+      "confidence": 1.0
+    },
+    {
+      "id": "291997d7-858f-4b9d-9af3-f0bebda7de73",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 475960,
+      "endMs": 477740,
+      "text": "Tige mir huhe, sah.",
+      "confidence": 1.0
+    },
+    {
+      "id": "28afbfe6-1485-413c-9de3-945f9c5ce584",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 477740,
+      "endMs": 479800,
+      "text": "اور اب نہیں ہونا پہلے تھا",
+      "confidence": 1.0
+    },
+    {
+      "id": "991b3f94-4a3f-478c-b808-2d6235666176",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 533900,
+      "endMs": 536080,
+      "text": "میں تو ہوں ان سے بھی اچھا ہوں",
+      "confidence": 1.0
+    },
+    {
+      "id": "099361e9-e5f2-460c-b07f-ed4441f5032a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 548160,
+      "endMs": 551940,
+      "text": "जिलो जाकें उसमें नहीं होते होंगे चगड़े",
+      "confidence": 1.0
+    },
+    {
+      "id": "a0d5a289-4d77-4ecb-92cd-b8b22eed589c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 582240,
+      "endMs": 583840,
+      "text": "Maybe an eagle, though.",
+      "confidence": 1.0
+    },
+    {
+      "id": "f572e6c8-9941-43ab-ab51-42c3e1cffea7",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 590200,
+      "endMs": 591840,
+      "text": "बढ़िए नहीं पर दो",
+      "confidence": 1.0
+    },
+    {
+      "id": "50d9de23-d889-49bc-9e88-3bfd403c3caf",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 600620,
+      "endMs": 603460,
+      "text": "ہمیشہ آتا ہے لائک تو ہمیشہ کرتا ہوں میں",
+      "confidence": 1.0
+    },
+    {
+      "id": "4af9fec1-6a2a-4015-8e94-92d6a59c02ad",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 619920,
+      "endMs": 621780,
+      "text": "Eso pues, William.",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787232507648,
+  "folder": "2026-08-20 Meeting 20-08-2026, 18-58-27"
+}

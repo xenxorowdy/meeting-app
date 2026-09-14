@@ -1,0 +1,309 @@
+{
+  "id": "32abd06d-bf0b-473c-9832-f8ce334065a0",
+  "title": "Meeting 31/08/2026, 15:03:02",
+  "startedAt": 1788168782124,
+  "endedAt": 1788168851418,
+  "durationSeconds": 69,
+  "summaryMarkdown": "The meeting was brief and touched upon various unrelated topics, including a discussion about emails, a mention of \"Coach Children,\" and a question about wiggle room. Speaker 2 mentioned that \"the last day is Friday.\" The conversation also included some phrases in Hindi.\n\n### Discussion topics\n- Email discussion\n- Mention of \"Coach Children\"\n- Discussion about wiggle room\n- Last day being Friday\n- Collection times (day, afternoon, evening, night)\n- Hindi phrases",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [
+    "Email discussion",
+    "Mention of \"Coach Children\"",
+    "Discussion about wiggle room",
+    "Last day being Friday",
+    "Collection times (day, afternoon, evening, night)",
+    "Hindi phrases"
+  ],
+  "emailDraft": "Subject: Meeting 31/08/2026, 15:03:02 Summary\n\nHi everyone,\n\nThank you for attending the meeting. We touched on a few points, including email processes and some general discussions. \n\nBest regards,",
+  "metadata": {
+    "diarized": true,
+    "transcriptionProvider": "sarvam"
+  },
+  "recording": {
+    "bytes": 14751036,
+    "durationMs": 68098,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:6904:0",
+    "startedAtMs": 1788168783319,
+    "videoPath": "32abd06d-bf0b-473c-9832-f8ce334065a0/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "9e439e53-005c-484a-917a-8f4c3ab0647e",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 1205,
+      "endMs": 7745,
+      "text": "Okay.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "151b19be-2626-4a0b-9cf7-3cc4503035af",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 8005,
+      "endMs": 9505,
+      "text": "अगर screen पे जो आप बोलोगे",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "9f3ce15f-5729-4e28-8bc2-9eab601168b9",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 9545,
+      "endMs": 10185,
+      "text": "Oh no",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "08731d7c-dc5b-4683-9f4d-5c1596edd916",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 10945,
+      "endMs": 12345,
+      "text": "वही mail खोला तब mail",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "2445d19f-884c-4129-856c-4fa53c3beef4",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 11025,
+      "endMs": 11145,
+      "text": "Okay",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "e1b60a82-4f06-46af-82f2-c6606fa0e3ab",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 13805,
+      "endMs": 15025,
+      "text": "Alex",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "092721c5-de79-490f-a0c2-4bee60cf3e1d",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 14505,
+      "endMs": 14885,
+      "text": "Thank you",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "37d4d77f-dd78-43cb-9634-36a80b799859",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 15025,
+      "endMs": 15185,
+      "text": "Okay",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "7fb525e9-2004-4d4b-b422-44aa9c89c979",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 22085,
+      "endMs": 25585,
+      "text": "Hey, I'll tell you a lesson. You must be Coach Children, heard a lot about you.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "31e3bf4a-4900-4fbf-ab58-ed0a43442bb0",
+      "channel": "mixed",
+      "speaker": "Speaker 4",
+      "startMs": 22205,
+      "endMs": 22465,
+      "text": "Bye",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "98e9278f-336f-4cbb-8368-1663286fcb70",
+      "channel": "mixed",
+      "speaker": "Speaker 4",
+      "startMs": 22585,
+      "endMs": 23265,
+      "text": "to listen.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "afd2f4f5-f1e9-4844-be3a-30babfd46398",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 25045,
+      "endMs": 25825,
+      "text": "Actually I just",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "50c99a46-9e1f-44ed-89b1-8a301b0446e7",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 25845,
+      "endMs": 27445,
+      "text": "The last day is Friday.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "6b774f97-5ebe-44a2-9193-b346408a110e",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 27505,
+      "endMs": 30605,
+      "text": "I'm gonna say I don't think you all don't have a lot of wiggle room in here, do you?",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "b6205330-0016-4142-8f38-08775e5cbdf7",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 30585,
+      "endMs": 31845,
+      "text": "We're just happy to be here.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "a6c4566d-57d3-4690-9ce5-673218931545",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 31905,
+      "endMs": 33085,
+      "text": "It's a little",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "3c695423-735a-4e5e-99dc-96e1f5d19b8a",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 33085,
+      "endMs": 41885,
+      "text": "I got you. Josie, I got you. I'm gonna",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "518d16e2-4899-4a2d-8398-28ce3e357f28",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 33205,
+      "endMs": 36805,
+      "text": "I got you. Josie, I got you.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "bb60536f-745d-4ee5-bd1a-cfb7cd0c082a",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 38645,
+      "endMs": 39305,
+      "text": "Okay.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "2e8a5f63-66d8-4e97-a9ae-35d73d539c84",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 40265,
+      "endMs": 45325,
+      "text": "You can collect them by day, afternoon, or afternoon, and evening and night.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "07bc275d-d5c9-4e91-a283-875855ba2d56",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 47525,
+      "endMs": 48305,
+      "text": "I'm sorry man",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "db6e51f8-2bfe-4033-8c8e-198b24e11f41",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 48365,
+      "endMs": 50005,
+      "text": "Is there nothing in Hindi?",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "269d278d-799d-4601-b1d2-74b146ea81c3",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 58245,
+      "endMs": 59465,
+      "text": "Bhaiya Katwari साला चलोगे?",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "1bd8fdfe-7be8-4de1-bd99-43727771675d",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 59805,
+      "endMs": 60245,
+      "text": "Okay",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "26c030f3-7822-424a-b1bd-73425140bffd",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 63165,
+      "endMs": 64465,
+      "text": "Deny.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "a9a26a83-0b62-4a8e-8161-0b6092dcfa06",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 67625,
+      "endMs": 68205,
+      "text": "What's in that?",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "bed5478a-ec3d-4d04-b1ee-dc6c52470ed8",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 68625,
+      "endMs": 69165,
+      "text": "Night",
+      "confidence": 1.0,
+      "language": "en-IN"
+    }
+  ],
+  "createdAt": 1788168782124,
+  "folder": "2026-08-31 Meeting 31-08-2026, 15-03-02"
+}

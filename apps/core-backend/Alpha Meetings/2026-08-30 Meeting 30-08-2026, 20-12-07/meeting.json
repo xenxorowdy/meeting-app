@@ -1,0 +1,92 @@
+{
+  "id": "c33f3e41-5c7d-4106-a12d-4d83ba41246f",
+  "title": "Meeting 30/08/2026, 20:12:07",
+  "startedAt": 1788100927797,
+  "endedAt": 1788100947022,
+  "durationSeconds": 19,
+  "summaryMarkdown": "The meeting was very brief and did not cover any substantive topics. Speaker 1 and Speaker 2 exchanged greetings.",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "Subject: Meeting 30/08/2026, 20:12:07\n\nHi team, \n\nThis email is a quick follow-up to our meeting. We didn't get a chance to discuss much today. Please let me know if there's anything you'd like to cover.\n\nBest regards,\n[Your Name]",
+  "metadata": {
+    "diarized": true,
+    "transcriptionProvider": "sarvam"
+  },
+  "recording": {
+    "bytes": 1657256,
+    "durationMs": 18023,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:16896:0",
+    "startedAtMs": 1788100928998,
+    "videoPath": "c33f3e41-5c7d-4106-a12d-4d83ba41246f/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "5cb4e335-13bb-455b-8333-05db4b09c15b",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 1671,
+      "endMs": 2351,
+      "text": "What happened?",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "35c64e47-b0fa-4e10-a90c-79a7ef0fc82e",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 3631,
+      "endMs": 5491,
+      "text": "Okay, बात करते हैं।",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "6cbfd3f6-8a76-4952-9bd0-42cbb6703609",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 7991,
+      "endMs": 8711,
+      "text": "cool होगी",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "c9d16dff-720e-4d80-b867-f09c614b7102",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 8011,
+      "endMs": 8691,
+      "text": "Ball",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "c794f7bc-8455-4466-859e-a62adde4fa5d",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 9271,
+      "endMs": 10411,
+      "text": "Hi hi",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "30777a02-0b04-41e4-aaa7-5af12aa311be",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 11871,
+      "endMs": 12251,
+      "text": "Right",
+      "confidence": 1.0,
+      "language": "en-IN"
+    }
+  ],
+  "createdAt": 1788100927797,
+  "folder": "2026-08-30 Meeting 30-08-2026, 20-12-07"
+}

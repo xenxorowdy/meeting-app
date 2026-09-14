@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/core-backend
+      - name: Test the Rust backend
+        run: cargo test --manifest-path apps/core-backend/Cargo.toml
+      - name: Build the debug binary
+        run: cargo build --manifest-path apps/core-backend/Cargo.toml
+      - name: Integration tests against the real backend
+        run: node --test test/meeting-chat-integration.test.js test/live-echo.test.js test/live-speakers.test.js
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the UI
+        run: npm run build:ui
+      - name: Node test suites
+        run: node --test test/calendar-events.test.js test/meeting-chat.test.js test/live-transcript.test.js test/audio-levels.test.js test/preferences.test.js test/widget-window.test.js

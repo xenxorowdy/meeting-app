@@ -1,0 +1,155 @@
+{
+  "id": "5eae928f-706b-4485-8285-c96787bc383f",
+  "title": "Meeting 21/08/2026, 18:53:44",
+  "startedAt": 1787318624222,
+  "endedAt": 1787318724088,
+  "durationSeconds": 99,
+  "summaryMarkdown": "Meeting **Meeting 21/08/2026, 18:53:44** completed with 13 spoken turns across You.",
+  "summarySections": [],
+  "actionItems": [
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "I will go back to the place"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "I will put it in a bowl"
+    },
+    {
+      "deadline": "TBD",
+      "owner": "You",
+      "priority": "Medium",
+      "task": "I will take care of you."
+    }
+  ],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {},
+  "notes": [],
+  "transcript": [
+    {
+      "id": "9d3a820d-33be-4769-84ce-3b9854cbb31e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 1160,
+      "endMs": 2820,
+      "text": "To go, girl.",
+      "confidence": 1.0
+    },
+    {
+      "id": "57a02009-8bdb-4618-9ef0-2a4551e87a39",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 7160,
+      "endMs": 10100,
+      "text": "Essa naí é... eu com o Jogim de Bolô.",
+      "confidence": 1.0
+    },
+    {
+      "id": "a4cb5df1-d141-48cd-be90-d6133c06c6f0",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 11920,
+      "endMs": 13520,
+      "text": "Nah, yeah.",
+      "confidence": 1.0
+    },
+    {
+      "id": "3607ebd7-607b-4584-867e-919b04821e9a",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 15240,
+      "endMs": 17620,
+      "text": "No, it's not like that.",
+      "confidence": 1.0
+    },
+    {
+      "id": "f53fb487-0a67-4ac3-be69-204a25969edd",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 23320,
+      "endMs": 25400,
+      "text": "Não, baby, não.",
+      "confidence": 1.0
+    },
+    {
+      "id": "f9111447-b682-4a15-814e-054efb1405fa",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 39080,
+      "endMs": 43520,
+      "text": "I am not loving you. I love you.",
+      "confidence": 1.0
+    },
+    {
+      "id": "1d8cb384-5828-4f16-b5d7-bc43f0fac811",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 48400,
+      "endMs": 51340,
+      "text": "How much does it cost?",
+      "confidence": 1.0
+    },
+    {
+      "id": "88f00952-c18e-4dbe-ac58-48855876c9ca",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 51720,
+      "endMs": 53600,
+      "text": "You don't love me.",
+      "confidence": 1.0
+    },
+    {
+      "id": "37f6c5fd-a225-40be-9e2b-ea040149165c",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 54220,
+      "endMs": 56320,
+      "text": "You don't love me.",
+      "confidence": 1.0
+    },
+    {
+      "id": "7ba43b70-702e-4b4b-bf98-1fbcac9a1401",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 57980,
+      "endMs": 60520,
+      "text": "I will go back to the place",
+      "confidence": 1.0
+    },
+    {
+      "id": "088d004a-6804-41c8-838c-d107effe49bd",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 62740,
+      "endMs": 65020,
+      "text": "I will put it in a bowl",
+      "confidence": 1.0
+    },
+    {
+      "id": "39f3c132-81b6-4c98-afed-c4ed97f168cf",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 67700,
+      "endMs": 69640,
+      "text": "I will take care of you.",
+      "confidence": 1.0
+    },
+    {
+      "id": "8cae25e0-0f11-4836-a2f6-26766982202e",
+      "channel": "mic",
+      "speaker": "You",
+      "startMs": 82320,
+      "endMs": 84180,
+      "text": "\"Sundangum\"",
+      "confidence": 1.0
+    }
+  ],
+  "createdAt": 1787318624222,
+  "folder": "2026-08-21 Meeting 21-08-2026, 18-53-44"
+}

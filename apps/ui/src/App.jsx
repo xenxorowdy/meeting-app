@@ -17,8 +17,11 @@ const ExportModal = lazy(() => import('@/components/ExportModal').then(module =>
 const NewMeetingModal = lazy(() => import('@/components/NewMeetingModal').then(module => ({ default: module.NewMeetingModal })));
 const SettingsModal = lazy(() => import('@/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 import { isRecordingSupported } from '@/lib/screenRecorder';
+import { getBackendConnection } from '@/lib/connection.js';
+import { fetchSession, signOut as signOutSession } from '@/lib/auth.js';
 import { DesignWorkspace } from '@/components/design/DesignWorkspace';
 import { SignInView } from '@/components/design/SignInView';
+import { LogoMark } from '@/components/brand/Logo';
 import './design.css';
 
 // In the desktop shell the window keeps macOS traffic lights over the toolbar,
@@ -28,16 +31,54 @@ const IS_DESKTOP_SHELL = typeof navigator !== 'undefined' && /Electron/i.test(na
 const VIEWS = ['home', 'ask', 'live', 'notes', 'replay', 'podcast', 'history'];
 
 export default function App() {
-    const [entered, setEntered] = useState(false);
+    // null while a stored session is still being restored; otherwise "is the
+    // user in the workspace".
+    const [entered, setEntered] = useState(null);
     const [openSettingsOnEntry, setOpenSettingsOnEntry] = useState(false);
     const [theme, setTheme] = useTheme();
     const [preferences] = usePreferences();
+
+    // A session token survives restarts in the desktop shell (and for this
+    // browser session otherwise), so a stored session is restored before the
+    // sign-in screen is shown.
+    useEffect(() => {
+        let cancelled = false;
+        if (!getBackendConnection().token) {
+            setEntered(false);
+            return;
+        }
+        fetchSession().then(restored => {
+            if (!cancelled) setEntered(Boolean(restored));
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    const handleSignOut = useCallback(() => {
+        setEntered(false);
+        // Revoking the token server-side is best effort; dropping the local
+        // copy is what the UI actually depends on.
+        signOutSession();
+    }, []);
+
+    if (entered === null) {
+        return (
+            <div className="ks-app" data-theme={theme}>
+                <div className="ks-session-restore" role="status">
+                    <LogoMark size={22} live /> Restoring your session…
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="ks-app" data-theme={theme}>
             {entered ? (
-                <ConnectedApp theme={theme} setTheme={setTheme} preferences={preferences} openSettingsOnEntry={openSettingsOnEntry} onSignOut={() => setEntered(false)} />
+                <ConnectedApp theme={theme} setTheme={setTheme} preferences={preferences} openSettingsOnEntry={openSettingsOnEntry} onSignOut={handleSignOut} />
             ) : (
-                <SignInView onContinue={destination => { setOpenSettingsOnEntry(destination === 'settings'); setEntered(true); }} />
+                <SignInView
+                    onContinue={destination => { setOpenSettingsOnEntry(destination === 'settings'); setEntered(true); }}
+                    onAuthenticated={() => setEntered(true)}
+                />
             )}
         </div>
     );
@@ -60,6 +101,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         isConnected,
         sessionState,
         activeMeeting,
+        isGeneratingSummary,
         interimTurns,
         durationSeconds,
         subscribeAudioLevels,
@@ -77,6 +119,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         resumeMeeting,
         stopMeeting,
         loadMeeting,
+        regenerateSummary,
         updateActiveMeeting,
         renameSpeaker,
         toggleMicMute,
@@ -278,6 +321,8 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                     isRecording,
                     isPaused,
                     isProcessing,
+                    autoSummarize: settings.autoSummarize !== false,
+                    isGeneratingSummary,
                     durationSeconds,
                     subscribeAudioLevels,
                     micMuted,
@@ -303,6 +348,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                 onSelectMeeting={handleSelectHistoryMeeting}
                 onRenameSpeaker={handleRenameSpeaker}
                 onUpdate={updateActiveMeeting}
+                onRegenerateSummary={regenerateSummary}
                 onAddNote={addNote}
                 onDeleteNote={deleteNote}
                 citationFocus={citationFocus}

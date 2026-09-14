@@ -56,7 +56,7 @@ export default {
                 body: ['15px', { lineHeight: '21px' }],
                 callout: ['13px', { lineHeight: '18px' }],
                 subhead: ['13px', { lineHeight: '18px' }],
-                footnote: ['11px', { lineHeight: '15px' }],
+                footnote: ['12px', { lineHeight: '16px' }],
                 caption: ['11px', { lineHeight: '15px' }],
             },
             colors: {

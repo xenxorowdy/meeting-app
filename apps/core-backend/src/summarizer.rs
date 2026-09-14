@@ -39,13 +39,21 @@ only from a typed note, not from anything said aloud, gets an empty sourceTurns 
 - Attribute each action item to the speaker who committed to it, or to the person it was asked of.
 - Use \"TBD\" when a deadline was never stated. Never guess one.
 - Prefer specifics over praise: no filler, no meta-commentary about the transcript.
+- Write `executiveSummary` as the main reader-facing recap: 2-4 connected, readable paragraphs that \
+  tell the story of the meeting in the same natural style as a thoughtful human recap. Synthesize \
+  what was discussed, what participants clarified or decided, and the most important follow-ups. Use \
+  names when the transcript supports them, and include concrete owners or deadlines when stated. \
+  Organize ideas by topic even when the conversation moved between them. Do not make it a one-line \
+  generic overview or a list of headings and bullets; the topic sections below already hold the \
+  scannable detail. Do not invent direct quotes; preserve a participant's exact wording only when it \
+  matters and is present in the transcript.
 - Notes typed by the local user during the meeting mark what they thought mattered. Weight those points \
 heavily and keep their wording where it is already precise, but never treat a note as something that was \
 said aloud, and never let a note introduce a fact the transcript does not support.
 - Reply with the requested JSON object only.";
 
-const INSTRUCTION: &str = "Summarize the meeting transcript on stdin as topic-organized notes. \
-Return a one-sentence executive summary, the topic sections with grounded bullets, the decisions that \
+const INSTRUCTION: &str = "Summarize the meeting transcript on stdin as a natural, connected narrative recap \
+followed by topic-organized notes. Return 2-4 grounded paragraphs as the executive summary, the topic sections with grounded bullets, the decisions that \
 were actually agreed, every action item with its owner, and a short follow-up email the local user could \
 send to the other participants.";
 
@@ -1162,6 +1170,13 @@ mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn summary_prompt_requests_a_grounded_narrative_lead() {
+        assert!(SYSTEM_PROMPT.contains("2-4 connected, readable paragraphs"));
+        assert!(SYSTEM_PROMPT.contains("Do not invent direct quotes"));
+        assert!(SYSTEM_PROMPT.contains("Set sourceTurns on every"));
     }
 
     #[test]

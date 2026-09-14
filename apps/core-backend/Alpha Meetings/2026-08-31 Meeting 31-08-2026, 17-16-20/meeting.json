@@ -1,0 +1,142 @@
+{
+  "id": "298c00d1-be2e-437a-8cbe-c2da14d9fa12",
+  "title": "Meeting 31/08/2026, 17:16:20",
+  "startedAt": 1788176780511,
+  "endedAt": 1788176831555,
+  "durationSeconds": 51,
+  "summaryMarkdown": "Meeting **Meeting 31/08/2026, 17:16:20** completed with 11 spoken turns across Speaker 1, Speaker 2, Speaker 3, Speaker 4.",
+  "summarySections": [],
+  "actionItems": [],
+  "keyDecisions": [],
+  "topics": [],
+  "emailDraft": "",
+  "metadata": {
+    "diarized": true,
+    "transcriptionProvider": "sarvam"
+  },
+  "recording": {
+    "bytes": 10080649,
+    "durationMs": 50199,
+    "error": null,
+    "hasSystemAudio": true,
+    "mimeType": "video/webm;codecs=vp9,opus",
+    "sourceId": "window:6904:0",
+    "startedAtMs": 1788176781355,
+    "videoPath": "298c00d1-be2e-437a-8cbe-c2da14d9fa12/screen.webm"
+  },
+  "notes": [],
+  "transcript": [
+    {
+      "id": "09d529bc-751e-4d61-bf92-b19b6c8bb114",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 1114,
+      "endMs": 4054,
+      "text": "recording ho raha hai aur phir",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "07607a2e-8600-4389-ad00-a092e516b8c5",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 4054,
+      "endMs": 4154,
+      "text": "Okay",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "1071c7b4-4db2-4764-9395-0f138645196b",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 4154,
+      "endMs": 6514,
+      "text": "देखो देखना है CIBIL का UI कैसे है तो मैं दिखा सकता हूं।",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "016e5df4-1e40-4f3e-b59f-070c53d31a5d",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 6474,
+      "endMs": 7614,
+      "text": "Yes, show that.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "a443fc79-eff4-46ee-9f4f-9fa28f4c4cdf",
+      "channel": "mixed",
+      "speaker": "Speaker 4",
+      "startMs": 9534,
+      "endMs": 10814,
+      "text": "You're just too",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "c7bb955e-d011-403a-bd38-42824733ec10",
+      "channel": "mixed",
+      "speaker": "Speaker 2",
+      "startMs": 10814,
+      "endMs": 17034,
+      "text": "Good to you.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "085a19ef-7ca9-4a14-9885-2663e7bb7f22",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 22574,
+      "endMs": 28914,
+      "text": "Are you ordering something? I had lunch. I had lunch. I'll have a brief.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "52a88422-b6bc-46c6-89b5-13e89e8a9142",
+      "channel": "mixed",
+      "speaker": "Speaker 4",
+      "startMs": 28354,
+      "endMs": 34554,
+      "text": "Mera haath unka shareer par daalte hain ki vo unka umra thoda neeche aate hain Maine bole logo sochte hain",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "943c209e-f165-4c28-aef0-d9e6263f8d62",
+      "channel": "mixed",
+      "speaker": "Speaker 3",
+      "startMs": 34574,
+      "endMs": 38754,
+      "text": "I love your pose yaar. Maine dekha aapne Khari ke saath kya tha. Phir Khari ne inka haath upar laaya.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "fa6a12be-f8dd-4d2b-b84e-973adf66dec1",
+      "channel": "mixed",
+      "speaker": "Speaker 4",
+      "startMs": 36914,
+      "endMs": 37654,
+      "text": "Okay,",
+      "confidence": 1.0,
+      "language": "en-IN"
+    },
+    {
+      "id": "3f65abcb-df1f-4dc6-9f90-7a6647e97981",
+      "channel": "mixed",
+      "speaker": "Speaker 1",
+      "startMs": 38794,
+      "endMs": 41714,
+      "text": "Abhi ye sab kuch record ho gaya usme.",
+      "confidence": 1.0,
+      "language": "en-IN"
+    }
+  ],
+  "createdAt": 1788176780511,
+  "folder": "2026-08-31 Meeting 31-08-2026, 17-16-20"
+}
