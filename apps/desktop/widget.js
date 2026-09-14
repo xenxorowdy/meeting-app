@@ -1,9 +1,10 @@
 const { BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('node:path');
 
-const COLLAPSED = { width: 208, height: 46 };
-const EXPANDED = { width: 380, height: 440 };
+const COLLAPSED = { width: 268, height: 48 };
+const EXPANDED = { width: 396, height: 496 };
 const SCREEN_MARGIN = 20;
+const COMMANDS = new Set(['toggle-mic', 'toggle-system', 'toggle-pause', 'stop']);
 
 let widgetWindow = null;
 let expanded = false;
@@ -11,6 +12,8 @@ let hiddenByUser = false;
 let enabled = true;
 let live = false;
 let activateMain = null;
+let runCommand = null;
+let lastState = null;
 
 const alive = () => Boolean(widgetWindow) && !widgetWindow.isDestroyed();
 const fromWidget = event => alive() && event.sender === widgetWindow.webContents;
@@ -48,9 +51,15 @@ function applyVisibility() {
     }
 }
 
-function create({ devUrl, distFile, preload, onActivateMain }) {
+function sendState() {
+    if (!alive() || !lastState) return;
+    widgetWindow.webContents.send('widget:state', lastState);
+}
+
+function create({ devUrl, distFile, preload, onActivateMain, onCommand }) {
     if (alive()) return widgetWindow;
     activateMain = onActivateMain;
+    runCommand = onCommand;
 
     const work = screen.getPrimaryDisplay().workArea;
     widgetWindow = new BrowserWindow({
@@ -84,9 +93,13 @@ function create({ devUrl, distFile, preload, onActivateMain }) {
     widgetWindow.on('closed', () => {
         widgetWindow = null;
         expanded = false;
+        lastState = null;
     });
 
-    widgetWindow.once('ready-to-show', applyVisibility);
+    widgetWindow.once('ready-to-show', () => {
+        applyVisibility();
+        sendState();
+    });
 
     if (devUrl) {
         widgetWindow.loadURL(devUrl);
@@ -118,6 +131,13 @@ function registerHandlers() {
         return true;
     });
 
+    ipcMain.handle('widget:command', (event, action) => {
+        if (!fromWidget(event)) return false;
+        if (!COMMANDS.has(action)) return false;
+        runCommand?.(action);
+        return true;
+    });
+
     // Sent by the main window when the preference changes. Re-enabling clears the
     // per-session dismissal, otherwise the toggle would look broken to anyone who
     // had closed the widget earlier.
@@ -133,6 +153,12 @@ function registerHandlers() {
         live = Boolean(next);
         applyVisibility();
         return live;
+    });
+
+    ipcMain.handle('widget:set-state', (_event, state) => {
+        lastState = state ?? null;
+        sendState();
+        return true;
     });
 }
 

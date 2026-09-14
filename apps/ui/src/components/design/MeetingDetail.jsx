@@ -360,7 +360,7 @@ export function MeetingDetail({
                             </button>
                             <button
                                 className="ks-icon-button"
-                                title={!session.systemAudioSeen ? 'No meeting audio detected yet' : 'Meeting audio'}
+                                title={session.systemAudioError || (!session.systemAudioSeen ? 'No meeting audio detected yet' : 'Meeting audio')}
                                 aria-label={session.systemAudioMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
                                 aria-pressed={session.systemAudioMuted}
                                 onClick={session.onToggleSystem}

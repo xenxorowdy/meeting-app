@@ -34,6 +34,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{WebSocketStream, tungstenite::{Message, protocol::{Role, WebSocketConfig}}};
 
 mod accounts;
+mod plans;
 use accounts::AccountStore;
 
 mod library;
@@ -538,7 +539,7 @@ impl AppState {
         status["participants"] = participants;
         status["stt"] = self.stt_status(Some(&session_provider)).await;
         status["summary"] = self.summarizer.status_value().await;
-        status["podcast"] = self.podcast.status_value().await;
+        status["podcast"] = json!({"enabled":false,"status":"disabled"});
         status
     }
 
@@ -1347,9 +1348,11 @@ impl AppState {
             let _ = self.store.put(meeting).await;
         }
 
+        let mut event = serde_json::to_value(&turn).unwrap_or_else(|_| json!({}));
+        event["meetingId"] = json!(meeting_id);
         self.emit(
             "transcript_turn",
-            serde_json::to_value(&turn).unwrap_or_else(|_| json!({})),
+            event,
         )
         .await;
     }
@@ -1494,7 +1497,7 @@ async fn main() -> io::Result<()> {
     let chat = chat::ChatService::new(store.library.read().await.root().to_path_buf());
     let session = Arc::new(Mutex::new(Session::default()));
     chat.start(store.clone(), session.clone());
-    let accounts = Arc::new(AccountStore::load().await);
+    let accounts = Arc::new(AccountStore::load().await?);
     let state = AppState {
         started_at: now_ms(),
         session,
@@ -1614,7 +1617,7 @@ async fn write_http_response<W: AsyncWriteExt + Unpin>(
     extra_headers: &[(String, String)],
 ) -> io::Result<()> {
     let mut response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: {}\r\n",
         body.len()
     );
     for (name, value) in extra_headers {
@@ -1628,7 +1631,7 @@ async fn write_http_response<W: AsyncWriteExt + Unpin>(
 /// Paths that must be reachable before any credential exists: the health probe
 /// and the two endpoints that mint credentials in the first place.
 fn is_public_path(path: &str) -> bool {
-    path == "/health" || path == "/api/auth/register" || path == "/api/auth/login"
+    matches!(path, "/health" | "/api/auth/register" | "/api/auth/login" | "/api/plans" | "/api/auth/config")
 }
 
 /// The gate every request passes before routing: the Host header (DNS
@@ -1818,9 +1821,17 @@ fn json_response(status: u16, value: Value) -> (u16, &'static str, String) {
     (status, "application/json; charset=utf-8", value.to_string())
 }
 
+fn podcast_path(path: &str) -> bool {
+    path == "/api/podcast" || path.starts_with("/api/podcast/")
+        || path == "/api/podcasts" || path.starts_with("/api/podcasts/")
+}
+
 async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, String) {
     if req.method == "OPTIONS" {
         return (204, "text/plain", String::new());
+    }
+    if podcast_path(&req.path) {
+        return json_response(403, json!({"error":"Podcast is disabled.","code":"FEATURE_DISABLED"}));
     }
     let body: Value = serde_json::from_slice(&req.body).unwrap_or_else(|_| json!({}));
     match (req.method.as_str(), req.path.as_str()) {
@@ -1834,6 +1845,11 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }),
         ),
         ("POST", "/api/auth/register") => {
+            // Accounts share this workspace. Never allow anonymous registration
+            // to bypass a deployment token and expose existing meetings.
+            if !state.security.authorized(&req.headers, false) {
+                return json_response(403, json!({"error": "Account creation requires the workspace owner's access token. You can still use the app locally without an account."}));
+            }
             match state
                 .accounts
                 .register(
@@ -1862,9 +1878,29 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         }
         ("POST", "/api/auth/logout") => {
             if let Some(token) = bearer_or_protocol_token(&req.headers, false) {
-                state.accounts.logout(&token).await;
+                if let Err((status, error)) = state.accounts.logout(&token).await {
+                    return json_response(status, json!({"error": error}));
+                }
             }
             json_response(200, json!({"success": true}))
+        }
+        ("GET", "/api/auth/config") => json_response(200, json!({
+            "registrationAllowed": state.security.authorized(&req.headers, false),
+            "localAccess": !state.security.hosted,
+            "workspaceScope": "shared"
+        })),
+        ("GET", "/api/plans") => json_response(200, plans::catalog()),
+        ("POST", "/api/billing/checkout") => json_response(503, json!({
+            "error": "Paid plans are not available yet. Local features remain free."
+        })),
+        ("POST", "/api/auth/password") => {
+            let token = bearer_or_protocol_token(&req.headers, false).unwrap_or_default();
+            match state.accounts.change_password(&token,
+                body.get("currentPassword").and_then(Value::as_str).unwrap_or_default(),
+                body.get("password").and_then(Value::as_str).unwrap_or_default()).await {
+                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Err((status, error)) => json_response(status, json!({"error": error})),
+            }
         }
         ("GET", "/api/auth/session") => {
             let account = match bearer_or_protocol_token(&req.headers, false) {
@@ -1924,7 +1960,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         },
         ("GET", "/api/license/status") => json_response(
             200,
-            json!({"tier":"free","status":"active","canRecord":true,"usage":{"meetingsThisMonth":0}}),
+            json!({"tier":"free","status":"active","canRecord":true,"requiresAccount":false,"billingEnabled":false,"licenseActivationSupported":false,"usage":{}}),
         ),
         ("POST", "/api/license/activate") => json_response(
             200,

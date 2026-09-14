@@ -12,7 +12,9 @@ import {
 import { calendarEventMetadata } from '@/lib/calendarEvents';
 import { getBackendUrl, isRemoteBackend } from '@/lib/connection';
 import { createLevelChannel } from '@/lib/levels';
+import { createCaptureController } from '@/lib/captureController';
 import { startMicCapture } from '@/lib/micCapture';
+import { startSystemCapture } from '@/lib/systemCapture';
 import { DEFAULT_BITS_PER_SECOND, isRecordingSupported, startScreenRecording } from '@/lib/screenRecorder';
 
 export const SESSION_STATES = {
@@ -67,6 +69,7 @@ export function useMeetingSession() {
     const [systemAudioMuted, setSystemAudioMuted] = useState(false);
     const [error, setError] = useState(null);
     const [micError, setMicError] = useState(null);
+    const [systemAudioError, setSystemAudioError] = useState(null);
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [license, setLicense] = useState(null);
     const [engine, setEngine] = useState(null);
@@ -83,6 +86,13 @@ export function useMeetingSession() {
 
     const socketRef = useRef(null);
     const captureRef = useRef(null);
+    const systemCaptureRef = useRef(null);
+    const systemSourceRef = useRef(null);
+    const micControllerRef = useRef(null);
+    const systemControllerRef = useRef(null);
+    if (!micControllerRef.current) micControllerRef.current = createCaptureController(startMicCapture);
+    if (!systemControllerRef.current) systemControllerRef.current = createCaptureController(startSystemCapture);
+    const capturing = sessionState === SESSION_STATES.RECORDING || sessionState === SESSION_STATES.PAUSED;
     const recorderRef = useRef(null);
     const recorderStartRef = useRef(null);
     const startingRef = useRef(false);
@@ -186,6 +196,8 @@ export function useMeetingSession() {
                     break;
 
                 case 'meeting_started':
+                    systemAudioSeenRef.current = false;
+                    setSystemAudioSeen(false);
                     adoptMeeting(data);
                     setDurationSeconds(0);
                     setInterimTurns([]);
@@ -206,6 +218,7 @@ export function useMeetingSession() {
                     break;
 
                 case 'transcript_turn': {
+                    if (data?.meetingId && data.meetingId !== activeMeetingIdRef.current) break;
                     const turn = normalizeTurn(data);
                     setInterimTurns(previous => previous.filter(entry => entry.stream !== turn.stream));
                     if (callbacksRef.current.onLiveTurn) {
@@ -215,6 +228,7 @@ export function useMeetingSession() {
                 }
 
                 case 'transcript_replaced':
+                    if (data?.meetingId && data.meetingId !== activeMeetingIdRef.current) break;
                     setInterimTurns([]);
                     if (callbacksRef.current.onTranscriptReplaced) {
                         callbacksRef.current.onTranscriptReplaced((Array.isArray(data?.turns) ? data.turns : []).map(normalizeTurn));
@@ -293,45 +307,57 @@ export function useMeetingSession() {
         if (sessionState !== SESSION_STATES.RECORDING) setInterimTurns([]);
     }, [sessionState]);
 
-    // Microphone capture streams real PCM to the backend while recording.
+    // Pausing and muting keep the same devices open. Device changes and stop
+    // invalidate pending permission prompts before replacing their handles.
     useEffect(() => {
-        let cancelled = false;
-        const isLive = sessionState === SESSION_STATES.RECORDING || sessionState === SESSION_STATES.PAUSED;
-
-        if (isLive && !captureRef.current) {
-            startMicCapture({
-                deviceId: settings.micDeviceId,
-                muted: captureMuteRef.current.mic,
-                noiseSuppression: settingsRef.current.noiseSuppression !== false,
-                echoCancellation: settingsRef.current.echoSuppression !== false,
-                onPcm: pcm => {
-                    if (socketRef.current) socketRef.current.sendAudio(STREAM_MIC, pcm);
-                },
-            })
-                .then(capture => {
-                    if (cancelled) {
-                        capture.stop();
-                        return;
-                    }
-                    captureRef.current = capture;
-                    capture.setMuted(captureMuteRef.current.mic);
-                    setMicStream(capture.stream);
-                    setMicError(null);
-                })
-                .catch(cause => { if (!cancelled) setMicError(cause.message || 'Microphone unavailable'); });
-        }
-
-        if (!isLive && captureRef.current) {
-            captureRef.current.stop();
+        if (!capturing) { levels.reset(); return; }
+        micControllerRef.current.start({
+            deviceId: settings.micDeviceId,
+            muted: captureMuteRef.current.mic,
+            noiseSuppression: settingsRef.current.noiseSuppression !== false,
+            echoCancellation: settingsRef.current.echoSuppression !== false,
+            onPcm: pcm => socketRef.current?.sendAudio(STREAM_MIC, pcm),
+            onReady: capture => {
+                captureRef.current = capture;
+                capture.setMuted(captureMuteRef.current.mic);
+                setMicStream(capture.stream);
+                setMicError(null);
+            },
+            onError: message => { captureRef.current = null; setMicStream(null); setMicError(message); },
+        });
+        return () => {
             captureRef.current = null;
             setMicStream(null);
-            levels.reset();
-        }
-
-        return () => {
-            cancelled = true;
+            micControllerRef.current.stop().catch(() => {});
         };
-    }, [sessionState, settings.micDeviceId, micMuted, levels]);
+    }, [capturing, settings.micDeviceId, levels]);
+
+    useEffect(() => {
+        if (!capturing) return;
+        // Until the dedicated source is ready, recording PCM may still supply
+        // meeting audio. Only an active source suppresses that fallback.
+        systemControllerRef.current.start({
+            deviceId: settings.systemDeviceId,
+            muted: captureMuteRef.current.system,
+            onPcm: pcm => socketRef.current?.sendAudio(STREAM_SYSTEM, pcm),
+            onReady: capture => {
+                systemCaptureRef.current = capture;
+                systemSourceRef.current = capture.source;
+                capture.setMuted(captureMuteRef.current.system);
+                setSystemAudioError(null);
+            },
+            onError: message => {
+                systemCaptureRef.current = null;
+                systemSourceRef.current = null;
+                setSystemAudioError(message);
+            },
+        });
+        return () => {
+            systemCaptureRef.current = null;
+            systemSourceRef.current = null;
+            systemControllerRef.current.stop().catch(() => {});
+        };
+    }, [capturing, settings.systemDeviceId]);
 
     useEffect(() => {
         const capture = captureRef.current;
@@ -369,6 +395,7 @@ export function useMeetingSession() {
             micStream,
             bitsPerSecond: settingsRef.current.recordingBitsPerSecond,
             onSystemPcm: pcm => {
+                if (systemSourceRef.current) return;
                 if (socketRef.current) socketRef.current.sendAudio(STREAM_SYSTEM, pcm);
             },
             onError: message => setRecordingState(prev => ({ ...prev, error: message })),
@@ -393,17 +420,15 @@ export function useMeetingSession() {
     // Muting meeting audio has to stop it reaching the transcriber too, not just
     // the level meter, or a muted meeting still gets transcribed.
     useEffect(() => {
+        const muted = systemAudioMuted || sessionState === SESSION_STATES.PAUSED;
+        systemCaptureRef.current?.setMuted(muted);
         if (recorderRef.current) {
-            recorderRef.current.setSystemMuted(systemAudioMuted || sessionState === SESSION_STATES.PAUSED);
+            recorderRef.current.setSystemMuted(muted);
         }
     }, [systemAudioMuted, sessionState]);
 
     useEffect(
         () => () => {
-            if (captureRef.current) {
-                captureRef.current.stop();
-                captureRef.current = null;
-            }
             if (recorderRef.current) {
                 recorderRef.current.stop().catch(() => {});
                 recorderRef.current = null;
@@ -417,6 +442,9 @@ export function useMeetingSession() {
             if (startingRef.current) return null;
             setError(null);
             setMicError(null);
+            setSystemAudioError(null);
+            systemAudioSeenRef.current = false;
+            setSystemAudioSeen(false);
             setRecordingState({ active: false, mode, hasSystemAudio: false, error: null });
             if (settingsRef.current.transcriptionProvider === 'sarvam' && (isRemoteBackend() || settingsRef.current.supportsLocalRecording === false)) {
                 setError('Choose live transcription in Settings to record with a hosted workspace.');
@@ -543,7 +571,7 @@ export function useMeetingSession() {
             try {
                 const detail = await apiRequest(`/api/meetings/${id}`);
                 const meeting = adoptMeeting(detail.meeting);
-                setSessionState(SESSION_STATES.COMPLETED);
+                setSessionState(SESSION_STATES.IDLE);
                 setDurationSeconds(meeting?.durationSeconds || 0);
                 return meeting;
             } catch (cause) {
@@ -728,6 +756,7 @@ export function useMeetingSession() {
         recordingState,
         error,
         micError,
+        systemAudioError,
         settings,
         license,
         engine,

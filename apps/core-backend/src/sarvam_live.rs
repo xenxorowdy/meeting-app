@@ -27,6 +27,7 @@ const BYTES_PER_MS: i64 = (SAMPLE_RATE as i64 / 1000) * 2;
 const MIN_CHUNK_BYTES: usize = 3_200;
 const MAX_CHUNK_BYTES: usize = 32_000;
 const PING_INTERVAL: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const END_DRAIN: Duration = Duration::from_secs(6);
 const RECONNECT_BACKOFF_MS: [u64; 4] = [500, 1_000, 2_000, 5_000];
 
@@ -249,9 +250,12 @@ impl LiveTranscriber {
             stream.audio.take();
         }
         let deadline = Instant::now() + budget;
-        for stream in self.streams {
+        for mut stream in self.streams {
             let remaining = deadline.saturating_duration_since(Instant::now());
-            let _ = timeout(remaining, stream.task).await;
+            if timeout(remaining, &mut stream.task).await.is_err() {
+                stream.task.abort();
+                let _ = stream.task.await;
+            }
         }
     }
 }
@@ -323,8 +327,9 @@ async fn connect(key: &str, config: &LiveConfig) -> Result<Socket, String> {
     request
         .headers_mut()
         .insert("api-subscription-key", header);
-    let (socket, _) = connect_async(request)
+    let (socket, _) = timeout(CONNECT_TIMEOUT, connect_async(request))
         .await
+        .map_err(|_| "the Sarvam realtime connection timed out".to_string())?
         .map_err(|cause| format!("could not open the Sarvam realtime socket: {cause}"))?;
     Ok(socket)
 }
@@ -380,9 +385,10 @@ async fn pump(
                         None => {}
                     }
                 }
-                Some(Ok(Message::Close(_))) | None => {
-                    return Pump::Dropped("the Sarvam realtime socket closed".into());
+                Some(Ok(Message::Close(frame))) => {
+                    return close_outcome(frame.as_ref().map(|frame| u16::from(frame.code)));
                 }
+                None => return Pump::Dropped("the Sarvam realtime socket closed".into()),
                 Some(Ok(_)) => {}
                 Some(Err(cause)) => {
                     return Pump::Dropped(format!("the Sarvam realtime socket failed: {cause}"));
@@ -394,6 +400,16 @@ async fn pump(
                 }
             }
         }
+    }
+}
+
+// Sarvam documents 1003 for subscription/quota failures and 4000 for
+// invalid configuration; retrying these indefinitely cannot recover them.
+fn close_outcome(code: Option<u16>) -> Pump {
+    match code {
+        Some(1003) => Pump::Fatal("Sarvam rejected the subscription or usage limit. Check the API key and account quota in Settings.".into()),
+        Some(4000) => Pump::Fatal("Sarvam rejected the transcription configuration. Check the model, language and account access.".into()),
+        _ => Pump::Dropped("the Sarvam realtime socket closed; reconnecting".into()),
     }
 }
 
@@ -769,4 +785,27 @@ mod tests {
         );
         assert_eq!(sent.last().unwrap()["event"], "end");
     }
+    #[test]
+    fn subscription_and_configuration_close_codes_do_not_retry_forever() {
+        assert!(matches!(close_outcome(Some(1003)), Pump::Fatal(_)));
+        assert!(matches!(close_outcome(Some(4000)), Pump::Fatal(_)));
+        assert!(matches!(close_outcome(Some(1011)), Pump::Dropped(_)));
+        assert!(matches!(close_outcome(Some(1008)), Pump::Dropped(_)));
+    }
+
+    #[tokio::test]
+    async fn finish_aborts_a_provider_task_that_exceeds_the_drain_budget() {
+        let (audio, _receiver) = mpsc::unbounded_channel();
+        let (events, mut received) = mpsc::unbounded_channel::<()>();
+        let task = tokio::spawn(async move {
+            let _hold = events;
+            std::future::pending::<()>().await;
+        });
+        let live = LiveTranscriber { streams: vec![StreamHandle {
+            stream_id: 0, audio: Some(audio), fed_ms: Arc::new(AtomicI64::new(0)), task,
+        }] };
+        live.finish(Duration::from_millis(10)).await;
+        assert_eq!(timeout(Duration::from_millis(100), received.recv()).await.unwrap(), None);
+    }
+
 }

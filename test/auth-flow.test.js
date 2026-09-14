@@ -23,7 +23,7 @@ async function freePort() {
     return port;
 }
 
-async function spawnBackend(root) {
+async function spawnBackend(root, { local = false } = {}) {
     const port = await freePort();
     const backend = spawn(BINARY, [], {
         cwd: root,
@@ -33,7 +33,8 @@ async function spawnBackend(root) {
             ALPHA_DATA_DIR: root,
             CORE_BACKEND_DATA_FILE: path.join(root, 'absent-settings.json'),
             CORE_BACKEND_PORT: String(port),
-            ALPHA_BACKEND_TOKEN: DEPLOYMENT_TOKEN,
+            ALPHA_BACKEND_TOKEN: local ? '' : DEPLOYMENT_TOKEN,
+            CORE_BACKEND_HOST: '127.0.0.1',
             // Unoptimized test builds make 600k PBKDF2 iterations crawl.
             ALPHA_PBKDF2_ITERATIONS: '1000',
             ALPHA_SUMMARY_PROVIDER: 'claude',
@@ -62,7 +63,7 @@ async function spawnBackend(root) {
             headers,
             body: body === undefined ? undefined : JSON.stringify(body),
         });
-        return { status: response.status, data: await response.json() };
+        return { status: response.status, data: await response.json(), cacheControl: response.headers.get('cache-control') };
     };
     return { backend, api };
 }
@@ -77,16 +78,20 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
         if (backend.exitCode === null) { backend.kill('SIGTERM'); await once(backend, 'exit'); }
     });
 
-    // The deployment token gates everything except health and credential minting.
+    // A deployment token gates the workspace and owner-only registration.
+    assert.equal((await api('/api/auth/config')).data.registrationAllowed, false);
+    assert.equal((await api('/api/auth/register', {name: 'Intruder', email: 'intruder@work.com', password: 'first password'})).status, 403);
+    assert.equal((await api('/api/plans')).status, 200);
     assert.equal((await api('/health')).status, 200);
     assert.equal((await api('/api/status')).status, 401);
     assert.equal((await api('/api/auth/session')).status, 401);
 
     const registered = await api('/api/auth/register', {
         name: 'Asha Verma', email: 'Asha@Work.com', password: 'correct horse battery',
-    });
+    }, 'POST', DEPLOYMENT_TOKEN);
     assert.equal(registered.status, 200);
     assert.equal(registered.data.success, true);
+    assert.equal(registered.cacheControl, 'no-store');
     assert.equal(registered.data.account.email, 'asha@work.com');
     assert.equal(registered.data.account.name, 'Asha Verma');
     assert.ok(registered.data.token.length >= 32);
@@ -100,7 +105,7 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
 
     const duplicate = await api('/api/auth/register', {
         name: 'Asha Again', email: 'asha@work.com', password: 'another fine password',
-    });
+    }, 'POST', DEPLOYMENT_TOKEN);
     assert.equal(duplicate.status, 409);
 
     // Either wrong password or unknown email: the same 401, the same wording.
@@ -117,7 +122,7 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
     assert.ok(login.data.token && login.data.token !== token);
 
     // Malformed input is a validation error, never a crash.
-    assert.equal((await api('/api/auth/register', { name: '', email: 'nope', password: 'x' })).status, 400);
+    assert.equal((await api('/api/auth/register', { name: '', email: 'nope', password: 'x' }, 'POST', DEPLOYMENT_TOKEN)).status, 400);
     assert.equal((await api('/api/auth/login', { email: '', password: '' })).status, 400);
 
     // Logout revokes exactly the token it was given; the other session survives.
@@ -137,7 +142,7 @@ test('accounts and sessions survive a backend restart', { timeout: 60000 }, asyn
     const first = await spawnBackend(root);
     const registered = await first.api('/api/auth/register', {
         name: 'Asha Verma', email: 'asha@work.com', password: 'correct horse battery',
-    });
+    }, 'POST', DEPLOYMENT_TOKEN);
     assert.equal(registered.status, 200);
     first.backend.kill('SIGTERM');
     await once(first.backend, 'exit');
@@ -152,4 +157,37 @@ test('accounts and sessions survive a backend restart', { timeout: 60000 }, asyn
     assert.equal(session.data.account.email, 'asha@work.com');
     const login = await second.api('/api/auth/login', { email: 'asha@work.com', password: 'correct horse battery' });
     assert.equal(login.status, 200);
+});
+
+
+test('local use needs no account and paid checkout cannot pretend to succeed', { timeout: 60000 }, async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-local-mode-'));
+    const { backend, api } = await spawnBackend(root, { local: true });
+    t.after(async () => {
+        if (backend.exitCode === null) { backend.kill('SIGTERM'); await once(backend, 'exit'); }
+        await fs.rm(root, { recursive: true, force: true });
+    });
+    for (const route of ['/api/status', '/api/settings', '/api/meetings', '/api/folders']) assert.equal((await api(route)).status, 200, route);
+    const config = await api('/api/auth/config');
+    assert.equal(config.data.registrationAllowed, true);
+    const session = await api('/api/auth/session');
+    assert.equal(session.data.account, null);
+    const plans = await api('/api/plans');
+    assert.equal(plans.data.plans[0].requiresAccount, false);
+    assert.equal(plans.data.billingEnabled, false);
+    assert.equal((await api('/api/billing/checkout', { plan: 'pro' })).status, 503);
+    const license = await api('/api/license/status');
+    assert.equal(license.data.canRecord, true);
+    assert.equal(license.data.requiresAccount, false);
+    assert.equal(license.data.licenseActivationSupported, false);
+    assert.equal((await api('/api/auth/password', { currentPassword: 'wrong', password: 'new password' })).status, 401);
+    const grant = await api('/api/auth/register', { name: 'Local', email: 'local@work.com', password: 'first password' });
+    assert.equal(grant.status, 200);
+    const changed = await api('/api/auth/password', { currentPassword: 'first password', password: 'second password' }, 'POST', grant.data.token);
+    assert.equal(changed.status, 200);
+    assert.equal((await api('/api/auth/session', undefined, 'GET', grant.data.token)).data.account, null);
+    assert.equal((await api('/api/auth/session', undefined, 'GET', changed.data.token)).data.account.email, 'local@work.com');
+    assert.equal((await api('/api/auth/login', { email: 'local@work.com', password: 'first password' })).status, 401);
+    assert.equal((await api('/api/auth/login', { email: 'local@work.com', password: 'second password' })).status, 200);
+    assert.ok((await fs.stat(path.join(root, 'accounts.sqlite3'))).size > 0);
 });

@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePreferences } from '@/hooks/usePreferences';
 import { getBackendConnection, saveBackendConnection, testBackendConnection, isRemoteBackend } from '@/lib/connection';
 import { isRecordingSupported } from '@/lib/screenRecorder';
+import { listAudioInputs, systemAudioAvailability } from '@/lib/systemCapture';
 
 const TRANSCRIPTION_PROVIDERS = [
     { value: 'sarvam-realtime', label: 'Live transcription · recommended' },
@@ -119,7 +120,19 @@ export function SettingsModal({
     const [saveState, setSaveState] = useState(null);
     const [usageBytes, setUsageBytes] = useState(null);
     const [screenPermission, setScreenPermission] = useState(null);
+    const [audioInputs, setAudioInputs] = useState([]);
+    const [systemAudioSource, setSystemAudioSource] = useState(null);
     const recordingSupported = isRecordingSupported();
+    const defaultSystemSourceLabel =
+        systemAudioSource?.source === 'native'
+            ? 'Automatic — system audio helper'
+            : systemAudioSource?.source === 'device'
+              ? `Automatic — ${systemAudioSource.device?.label || 'loopback device'}`
+              : 'Automatic — no source detected';
+    const systemAudioDescription =
+        systemAudioSource && !systemAudioSource.available
+            ? systemAudioSource.reason
+            : 'Everyone else on the call is captured here and transcribed as soon as the meeting starts, with or without a screen recording.';
     const widgetSupported = Boolean(globalThis.alphaShell);
 
     // Adopt whatever the backend reported the last time the sheet was opened. The
@@ -144,6 +157,18 @@ export function SettingsModal({
             .screenPermission()
             .then(setScreenPermission)
             .catch(() => {});
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return undefined;
+        let cancelled = false;
+        listAudioInputs()
+            .then(devices => { if (!cancelled) setAudioInputs(devices); })
+            .catch(() => {});
+        systemAudioAvailability()
+            .then(state => { if (!cancelled) setSystemAudioSource(state); })
+            .catch(() => {});
+        return () => { cancelled = true; };
     }, [isOpen]);
 
     const handleActivateLicense = async event => {
@@ -322,6 +347,11 @@ export function SettingsModal({
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="default">System default microphone</SelectItem>
+                                            {audioInputs.map(device => (
+                                                <SelectItem key={device.deviceId} value={device.deviceId}>
+                                                    {device.label}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </SettingRow>
@@ -329,7 +359,7 @@ export function SettingsModal({
                                 <SettingRow
                                     id="system-device"
                                     label="Meeting audio"
-                                    description="Other participants are captured with the screen, so they are only transcribed while a recording is running."
+                                    description={systemAudioDescription}
                                     stacked
                                 >
                                     <Select
@@ -340,7 +370,12 @@ export function SettingsModal({
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="default">Native helper (system audio)</SelectItem>
+                                            <SelectItem value="default">{defaultSystemSourceLabel}</SelectItem>
+                                            {audioInputs.map(device => (
+                                                <SelectItem key={device.deviceId} value={device.deviceId}>
+                                                    {device.label}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </SettingRow>
@@ -852,7 +887,7 @@ export function SettingsModal({
                                 </p>
                             )}
 
-                            <form onSubmit={handleActivateLicense} className="space-y-2">
+                            {license?.licenseActivationSupported !== false ? <form onSubmit={handleActivateLicense} className="space-y-2">
                                 <Label htmlFor="license-key" className="text-body font-medium">
                                     License key
                                 </Label>
@@ -886,7 +921,7 @@ export function SettingsModal({
                                         {activation.message}
                                     </p>
                                 )}
-                            </form>
+                            </form> : <p className="text-callout text-muted-foreground">Local features are free and require no account or license key. Paid plans are not available yet. Your AI provider may charge for usage separately.</p>}
                         </TabsContent>
                     </div>
                 </Tabs>

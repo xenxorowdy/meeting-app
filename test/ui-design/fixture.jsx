@@ -75,12 +75,20 @@ window.fetch = async (url, options = {}) => {
         ] }));
     }
     if (path === `/api/chat/sources/${base.id}`) return new Response(JSON.stringify({ meeting: base }));
+    if (path === '/api/auth/config') return new Response(JSON.stringify({ registrationAllowed: true }));
+    if (path === '/api/plans') return new Response(JSON.stringify({ billingEnabled: false, plans: [
+        { id: 'free', name: 'Local', status: 'available', price: { amountMinor: 0 }, description: 'Your meetings, on your device. No account required.', features: ['Record meetings on your device', 'Keep and export your meeting library', 'Use your own transcription and AI providers'], note: 'Provider API usage may be billed separately by your chosen provider.' },
+        { id: 'pro', name: 'Pro', status: 'coming_soon', price: null, description: 'Optional paid services are in development.', features: ['Planned: managed AI usage', 'Planned: account billing and subscription management'], note: 'Not available for purchase. No paid features or cloud sync are enabled.' },
+    ] }));
+    if (path === '/api/auth/password') return new Response(JSON.stringify({ token: 'fixture-rotated-session', account: { id: 'fixture-account', name: 'Asha Verma', email: 'asha@work.com' } }));
     if (path === '/api/chat/index/status') return new Response(JSON.stringify({ mode: 'hybrid', pendingChunks: 0 }));
     return new Response('{}');
 };
 
-function Fixture() {
+function Fixture({ theme }) {
     const [view, setView] = useState('home');
+    const [account, setAccount] = useState(null);
+    window.fixtureSetAccount = setAccount;
     const [entered, setEntered] = useState(false);
     const [meeting, setMeeting] = useState(base);
     const [recording, setRecording] = useState(false);
@@ -119,7 +127,7 @@ function Fixture() {
             stream.getTracks().forEach(track => track.stop());
         };
     }, []);
-    if (!entered) return <SignInView onContinue={() => setEntered(true)} />;
+    if (!entered) return <SignInView theme={theme} onToggleTheme={window.fixtureSetTheme} onContinue={() => setEntered(true)} />;
     return (
         <DesignWorkspace
             activeTab={view}
@@ -195,8 +203,10 @@ function Fixture() {
             onExport={noop}
             onRetry={noop}
             onDismiss={noop}
+            account={account}
+            onAccountChange={setAccount}
             onSignOut={() => setEntered(false)}
-            license={{ tier: 'pro' }}
+            license={{ tier: 'free' }}
         />
     );
 }
@@ -208,7 +218,7 @@ function paint(theme) {
     root.render(
         <TooltipProvider delayDuration={400} skipDelayDuration={200}>
             <div className="ks-app" data-theme={theme}>
-                <Fixture />
+                <Fixture theme={theme} />
             </div>
         </TooltipProvider>
     );

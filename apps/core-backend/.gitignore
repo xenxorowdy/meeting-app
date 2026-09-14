@@ -2,3 +2,4 @@
 .alpha-meeting-assistant/credentials.json
 .alpha-meeting-assistant/settings.json
 .alpha-meeting-assistant/accounts.json
+.alpha-meeting-assistant/accounts.sqlite3*

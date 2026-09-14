@@ -32,6 +32,10 @@ class FakeTray {
         this.tooltip = tooltip;
     }
 
+    setImage(image) {
+        this.image = image;
+    }
+
     setContextMenu(menu) {
         this.menu = menu;
     }
@@ -178,6 +182,25 @@ test('the menu leads with three disabled information rows and gives every action
     }
     assert.equal(template.at(-1).role, 'quit');
     assert.ok(labels(template).includes('Alpha 1.0.0'));
+});
+
+test('the menu shows a recording status row and icon while a recording is active', () => {
+    const template = menuTemplate(
+        {
+            event: null,
+            starts: '',
+            range: '',
+            link: null,
+            version: '1.0.0',
+            backendOnline: true,
+            recording: true,
+        },
+        actions
+    );
+
+    assert.equal(template[0].label, 'Recording in progress');
+    assert.equal(template[0].enabled, false);
+    assert.ok(template[0].icon);
 });
 
 test('with no meeting the menu collapses to one row and drops join and record', () => {

@@ -13,6 +13,7 @@ const PENDING_TTL_MS = 120_000;
 const TITLE_MAX_CHARS = 24;
 const COMMAND_CHANNEL = 'menubar:command';
 const PENDING_CHANNEL = 'menubar:pending-command';
+const RECORDING_CHANNEL = 'menubar:set-recording';
 const COMMANDS = new Set(['record', 'new-note', 'new-meeting', 'settings']);
 
 const HELPERS_PATH = path.resolve(__dirname, '..', 'ui', 'src', 'lib', 'calendarEvents.js');
@@ -34,6 +35,7 @@ let helpersPromise = null;
 let activateMain = null;
 let mainWindowFor = () => null;
 let appVersion = '';
+let recording = false;
 let fetchJson = requestJson;
 
 const alive = () => Boolean(trayIcon) && !trayIcon.isDestroyed();
@@ -71,6 +73,13 @@ function trayImage() {
     return image;
 }
 
+function recordingTrayImage() {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="#ff3b30"/><circle cx="8" cy="8" r="2.2" fill="#fff"/></svg>';
+    const image = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+    image.setTemplateImage(false);
+    return image;
+}
+
 function truncateTitle(value, max = TITLE_MAX_CHARS) {
     const text = String(value ?? '')
         .replace(/\s+/g, ' ')
@@ -96,7 +105,10 @@ function nextTickDelay(msUntilStart) {
     return Math.min(Math.max((msUntilStart % 60_000) + 250, 1_000), 60_000);
 }
 
-function menuTemplate({ event, starts, range, link, version, backendOnline: online }, actions) {
+function menuTemplate({ event, starts, range, link, version, backendOnline: online, recording }, actions) {
+    const recordingStatus = recording
+        ? [{ label: 'Recording in progress', enabled: false, icon: recordingTrayImage() }]
+        : [];
     const info = event
         ? [
               { label: starts, enabled: false },
@@ -114,6 +126,7 @@ function menuTemplate({ event, starts, range, link, version, backendOnline: onli
         : [];
 
     return [
+        ...recordingStatus,
         ...info,
         ...meeting,
         { type: 'separator' },
@@ -171,7 +184,7 @@ function runReminders(lib, nowMs) {
 }
 
 function applyMenu(view) {
-    const signature = JSON.stringify([view.starts, view.range, view.event?.title ?? null, Boolean(view.link), view.backendOnline]);
+    const signature = JSON.stringify([view.starts, view.range, view.event?.title ?? null, Boolean(view.link), view.backendOnline, view.recording]);
     if (signature === menuSignature) return;
     if (menuOpen) {
         rebuildQueued = true;
@@ -223,10 +236,11 @@ async function render(nowMs = Date.now()) {
             backendOnline,
         };
         if (process.platform === 'darwin') {
-            trayIcon.setTitle(trayTitle(event, lib.countdownLabel(untilStart)), { fontType: 'monospacedDigit' });
+            trayIcon.setTitle(recording ? 'Recording' : trayTitle(event, lib.countdownLabel(untilStart)), { fontType: 'monospacedDigit' });
         } else {
-            trayIcon.setToolTip(trayTitle(event, lib.countdownLabel(untilStart)) || 'Alpha');
+            trayIcon.setToolTip(recording ? 'Recording' : trayTitle(event, lib.countdownLabel(untilStart)) || 'Alpha');
         }
+        view.recording = recording;
         applyMenu(view);
     }
 
@@ -287,11 +301,23 @@ function create({ onActivateMain, getMainWindow, version, fetch } = {}) {
     return trayIcon;
 }
 
+function setRecording(next) {
+    recording = Boolean(next);
+    if (alive()) trayIcon.setImage(recording ? recordingTrayImage() : trayImage());
+    void render();
+    return recording;
+}
+
 function registerHandlers() {
     ipcMain.handle(PENDING_CHANNEL, event => {
         const target = mainWindowFor();
         if (!target || target.isDestroyed() || event.sender !== target.webContents) return null;
         return takePendingCommand();
+    });
+    ipcMain.handle(RECORDING_CHANNEL, (event, active) => {
+        const target = mainWindowFor();
+        if (!target || target.isDestroyed() || event.sender !== target.webContents) return false;
+        return setRecording(active);
     });
 }
 
@@ -302,6 +328,7 @@ function destroy() {
     pollTimer = null;
     notified.clear();
     pendingCommand = null;
+    recording = false;
     menuSignature = '';
     helpersPromise = null;
     if (!alive()) return;
@@ -311,6 +338,7 @@ function destroy() {
 
 module.exports = {
     create,
+    setRecording,
     registerHandlers,
     destroy,
     isActive: alive,
@@ -319,6 +347,7 @@ module.exports = {
         PENDING_TTL_MS,
         COMMAND_CHANNEL,
         PENDING_CHANNEL,
+        RECORDING_CHANNEL,
         truncateTitle,
         trayTitle,
         nextTickDelay,
@@ -330,6 +359,7 @@ module.exports = {
             events,
             remindersEnabled,
             backendOnline,
+            recording,
             notified,
             pendingCommand,
             ticking: tickTimer !== null,
@@ -345,6 +375,7 @@ module.exports = {
             menuSignature = '';
             rebuildQueued = false;
             pendingCommand = null;
+            recording = false;
             notified = new Map();
         },
     },

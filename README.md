@@ -22,7 +22,7 @@ packages/meeting-app/
 - **AI Summary Editor**: Executive summary, key decisions list, interactive action items table, and copy-ready follow-up email drafts.
 - **History Explorer**: Searchable local meeting database with instant full-text search.
 - **Podcast Studio**: Meeting-first, source-grounded two-host scripting, multitrack capture/editing, local speech cleanup, WAV/MP3/MP4 rendering, RSS and owned-YouTube caption import, and private YouTube podcast publishing.
-- **Settings & Licensing**: Audio device selectors, AI model preferences (Claude / OpenAI / Local), and Pro license key activation.
+- **Settings & Accounts**: Audio and AI provider preferences, optional database-backed sign-in, password changes, and a Free/Pro plan catalog. Local use requires no account; paid checkout is not enabled. See [account and pricing setup](docs/PRODUCT-SETUP.md).
 
 ### 2. Core Backend Engine (`apps/core-backend`)
 
@@ -39,7 +39,7 @@ providers are migrated behind the same API.
 - **Diarization Engine**: Guaranteed physical `"You"` attribution on mic + live voiceprint clustering on meeting audio + provider diarization and meeting-client names when available. See [Who said what](#who-said-what).
 - **Storage Layer**: one visible folder per meeting on disk (see [The meeting library](#the-meeting-library)), written atomically, with multi-format export (Markdown, JSON); SQLite/FTS5 remains behind the compatibility implementation during migration.
 - **AI Summarizer**: Structured meeting intelligence through the Claude Code CLI (no API key required), with a keyword heuristic as the offline fallback. See [Meeting summaries](#meeting-summaries).
-- **Billing & Licensing**: License key verification and Free vs Pro tier quota enforcement.
+- **Accounts & Pricing**: SQLite accounts and sessions with automatic legacy JSON migration. The local plan is free; Pro pricing is configurable for preview, with payment collection and subscription enforcement still pending.
 - **API Server**: Standalone WebSocket and HTTP/IPC bridge for frontend communication.
 
 ---

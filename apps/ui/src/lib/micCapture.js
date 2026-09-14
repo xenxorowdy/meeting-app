@@ -23,7 +23,7 @@ export async function applyMicrophoneProcessing(stream, options) {
  * Capture the microphone as 16 kHz signed 16-bit mono and hand each block to
  * onPcm. Everything from this stream is attributed to the local user.
  */
-export async function startMicCapture({ onPcm, deviceId, muted = false, noiseSuppression = true, echoCancellation = true } = {}) {
+export async function startMicCapture({ onPcm, onError, deviceId, muted = false, noiseSuppression = true, echoCancellation = true } = {}) {
     const constraints = {
         audio: {
             channelCount: 1,
@@ -42,6 +42,9 @@ export async function startMicCapture({ onPcm, deviceId, muted = false, noiseSup
         stream.getTracks().forEach(track => track.stop());
         throw cause;
     }
+    const tracks = stream.getAudioTracks();
+    const ended = () => onError?.('The microphone disconnected. Choose an available microphone in Settings.');
+    tracks.forEach(track => track.addEventListener('ended', ended));
     let pendingProcessing = Promise.resolve();
     let applied = microphoneProcessing({ noiseSuppression, echoCancellation });
 
@@ -66,6 +69,7 @@ export async function startMicCapture({ onPcm, deviceId, muted = false, noiseSup
             });
         },
         async stop() {
+            tracks.forEach(track => track.removeEventListener('ended', ended));
             await capture.stop();
             stream.getTracks().forEach(track => track.stop());
         },

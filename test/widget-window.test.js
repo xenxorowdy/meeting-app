@@ -11,7 +11,8 @@ class FakeWindow {
     constructor(options) {
         this.options = options;
         this.bounds = { x: options.x, y: options.y, width: options.width, height: options.height };
-        this.webContents = { id: windows.length + 1 };
+        this.sent = [];
+        this.webContents = { id: windows.length + 1, send: (channel, payload) => this.sent.push({ channel, payload }) };
         this.destroyed = false;
         this.visible = false;
         this.focusStolen = false;
@@ -106,19 +107,25 @@ widget.registerHandlers();
 
 const { COLLAPSED, EXPANDED, SCREEN_MARGIN, cornerBounds } = widget._testing;
 
-function open(onActivateMain = () => {}) {
+function spawn(onActivateMain = () => {}, onCommand = () => {}) {
     widget.destroy();
     widget.setLive(false);
-    const created = widget.create({ devUrl: null, distFile: '/dist/widget.html', preload: '/pre.js', onActivateMain });
+    return widget.create({ devUrl: null, distFile: '/dist/widget.html', preload: '/pre.js', onActivateMain, onCommand });
+}
+
+function open(onActivateMain = () => {}, onCommand = () => {}) {
+    const created = spawn(onActivateMain, onCommand);
     created.emit('ready-to-show');
     return created;
 }
 
-function openLive(onActivateMain = () => {}) {
-    const created = open(onActivateMain);
+function openLive(onActivateMain = () => {}, onCommand = () => {}) {
+    const created = open(onActivateMain, onCommand);
     widget.setLive(true);
     return created;
 }
+
+const STATE = { sessionState: 'recording', micMuted: false, systemAudioMuted: true, title: 'Weekly sync', canControl: true };
 
 const invoke = (channel, sender, arg) => handlers.get(channel)({ sender }, arg);
 
@@ -202,6 +209,63 @@ test('opening the main window from the widget goes through the shell callback', 
 
     invoke('widget:open-main', created.webContents);
     assert.equal(activated, 1);
+});
+
+test('the main window pushes its state through to the widget page', () => {
+    const created = openLive();
+
+    assert.equal(invoke('widget:set-state', created.webContents, STATE), true);
+    assert.deepEqual(created.sent.at(-1), { channel: 'widget:state', payload: STATE });
+});
+
+test('state is accepted from the main window, which is not the widget sender', () => {
+    const created = openLive();
+    const mainWindow = { id: 'main-window' };
+
+    invoke('widget:set-state', mainWindow, { ...STATE, sessionState: 'paused' });
+
+    assert.equal(created.sent.at(-1).channel, 'widget:state');
+    assert.equal(created.sent.at(-1).payload.sessionState, 'paused', 'the window that owns the meeting drives this channel');
+});
+
+test('a widget that loads after the broadcast is caught up when its page is ready', () => {
+    open();
+    invoke('widget:set-state', { id: 'main-window' }, STATE);
+
+    const reopened = spawn();
+    assert.equal(reopened.sent.length, 0, 'nothing reaches a page that has not loaded yet');
+
+    reopened.emit('ready-to-show');
+    assert.deepEqual(reopened.sent.at(-1), { channel: 'widget:state', payload: STATE });
+});
+
+test('a control on the widget reaches the main window as an intent', () => {
+    const commanded = [];
+    const created = openLive(() => {}, action => commanded.push(action));
+
+    assert.equal(invoke('widget:command', created.webContents, 'toggle-mic'), true);
+    assert.equal(invoke('widget:command', created.webContents, 'toggle-system'), true);
+    assert.equal(invoke('widget:command', created.webContents, 'toggle-pause'), true);
+    assert.equal(invoke('widget:command', created.webContents, 'stop'), true);
+
+    assert.deepEqual(commanded, ['toggle-mic', 'toggle-system', 'toggle-pause', 'stop']);
+});
+
+test('a command from a sender that is not the widget never reaches the main window', () => {
+    const commanded = [];
+    openLive(() => {}, action => commanded.push(action));
+
+    assert.equal(invoke('widget:command', { id: 'some-other-page' }, 'stop'), false);
+    assert.deepEqual(commanded, []);
+});
+
+test('an unknown command is refused before anything acts on it', () => {
+    const commanded = [];
+    const created = openLive(() => {}, action => commanded.push(action));
+
+    assert.equal(invoke('widget:command', created.webContents, 'delete-recording'), false);
+    assert.equal(invoke('widget:command', created.webContents, undefined), false);
+    assert.deepEqual(commanded, []);
 });
 
 test('re-enabling the preference clears a dismissal from earlier in the session', () => {

@@ -18,7 +18,7 @@ const NewMeetingModal = lazy(() => import('@/components/NewMeetingModal').then(m
 const SettingsModal = lazy(() => import('@/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 import { isRecordingSupported } from '@/lib/screenRecorder';
 import { getBackendConnection } from '@/lib/connection.js';
-import { fetchSession, signOut as signOutSession } from '@/lib/auth.js';
+import { fetchSession, signOut as signOutSession, hasLocalMode, enterLocalMode, rememberLocalMode } from '@/lib/auth.js';
 import { DesignWorkspace } from '@/components/design/DesignWorkspace';
 import { SignInView } from '@/components/design/SignInView';
 import { LogoMark } from '@/components/brand/Logo';
@@ -28,12 +28,15 @@ import './design.css';
 // so the leading content has to start clear of them.
 const IS_DESKTOP_SHELL = typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent);
 
-const VIEWS = ['home', 'ask', 'live', 'notes', 'replay', 'podcast', 'history'];
+const VIEWS = ['home', 'ask', 'live', 'notes', 'replay', 'history'];
+const NOTES_READY_WIDGET_MS = 8000;
 
 export default function App() {
     // null while a stored session is still being restored; otherwise "is the
     // user in the workspace".
     const [entered, setEntered] = useState(null);
+    const [account, setAccount] = useState(null);
+    const [authNotice, setAuthNotice] = useState('');
     const [openSettingsOnEntry, setOpenSettingsOnEntry] = useState(false);
     const [theme, setTheme] = useTheme();
     const [preferences] = usePreferences();
@@ -44,20 +47,30 @@ export default function App() {
     useEffect(() => {
         let cancelled = false;
         if (!getBackendConnection().token) {
-            setEntered(false);
+            setEntered(hasLocalMode());
             return;
         }
         fetchSession().then(restored => {
-            if (!cancelled) setEntered(Boolean(restored));
+            if (!cancelled) { setAccount(restored); setEntered(Boolean(restored) || hasLocalMode()); }
         });
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const handleSignOut = useCallback(() => {
-        setEntered(false);
-        // Revoking the token server-side is best effort; dropping the local
-        // copy is what the UI actually depends on.
-        signOutSession();
+    const handleSignOut = useCallback(async () => {
+        try {
+            if (getBackendConnection().token) {
+                const result = await signOutSession();
+                setAuthNotice(result.revoked ? '' : 'Signed out on this device. The server could not confirm session revocation.');
+            } else {
+                rememberLocalMode(false);
+            }
+            setAccount(null);
+            setEntered(false);
+        } catch {
+            setAuthNotice('Could not clear the saved session. Please try signing out again.');
+        }
     }, []);
 
     if (entered === null) {
@@ -73,18 +86,36 @@ export default function App() {
     return (
         <div className="ks-app" data-theme={theme}>
             {entered ? (
-                <ConnectedApp theme={theme} setTheme={setTheme} preferences={preferences} openSettingsOnEntry={openSettingsOnEntry} onSignOut={handleSignOut} />
+                <ConnectedApp
+                    theme={theme}
+                    setTheme={setTheme}
+                    preferences={preferences}
+                    openSettingsOnEntry={openSettingsOnEntry}
+                    onSignOut={handleSignOut}
+                    account={account}
+                    onAccountChange={setAccount}
+                    authNotice={authNotice}
+                />
             ) : (
                 <SignInView
-                    onContinue={destination => { setOpenSettingsOnEntry(destination === 'settings'); setEntered(true); }}
-                    onAuthenticated={() => setEntered(true)}
+                    theme={theme}
+                    onToggleTheme={setTheme}
+                    notice={authNotice}
+                    onContinue={async destination => {
+                        if (destination !== 'settings') await enterLocalMode();
+                        setAccount(null);
+                        setAuthNotice('');
+                        setOpenSettingsOnEntry(destination === 'settings');
+                        setEntered(true);
+                    }}
+                    onAuthenticated={value => { setAccount(value); setAuthNotice(''); setOpenSettingsOnEntry(false); setEntered(true); }}
                 />
             )}
         </div>
     );
 }
 
-function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnEntry }) {
+function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnEntry, account, onAccountChange, authNotice }) {
     const [activeTab, setActiveTab] = useState('home');
     const [citationFocus, setCitationFocus] = useState(null);
     const [isExportOpen, setIsExportOpen] = useState(false);
@@ -111,6 +142,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         recordingState,
         error,
         micError,
+        systemAudioError,
         settings,
         license,
         engine,
@@ -148,6 +180,8 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
 
     const calendarEventsRef = useRef(calendar.events);
     calendarEventsRef.current = calendar.events;
+
+    const wasLiveRef = useRef(false);
 
     const invitedNames = useMemo(() => attendeeNames(activeMeeting?.metadata?.calendarEvent), [activeMeeting?.metadata?.calendarEvent]);
 
@@ -202,8 +236,24 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     }, [settings.floatingWidget]);
 
     useEffect(() => {
-        globalThis.alphaShell?.setWidgetLive(isRecording || isPaused || isProcessing);
-    }, [isRecording, isPaused, isProcessing]);
+        if (isRecording || isPaused || isProcessing) {
+            wasLiveRef.current = true;
+            globalThis.alphaShell?.setWidgetLive(true);
+            return undefined;
+        }
+
+        const justFinished = sessionState === SESSION_STATES.COMPLETED && wasLiveRef.current;
+        wasLiveRef.current = false;
+        globalThis.alphaShell?.setWidgetLive(justFinished);
+        if (!justFinished) return undefined;
+
+        const timer = setTimeout(() => globalThis.alphaShell?.setWidgetLive(false), NOTES_READY_WIDGET_MS);
+        return () => clearTimeout(timer);
+    }, [isRecording, isPaused, isProcessing, sessionState]);
+
+    useEffect(() => {
+        globalThis.alphaShell?.setRecordingIndicator(isRecording);
+    }, [isRecording]);
 
     useMeetingReminder({
         events: calendar.events,
@@ -295,15 +345,25 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleStartRecording, handleStopRecording, isConnected, isPaused, isProcessing, isRecording]);
 
+    const meetingAudioError = recordingState?.hasSystemAudio ? null : systemAudioError;
+
     const banner = !isConnected
-        ? { tone: 'destructive', text: connection === 'connecting' ? 'Connecting to your workspace…' : 'Your workspace is offline. Check your connection and service access in Settings.' }
+        ? {
+              tone: 'destructive',
+              text:
+                  connection === 'connecting'
+                      ? 'Connecting to your workspace…'
+                      : 'Your workspace is offline. Check your connection and service access in Settings.',
+          }
         : micError
           ? { tone: 'warning', text: `Microphone unavailable: ${micError}` }
-          : error
-            ? { tone: 'warning', text: error }
-            : recordingState?.error
-              ? { tone: 'warning', text: `Screen recording: ${recordingState.error}` }
-              : null;
+          : meetingAudioError
+            ? { tone: 'warning', text: `Meeting audio: ${meetingAudioError}` }
+            : error
+              ? { tone: 'warning', text: error }
+              : recordingState?.error
+                ? { tone: 'warning', text: `Screen recording: ${recordingState.error}` }
+                : null;
 
     return (
         <div className="ks-app" data-theme={theme}>
@@ -328,6 +388,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                     micMuted,
                     systemAudioMuted,
                     systemAudioSeen,
+                    systemAudioError: meetingAudioError,
                     recordingState,
                     nameSuggestions: invitedNames,
                     onStart: handleStartRecording,
@@ -354,6 +415,9 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                 citationFocus={citationFocus}
                 license={license}
                 onSignOut={onSignOut}
+                account={account}
+                onAccountChange={onAccountChange}
+                authNotice={authNotice}
                 isDesktop={IS_DESKTOP_SHELL}
                 theme={theme}
                 onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

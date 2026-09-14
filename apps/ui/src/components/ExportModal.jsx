@@ -170,6 +170,8 @@ export function ExportModal({ isOpen, onClose, meeting }) {
           <title>${meeting.title}</title>
           <style>
             body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; line-height: 1.4; color: #1D1D1F; padding: 40px; max-width: 680px; margin: auto; font-size: 15px; }
+            .brand-header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; color: #1D1D1F; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+            .brand-mark { width: 28px; height: 28px; flex: none; }
             h1 { font-size: 28px; line-height: 1.2; letter-spacing: -0.02em; font-weight: 600; margin: 0 0 8px; }
             h2 { font-size: 17px; line-height: 1.2; font-weight: 600; margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #E5E5EA; }
             .meta { color: #6E6E73; font-size: 13px; margin-bottom: 32px; }
@@ -182,6 +184,16 @@ export function ExportModal({ isOpen, onClose, meeting }) {
           </style>
         </head>
         <body>
+          <div class="brand-header">
+            <svg class="brand-mark" viewBox="0 0 32 32" role="img" aria-label="KESAMI logo" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" rx="9" fill="#EC3013"/>
+              <rect x="6.4" y="11" width="3.6" height="10" rx="1.8" fill="#fff"/>
+              <rect x="11.6" y="7" width="3.6" height="18" rx="1.8" fill="#fff"/>
+              <rect x="16.8" y="9.5" width="3.6" height="13" rx="1.8" fill="#fff"/>
+              <rect x="22" y="6" width="3.6" height="20" rx="1.8" fill="#fff"/>
+            </svg>
+            <span>KESAMI</span>
+          </div>
           <h1>${meeting.title}</h1>
           <div class="meta">
             <strong>Date:</strong> ${formattedDate} |

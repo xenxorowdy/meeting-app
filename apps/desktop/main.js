@@ -1,8 +1,10 @@
-const { app, BrowserWindow, Menu, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeImage, nativeTheme } = require('electron');
 const recorder = require('./recorder');
 const podcast = require('./podcast');
 const widget = require('./widget');
 const menubar = require('./menubar');
+const systemAudio = require('./systemAudio');
+const { showDockIcon } = require('./dock');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -219,13 +221,17 @@ function createWidget() {
         distFile: UI_DIST_WIDGET,
         preload: path.join(__dirname, 'widgetPreload.js'),
         onActivateMain: showMainWindow,
+        onCommand: action => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            mainWindow.webContents.send('shell:widget-command', action);
+        },
     });
 }
 
 // Must run before `app.ready`: a scheme cannot be made privileged afterwards, and
 // without that the player cannot stream or seek a recording.
 recorder.registerMediaScheme();
-podcast.registerScheme();
+// Podcast schemes and IPC are disabled; existing projects remain on disk.
 
 if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -233,13 +239,13 @@ if (!app.requestSingleInstanceLock()) {
     app.on('second-instance', showMainWindow);
 
     app.whenReady().then(async () => {
+        showDockIcon({ app, nativeImage }).catch(cause => console.error(`[Alpha] could not apply the Dock icon: ${cause.message}`));
         buildMenu();
         recorder.serveMediaScheme();
         recorder.registerHandlers();
-        podcast.serveScheme();
-        podcast.registerHandlers();
         widget.registerHandlers();
         menubar.registerHandlers();
+        systemAudio.registerHandlers();
 
         menubar.create({
             onActivateMain: showMainWindow,
@@ -275,8 +281,8 @@ if (!app.requestSingleInstanceLock()) {
         // mid-meeting still leaves something playable on disk.
         widget.destroy();
         menubar.destroy();
+        systemAudio.shutdown();
         await recorder.shutdown();
-        await podcast.shutdown();
         stopBackend();
     });
     process.on('exit', stopBackend);

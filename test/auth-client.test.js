@@ -126,3 +126,50 @@ test('a failed or empty session check reads as signed out', async () => {
         restore();
     }
 });
+
+test('local entry switches a remote connection to loopback and persists the choice', async () => {
+    const { enterLocalMode, hasLocalMode, rememberLocalMode } = await import(MODULE_URL);
+    const previous = { connection: globalThis.alphaConnection, storage: globalThis.localStorage };
+    const data = new Map();
+    let connection = { url: 'https://workspace.example.com', token: 'remote-session' };
+    globalThis.alphaConnection = { get: () => connection, save: async value => { connection = value; } };
+    globalThis.localStorage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+    try {
+        assert.equal(hasLocalMode(), false);
+        await enterLocalMode();
+        assert.deepEqual(connection, { url: 'http://127.0.0.1:48900', token: '' });
+        assert.equal(hasLocalMode(), true);
+        connection = { url: 'https://workspace.example.com', token: '' };
+        assert.equal(hasLocalMode(), false, 'local preference never bypasses remote sign-in');
+        connection = { url: 'http://localhost:49900', token: '' };
+        await enterLocalMode();
+        assert.equal(connection.url, 'http://localhost:49900', 'a configured local port is preserved');
+        rememberLocalMode(false);
+        assert.equal(data.size, 0);
+    } finally {
+        globalThis.alphaConnection = previous.connection;
+        globalThis.localStorage = previous.storage;
+    }
+});
+
+test('sign-out reports unconfirmed revocation and never hides storage failures', async () => {
+    const { signOut } = await import(MODULE_URL);
+    const restore = withStubs([], [], { responses: [{ ok: false, status: 503, text: async () => '{"error":"unavailable"}' }] });
+    try { assert.equal((await signOut()).revoked, false); }
+    finally { restore(); }
+    const restoreAgain = withStubs([], []);
+    globalThis.alphaConnection.save = async () => { throw new Error('Storage locked'); };
+    try { await assert.rejects(signOut(), /Storage locked/); }
+    finally { restoreAgain(); }
+});
+
+test('password changes rotate the locally saved session', async () => {
+    const { changePassword } = await import(MODULE_URL);
+    const fetches = [], saved = [];
+    const restore = withStubs(fetches, saved, { storedToken: 'old', responses: [{ ok: true, status: 200, text: async () => JSON.stringify({ token: 'rotated', account: { id: 'a1' } }) }] });
+    try {
+        assert.deepEqual(await changePassword({ currentPassword: 'first password', password: 'new password' }), { id: 'a1' });
+        assert.equal(fetches[0].url, 'http://127.0.0.1:48900/api/auth/password');
+        assert.equal(saved[0].token, 'rotated');
+    } finally { restore(); }
+});

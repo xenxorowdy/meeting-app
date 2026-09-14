@@ -35,34 +35,42 @@ contextBridge.exposeInMainWorld('alphaRecorder', {
     mediaUrl: relativePath => `alpha-media://recordings/${String(relativePath).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`,
 });
 
-// Podcast projects can contain large media files and private publishing tokens.
-// The renderer gets task-shaped IPC methods, never filesystem or OAuth access.
-contextBridge.exposeInMainWorld('alphaPodcast', {
-    list: () => ipcRenderer.invoke('podcast:list'),
-    create: options => ipcRenderer.invoke('podcast:create', options),
-    get: id => ipcRenderer.invoke('podcast:get', id),
-    save: project => ipcRenderer.invoke('podcast:save', project),
-    remove: id => ipcRenderer.invoke('podcast:delete', id),
-    importFile: id => ipcRenderer.invoke('podcast:import-file', id),
-    addAsset: (id, assetId, options) => ipcRenderer.invoke('podcast:add-asset', id, assetId, options),
-    inspectRss: url => ipcRenderer.invoke('podcast:rss-inspect', url),
-    importRss: (id, feed, episode) => ipcRenderer.invoke('podcast:rss-import', id, feed, episode),
-    waveform: (id, assetId) => ipcRenderer.invoke('podcast:waveform', id, assetId),
-    cleanSpeech: (id, assetId) => ipcRenderer.invoke('podcast:clean-speech', id, assetId),
-    render: (id, format) => ipcRenderer.invoke('podcast:render', id, format),
-    cancelJob: id => ipcRenderer.invoke('podcast:cancel-job', id),
-    settings: () => ipcRenderer.invoke('podcast:settings'),
-    saveSettings: patch => ipcRenderer.invoke('podcast:settings-save', patch),
-    connectYouTube: () => ipcRenderer.invoke('podcast:youtube-connect'),
-    disconnectYouTube: () => ipcRenderer.invoke('podcast:youtube-disconnect'),
-    listYouTube: () => ipcRenderer.invoke('podcast:youtube-list'),
-    importYouTube: (id, video) => ipcRenderer.invoke('podcast:youtube-import', id, video),
-    publishYouTube: (id, exportId) => ipcRenderer.invoke('podcast:youtube-publish', id, exportId),
-    startCapture: (projectId, options) => ipcRenderer.invoke('podcast:capture-start', projectId, options),
-    writeCapture: (id, chunk) => ipcRenderer.invoke('podcast:capture-write', id, chunk),
-    stopCapture: id => ipcRenderer.invoke('podcast:capture-stop', id),
-    mediaUrl: (projectId, relativePath) =>
-        `alpha-podcast://${encodeURIComponent(projectId)}/${String(relativePath).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`,
+// Podcast is disabled; no project, publishing or capture bridge is exposed.
+
+const systemAudioListeners = { data: new Set(), status: new Set() };
+
+const fanOut = (listeners, value) => {
+    for (const listener of listeners) {
+        try {
+            listener(value);
+        } catch {
+            /* empty */
+        }
+    }
+};
+
+ipcRenderer.on('system-audio:data', (_event, chunk) => {
+    if (!chunk || !chunk.byteLength) return;
+    fanOut(systemAudioListeners.data, new Uint8Array(chunk));
+});
+
+ipcRenderer.on('system-audio:status', (_event, status) => {
+    if (!status || typeof status.state !== 'string') return;
+    fanOut(systemAudioListeners.status, Object.freeze({ state: status.state, message: status.message ?? null }));
+});
+
+const subscribe = (listeners, listener) => {
+    if (typeof listener !== 'function') return () => {};
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+};
+
+contextBridge.exposeInMainWorld('alphaSystemAudio', {
+    available: () => ipcRenderer.invoke('system-audio:available'),
+    start: () => ipcRenderer.invoke('system-audio:start'),
+    stop: () => ipcRenderer.invoke('system-audio:stop'),
+    onData: listener => subscribe(systemAudioListeners.data, listener),
+    onStatus: listener => subscribe(systemAudioListeners.status, listener),
 });
 
 const MENUBAR_COMMANDS = new Set(['record', 'new-note', 'new-meeting', 'settings']);
@@ -88,6 +96,17 @@ contextBridge.exposeInMainWorld('alphaShell', {
     setWidgetVisible: visible => ipcRenderer.invoke('widget:set-visible', Boolean(visible)),
 
     setWidgetLive: live => ipcRenderer.invoke('widget:set-live', Boolean(live)),
+
+    setWidgetState: state => ipcRenderer.invoke('widget:set-state', state),
+
+    onWidgetCommand: listener => {
+        if (typeof listener !== 'function') return () => {};
+        const forward = (_event, action) => listener(action);
+        ipcRenderer.on('shell:widget-command', forward);
+        return () => ipcRenderer.removeListener('shell:widget-command', forward);
+    },
+
+    setRecordingIndicator: active => ipcRenderer.invoke('menubar:set-recording', Boolean(active)),
 
     ownsMeetingReminders: true,
 

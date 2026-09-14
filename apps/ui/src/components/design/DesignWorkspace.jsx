@@ -1,10 +1,11 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Podcast, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
+import { PricingView } from './PricingView';
+import { AccountSecurity } from './AccountSecurity';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 
-const PodcastStudio = lazy(() => import('@/components/PodcastStudio').then(module => ({ default: module.PodcastStudio })));
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { calendarEventLink, countdownLabel, eventsForTodayAndTomorrow } from '@/lib/calendarEvents';
 import { MeetingDetail, Avatar } from './MeetingDetail';
@@ -139,6 +140,9 @@ export function DesignWorkspace({
     citationFocus,
     license,
     onSignOut,
+    account,
+    onAccountChange,
+    authNotice,
     isDesktop,
     theme = 'dark',
     onToggleTheme,
@@ -364,12 +368,10 @@ export function DesignWorkspace({
                                 <Library />
                                 All meetings
                             </button>
-                            <button onClick={() => setActiveTab('podcast')}>
-                                <Podcast />
-                                Podcast studio
-                            </button>
+                            <button onClick={() => { setActiveTab('profile'); setToolsOpen(false); }}>Account &amp; local access</button>
+                            <button onClick={() => { setActiveTab('pricing'); setToolsOpen(false); }}><Star />Plans &amp; pricing</button>
                             <button disabled={locked} onClick={onSignOut}>
-                                Back to welcome
+                                {account ? 'Sign out' : 'Sign in or create an account'}
                             </button>
                         </div>
                     )}
@@ -601,26 +603,21 @@ export function DesignWorkspace({
                         />
                     </div>
                 )}
-                {activeTab === 'podcast' && (
-                    <div className="ks-podcast">
-                        <Suspense fallback={<p className="ks-chat-note">Opening the podcast studio…</p>}>
-                            <PodcastStudio meetings={history.meetings} activeMeeting={meeting} />
-                        </Suspense>
-                    </div>
-                )}
                 {activeTab === 'profile' && (
                     <div className="ks-home-scroll">
                         <div className="ks-account">
-                            <h1>My profile</h1>
-                            <p>Manage your workspace and preferences.</p>
+                            <h1>{account ? 'Your account' : 'Your workspace'}</h1>
+                            <p>{account ? 'Your account belongs to the connected workspace. Meetings are shared with its members.' : 'No account is required for local use. Your meetings stay on this device when connected locally.'}</p>
+                            {authNotice && <p role="alert">{authNotice}</p>}
                             <section className="ks-account-card">
-                                <Avatar name={workspaceName} />
+                                <Avatar name={account?.name || workspaceName} />
                                 <div>
-                                    <h2>{workspaceName}</h2>
-                                    <p>{plan}</p>
+                                    <h2>{account?.name || workspaceName}</h2>
+                                    <p>{account?.email || 'Using without an account'}</p>
                                 </div>
                                 <span className="ks-tag">{isConnected ? 'CONNECTED' : 'OFFLINE'}</span>
                             </section>
+                            {account && <AccountSecurity onAccountChange={onAccountChange} disabled={locked} />}
                             <section className="ks-account-card ks-account-stack">
                                 <h2>Preferences</h2>
                                 <button onClick={onSettings}>
@@ -629,36 +626,16 @@ export function DesignWorkspace({
                                 <button onClick={onSettings}>
                                     Calendar connections <Plus />
                                 </button>
-                                <button onClick={() => setActiveTab('podcast')}>
-                                    Podcast studio <Podcast />
-                                </button>
                             </section>
                             <button className="ks-button" disabled={locked} onClick={onSignOut}>
-                                Back to welcome
+                                {account ? 'Sign out' : 'Sign in or create an account'}
                             </button>
                         </div>
                     </div>
                 )}
                 {activeTab === 'pricing' && (
                     <div className="ks-home-scroll">
-                        <div className="ks-account">
-                            <h1>Your workspace, upgraded.</h1>
-                            <p>Manage your license and meeting features.</p>
-                            <section className="ks-plan-card">
-                                <Star />
-                                <h2>{plan}</h2>
-                                <p>Your current license is managed on this device.</p>
-                                <ul>
-                                    <li>Meeting recording and transcripts</li>
-                                    <li>AI summaries and action items</li>
-                                    <li>Searchable meeting folders</li>
-                                    <li>Screen and audio replay</li>
-                                </ul>
-                                <button className="ks-button ks-primary" onClick={onSettings}>
-                                    Manage license
-                                </button>
-                            </section>
-                        </div>
+                        <PricingView onSettings={onSettings} onLocal={() => setActiveTab('home')} />
                     </div>
                 )}
             </main>

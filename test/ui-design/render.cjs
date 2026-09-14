@@ -106,14 +106,45 @@ async function run() {
     await window.loadFile(path.join(output, 'index.html'));
     await evaluate('document.fonts.ready');
     await capture('01-sign-in');
-    await click('Continue with Google');
-    assert(await evaluate("document.body.textContent.includes('Account sign-in is not connected')"));
-    await click('Create Account');
+    await click('Create account');
     assert(await evaluate("!!document.querySelector('input[autocomplete=name]')"));
-    await click('Sign In');
-    await click('Continue locally ↗');
+    await click('I already have an account');
+    await click('Use it locally, no account');
     await capture('02-home');
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 3);
+    window.setContentSize(794, 1000);
+    await evaluate("document.documentElement.dataset.textSize = 'large'");
+    await settle();
+    await click('Ask AI');
+    await evaluate("document.querySelector('[aria-label=\"New conversation\"]').click()");
+    await settle();
+    assert(
+        await evaluate(`(() => {
+            const empty = document.querySelector('.ks-chat-empty').getBoundingClientRect();
+            return [...document.querySelectorAll('.ks-chat-starters button')].every(button => {
+                const card = button.getBoundingClientRect();
+                const title = button.querySelector('strong').getBoundingClientRect();
+                const prompt = button.querySelector('small').getBoundingClientRect();
+                return card.left >= empty.left && card.right <= empty.right && prompt.top >= title.bottom;
+            });
+        })()`),
+        'chat starters keep their title and prompt on separate lines inside the empty state'
+    );
+    await evaluate(`(() => {
+        const textarea = document.querySelector('[aria-label="Meeting question"]');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'At 00:10, You said: “How are you?”');
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await settle();
+    assert(
+        (await evaluate("document.querySelector('[aria-label=\"Meeting question\"]').getBoundingClientRect().height")) <= 60,
+        'a one-line quoted draft keeps the composer compact'
+    );
+    await capture('02-chat-empty');
+    window.setContentSize(1280, 824);
+    await evaluate("delete document.documentElement.dataset.textSize");
+    await settle();
+    await click('Home');
     await click('Product1');
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 1);
     await evaluate('document.querySelector(\'[aria-label="New folder"]\').click()');
@@ -130,15 +161,15 @@ async function run() {
     assert(await evaluate("document.body.textContent.includes('Research')"));
     await click('Home');
     await click('New Meeting');
-    const midStream = await evaluate("document.querySelector('.ks-turn-interim p').textContent");
+    const midStream = await evaluate("document.querySelector('li[aria-live=\"polite\"] p').textContent");
     await evaluate('new Promise(resolve => setTimeout(resolve, 800))');
     await capture('03-transcript');
-    assert.equal(await evaluate("document.querySelectorAll('.ks-turn:not(.ks-turn-interim)').length"), 6);
-    const settledInterim = await evaluate("document.querySelector('.ks-turn-interim p').textContent");
+    assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-panel li[data-turn-id]').length"), 6);
+    const settledInterim = await evaluate("document.querySelector('li[aria-live=\"polite\"] p').textContent");
     assert.equal(settledInterim, 'One more thing before we');
     assert(midStream.length < settledInterim.length, `live speech arrives word by word, not all at once (saw "${midStream}")`);
-    assert(await evaluate("document.querySelectorAll('.ks-turn-interim .ks-word').length") >= 5, 'each revealed word is its own element');
-    assert.equal(await evaluate("document.querySelectorAll('.ks-turn:not(.ks-turn-interim) .ks-word').length"), 0, 'a stored transcript renders at once');
+    assert(await evaluate("document.querySelectorAll('li[aria-live=\"polite\"] .ks-word').length") >= 5, 'each revealed word is its own element');
+    assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-panel li[data-turn-id] .ks-word').length"), 0, 'a stored transcript renders at once');
     assert.deepEqual(
         await evaluate("[...document.querySelectorAll('.ks-meeting-tabs > button')].map(button => button.id)"),
         ['tab-transcript', 'tab-notes'],
@@ -176,6 +207,17 @@ async function run() {
     assert(await evaluate("document.querySelector('.ks-meeting-chat').textContent.includes('Transcript captured through 0:23')"));
     assert(await evaluate("document.querySelector('.ks-recording-hud') !== null"));
     await capture('03-live-answer');
+    await evaluate("window.fixtureSetTheme('light'); document.documentElement.dataset.textSize = 'large'");
+    await settle();
+    assert.equal(
+        await evaluate("getComputedStyle(document.querySelector('.ks-chat-assistant')).borderTopWidth"),
+        '0px',
+        'assistant answers use the clean unboxed treatment'
+    );
+    assert(await evaluate("document.querySelector('.ks-meeting-chat').scrollWidth <= document.querySelector('.ks-meeting-chat').clientWidth"));
+    await capture('03-live-answer-light-large');
+    await evaluate("window.fixtureSetTheme('dark'); delete document.documentElement.dataset.textSize");
+    await settle();
     await evaluate("document.querySelector('[aria-label=\"Close Ask AI\"]').click()");
     await settle();
     await click('Stop');
@@ -260,10 +302,10 @@ async function run() {
         await capture(`11-live-${theme}`);
         const live = await probe([
             '.ks-rec',
-            '.ks-turn p',
-            '.ks-turn time',
-            '.ks-speaker-name',
-            '.ks-avatar',
+            '.ks-meeting-panel li[data-turn-id] p',
+            '.ks-meeting-panel li[data-turn-id] .tnum',
+            '.ks-meeting-panel li[data-turn-id] button[title="Rename speaker"]',
+            '.ks-meeting-panel li[data-turn-id] > div:first-child',
             '.ks-meeting-tabs > button[aria-selected="true"]',
             '.ks-sidebar-nav button',
         ]);
@@ -286,19 +328,56 @@ async function run() {
     await evaluate("window.fixtureSetTheme('dark')");
     await settle();
 
+    for (const theme of ['dark', 'light']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await evaluate("document.querySelector('[aria-label=\"Workspace tools\"]').click()");
+        await settle();
+        await click('Plans & pricing');
+        await evaluate("new Promise(resolve => setTimeout(resolve, 100))");
+        assert.equal(await evaluate("document.querySelectorAll('.ks-plan-card').length"), 2);
+        assert(await evaluate("[...document.querySelectorAll('.ks-plan-card button')].find(b => b.textContent.includes('Not available')).disabled"));
+        assert(await evaluate("document.body.textContent.includes('Price to be announced')"));
+        await capture(`13-pricing-${theme}`);
+        window.setContentSize(794, 1000);
+        await settle();
+        assert(await evaluate('document.documentElement.scrollWidth <= innerWidth'));
+        await capture(`14-pricing-narrow-${theme}`);
+        window.setContentSize(1280, 824);
+        await click('Open workspace');
+    }
+    await evaluate("window.fixtureSetAccount({ id: 'fixture-account', name: 'Asha Verma', email: 'asha@work.com' })");
+    await settle();
+    await evaluate("document.querySelector('.ks-profile').click()");
+    await settle();
+    assert(await evaluate("document.body.textContent.includes('asha@work.com')"));
+    await evaluate(`(() => {
+        const values = ['first password', 'second password', 'second password'];
+        [...document.querySelectorAll('.ks-account-password input')].forEach((input, i) => {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, values[i]);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    })()`);
+    await settle();
+    await click('Update password');
+    await evaluate("new Promise(resolve => setTimeout(resolve, 100))");
+    assert(await evaluate("document.body.textContent.includes('Password updated')"));
+    assert(await evaluate("[...document.querySelectorAll('.ks-account-password input')].every(input => input.value === '')"));
+    await capture('15-account-password');
+    await evaluate("sessionStorage.clear(); localStorage.clear()");
     assert.deepEqual(errors, []);
     // Smoke-test the actual production entry as well, with backend requests blocked.
     await window.loadFile(path.resolve(__dirname, '../../apps/ui/dist/index.html'));
     await evaluate('document.fonts.ready');
     await capture('09-production-sign-in');
-    await click('Continue locally ↗');
+    await click('Use it locally, no account');
     await capture('10-production-home-offline');
     assert(await evaluate("!!document.querySelector('.ks-workspace')"));
     assert(await evaluate("document.querySelector('.ks-new-meeting button').disabled"));
+    await window.reload();
+    await evaluate("new Promise(resolve => setTimeout(resolve, 250))");
+    assert(await evaluate("!!document.querySelector('.ks-workspace')"), 'local access survives a reload without sign-in');
     // Code-split surfaces are fetched at runtime; over file:// that is exactly
     // where a dynamic import would fail, so prove one actually loads.
-    await evaluate('document.querySelector(\'[aria-label="Workspace tools"]\').click()');
-    await settle();
     await click('Settings');
     await evaluate(
         "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('[role=\"dialog\"]')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy settings chunk never loaded')); } }, 25); })"
@@ -306,7 +385,7 @@ async function run() {
     assert(await evaluate("document.querySelector('[role=\"dialog\"]').textContent.length > 0"), 'the lazily loaded settings surface rendered');
     assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
     console.log(
-        `PASS: sign-in, local entry, folder filtering, live transcript and tab narrowing, dark+light contrast (AA), meeting tabs, task completion, recording stop, replay zoom/bookmark, AI citations/copy/follow-ups, responsive overflow. Screenshots: ${output}`
+        `PASS: sign-in, persistent local entry, Free/Pro pricing in both themes, password rotation UI, folder filtering, live transcript and tab narrowing, dark+light contrast (AA), meeting tabs, task completion, recording stop, replay zoom/bookmark, AI citations/copy/follow-ups, responsive overflow. Screenshots: ${output}`
     );
     window.destroy();
     app.quit();

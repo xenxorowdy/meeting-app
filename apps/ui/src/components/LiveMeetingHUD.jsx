@@ -105,6 +105,7 @@ export function LiveMeetingHUD({
     micMuted = false,
     systemAudioMuted = false,
     systemAudioSeen = false,
+    systemAudioError = null,
     recordingState = null,
     upcomingEvent = null,
     canRecord = true,
@@ -242,7 +243,7 @@ export function LiveMeetingHUD({
                             MutedIcon={VolumeX}
                             ActiveIcon={Volume2}
                             unavailable={!systemAudioSeen}
-                            unavailableHint="No system audio is reaching the backend. It needs the native capture helper for this platform."
+                            unavailableHint={systemAudioError || 'No system audio is reaching the backend yet.'}
                         />
                     </div>
                 )}

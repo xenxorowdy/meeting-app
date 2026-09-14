@@ -104,8 +104,8 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
     useEffect(() => {
         const textarea = composer.current;
         if (!textarea) return;
-        textarea.style.height = 'auto';
-        textarea.style.height = `${Math.min(160, textarea.scrollHeight)}px`;
+        textarea.style.height = '0px';
+        textarea.style.height = `${Math.max(38, Math.min(120, textarea.scrollHeight))}px`;
     }, [chat.question]);
     useEffect(() => {
         followLatest.current = true;
@@ -195,7 +195,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                         key={`${message.requestId}-${message.role}-${i}`}
                         className={`ks-chat-row ${message.role === 'user' ? 'ks-chat-row-user' : ''}`}
                     >
-                        <div className={`ks-chat-bubble ${message.role === 'user' ? 'ks-chat-user' : ''}`}>
+                        <div className={`ks-chat-bubble ${message.role === 'user' ? 'ks-chat-user' : 'ks-chat-assistant'}`}>
                             {message.role !== 'user' && <span className="ks-chat-ai-label"><Sparkles aria-hidden="true" /> Kesami AI</span>}
                             <MarkdownText
                                 markdown={message.content}
@@ -207,7 +207,9 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                                 <p className="ks-chat-coverage">
                                     {message.retrievalMode === 'structured'
                                         ? `${message.coverage.shownItems} of ${message.coverage.totalItems} recorded items`
-                                        : `Evidence from ${message.coverage.retrievedMeetings || 0} of ${message.coverage.eligibleMeetings} meetings`}
+                                        : message.coverage.retrievedMeetings > 0
+                                          ? `Evidence from ${message.coverage.retrievedMeetings} of ${message.coverage.eligibleMeetings} meetings`
+                                          : 'No matching transcript evidence yet'}
                                     {message.status === 'partial' ? ' · Partial coverage' : ''}
                                 </p>
                             )}
