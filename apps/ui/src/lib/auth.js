@@ -29,6 +29,14 @@ export async function signIn({ email, password }) {
     return result.account;
 }
 
+export async function signInWithGoogle(clientId) {
+    if (!globalThis.alphaGoogleSignIn?.start) throw new Error('Google sign-in is available in the desktop app.');
+    const authorization = await globalThis.alphaGoogleSignIn.start(clientId);
+    const result = await apiRequest('/api/auth/google', { method: 'POST', body: authorization });
+    await rememberSession(result.token);
+    return result.account;
+}
+
 /**
  * Returns the signed-in account, or null when nobody is signed in. A backend
  * that cannot be reached counts as signed out: the sign-in screen decides what

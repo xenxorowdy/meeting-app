@@ -80,6 +80,31 @@ test('account creation uses the register route and stores its own session', asyn
     }
 });
 
+test('Google desktop authorization is exchanged through the backend and stores the session', async () => {
+    const { signInWithGoogle } = await import(MODULE_URL);
+    const fetches = [];
+    const saved = [];
+    const originalGoogle = globalThis.alphaGoogleSignIn;
+    const authorization = { code: 'one-time-code', verifier: 'v'.repeat(48), redirectUri: 'http://127.0.0.1:54321', nonce: 'attempt-nonce' };
+    globalThis.alphaGoogleSignIn = { start: async clientId => {
+        assert.equal(clientId, 'client.apps.googleusercontent.com');
+        return authorization;
+    } };
+    const restore = withStubs(fetches, saved, { responses: [{
+        ok: true, status: 200, text: async () => JSON.stringify({ token: 'google-session', account: { id: 'g1', email: 'google@work.com', authProvider: 'google' } }),
+    }] });
+    try {
+        const account = await signInWithGoogle('client.apps.googleusercontent.com');
+        assert.equal(account.authProvider, 'google');
+        assert.equal(fetches[0].url, 'http://127.0.0.1:48900/api/auth/google');
+        assert.deepEqual(JSON.parse(fetches[0].options.body), authorization);
+        assert.equal(saved[0].token, 'google-session');
+    } finally {
+        restore();
+        globalThis.alphaGoogleSignIn = originalGoogle;
+    }
+});
+
 test('sign-out revokes the stored token server-side, then clears it locally', async () => {
     const { signOut } = await import(MODULE_URL);
     const fetches = [];

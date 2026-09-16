@@ -617,7 +617,7 @@ export function DesignWorkspace({
                                 </div>
                                 <span className="ks-tag">{isConnected ? 'CONNECTED' : 'OFFLINE'}</span>
                             </section>
-                            {account && <AccountSecurity onAccountChange={onAccountChange} disabled={locked} />}
+                            {account && <AccountSecurity account={account} onAccountChange={onAccountChange} disabled={locked} />}
                             <section className="ks-account-card ks-account-stack">
                                 <h2>Preferences</h2>
                                 <button onClick={onSettings}>

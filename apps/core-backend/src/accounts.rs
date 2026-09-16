@@ -22,6 +22,7 @@ const SALT_BYTES: usize = 16;
 const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const PASSWORD_MIN_CHARS: usize = 8;
 const MAX_SESSIONS_PER_ACCOUNT: usize = 20;
+const GOOGLE_ONLY_PASSWORD: &str = "!google-only";
 type AuthResult<T> = Result<T, (u16, String)>;
 
 #[derive(Debug, Clone, Serialize)]
@@ -31,6 +32,7 @@ pub struct AccountPublic {
     pub name: String,
     pub email: String,
     pub created_at: i64,
+    pub auth_provider: String,
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +66,7 @@ fn public_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AccountPublic> {
         name: row.get(1)?,
         email: row.get(2)?,
         created_at: row.get(3)?,
+        auth_provider: if row.get::<_, String>(4)? == GOOGLE_ONLY_PASSWORD { "google" } else { "password" }.into(),
     })
 }
 
@@ -107,6 +110,10 @@ impl AccountStore {
                 expires_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS sessions_account ON sessions(account_id, expires_at);
+            CREATE TABLE IF NOT EXISTS google_identities (
+                google_sub TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY);")
             .map_err(io::Error::other)?;
         let tx = db.transaction().map_err(io::Error::other)?;
@@ -221,6 +228,8 @@ impl AccountStore {
         Ok(())
     }
 
+    pub fn throttle_google_attempt(&self) -> AuthResult<()> { self.throttle() }
+
     async fn hash_work<T: Send + 'static>(
         &self,
         f: impl FnOnce() -> T + Send + 'static,
@@ -278,6 +287,7 @@ impl AccountStore {
                 name,
                 email,
                 created_at: now_ms(),
+                auth_provider: "password".into(),
             };
             tx.execute(
                 "INSERT INTO accounts VALUES (?1,?2,?3,?4,?5)",
@@ -314,7 +324,7 @@ impl AccountStore {
                 .map_err(db_error)
             })
             .await?;
-        let stored = record.as_ref().map(|(_, hash)| hash.clone());
+        let stored = record.as_ref().and_then(|(_, hash)| (hash != GOOGLE_ONLY_PASSWORD).then(|| hash.clone()));
         let password = password.to_string();
         let valid = self
             .hash_work(move || {
@@ -324,7 +334,7 @@ impl AccountStore {
                 )
             })
             .await?;
-        let Some((account, original_hash)) = record.filter(|_| valid) else {
+        let Some((account, original_hash)) = record.filter(|(_, hash)| hash != GOOGLE_ONLY_PASSWORD && valid) else {
             return Err((401, "Email or password is incorrect.".into()));
         };
         self.query(move |db| {
@@ -347,12 +357,40 @@ impl AccountStore {
         .await
     }
 
+    /// A Google identity is bound by its stable subject, never by email alone.
+    /// Existing password accounts require a separate, explicit linking flow.
+    pub async fn google_sign_in(&self, sub: &str, email: &str, name: &str, allow_create: bool) -> AuthResult<AuthGrant> {
+        if sub.is_empty() || sub.len() > 255 { return Err((401, "Google did not return a valid account identifier.".into())); }
+        let email = normalize_email(email).ok_or((401, "Google did not return a valid email address.".into()))?;
+        let name = name.trim().chars().take(80).collect::<String>();
+        let sub = sub.to_string();
+        self.query(move |db| {
+            let tx = db.transaction().map_err(db_error)?;
+            let linked = tx.query_row(
+                "SELECT a.id,a.name,a.email,a.created_at,a.password_hash FROM accounts a JOIN google_identities g ON g.account_id=a.id WHERE g.google_sub=?1",
+                [&sub], public_row,
+            ).optional().map_err(db_error)?;
+            let account = if let Some(account) = linked { account } else {
+                if !allow_create { return Err((403, "Google account creation requires the workspace owner's access token.".into())); }
+                let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM accounts WHERE email=?1)", [&email], |r| r.get(0)).map_err(db_error)?;
+                if exists { return Err((409, "This email already has a password account. Sign in with its password; Google linking is not enabled yet.".into())); }
+                let account = AccountPublic { id: Uuid::new_v4().to_string(), name: if name.is_empty() { email.clone() } else { name }, email, created_at: now_ms(), auth_provider: "google".into() };
+                tx.execute("INSERT INTO accounts VALUES (?1,?2,?3,?4,?5)", params![account.id, account.name, account.email, GOOGLE_ONLY_PASSWORD, account.created_at]).map_err(db_error)?;
+                tx.execute("INSERT INTO google_identities VALUES (?1,?2)", params![sub, account.id]).map_err(db_error)?;
+                account
+            };
+            let grant = grant_session(&tx, account)?;
+            tx.commit().map_err(db_error)?;
+            Ok(grant)
+        }).await
+    }
+
     pub async fn session_account(&self, token: &str) -> Option<AccountPublic> {
         if token.is_empty() || token.len() > 512 {
             return None;
         }
         let hash = token_hash(token);
-        self.query(move |db| db.query_row("SELECT a.id,a.name,a.email,a.created_at FROM accounts a JOIN sessions s ON s.account_id=a.id WHERE s.token_hash=?1 AND s.expires_at>?2", params![hash, now_ms()], public_row).optional().map_err(db_error)).await.ok().flatten()
+        self.query(move |db| db.query_row("SELECT a.id,a.name,a.email,a.created_at,a.password_hash FROM accounts a JOIN sessions s ON s.account_id=a.id WHERE s.token_hash=?1 AND s.expires_at>?2", params![hash, now_ms()], public_row).optional().map_err(db_error)).await.ok().flatten()
     }
 
     pub async fn logout(&self, token: &str) -> AuthResult<bool> {
@@ -671,6 +709,24 @@ mod tests {
             "password",
             "pbkdf2-sha256$4294967295$c2FsdA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
         ));
+    }
+    #[tokio::test]
+    async fn google_identity_creates_only_with_owner_access_and_signs_in_by_subject() {
+        let scratch = scratch();
+        let denied = scratch.store.google_sign_in("google-sub-1", "new@work.com", "New User", false).await.unwrap_err();
+        assert_eq!(denied.0, 403);
+        let created = scratch.store.google_sign_in("google-sub-1", "new@work.com", "New User", true).await.unwrap();
+        assert_eq!(created.account.auth_provider, "google");
+        assert!(scratch.store.session_account(&created.token).await.is_some());
+        let returned = scratch.store.google_sign_in("google-sub-1", "changed@work.com", "Changed Name", false).await.unwrap();
+        assert_eq!(returned.account.id, created.account.id);
+        assert_eq!(returned.account.email, "new@work.com");
+        assert_eq!(scratch.store.login("new@work.com", "anything valid").await.unwrap_err().0, 401);
+        let other_subject = scratch.store.google_sign_in("google-sub-2", "new@work.com", "Someone Else", true).await.unwrap_err();
+        assert_eq!(other_subject.0, 409);
+        scratch.store.register("Password User", "password@work.com", "correct horse battery").await.unwrap();
+        let collision = scratch.store.google_sign_in("google-sub-3", "password@work.com", "Password User", true).await.unwrap_err();
+        assert_eq!(collision.0, 409);
     }
     #[tokio::test]
     async fn register_login_logout_restart_and_no_plaintext() {

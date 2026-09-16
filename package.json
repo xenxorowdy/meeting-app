@@ -21,6 +21,7 @@
         "test:audio": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/live-speakers.test.js test/live-echo.test.js",
         "test:meeting-end": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/meeting-end.test.js",
         "test:extension": "node --test test/extension-names.test.js",
+        "test:supabase": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/supabase-connection.test.js",
         "build:ui": "npm run --prefix apps/ui build",
         "build:backend": "npm run --prefix apps/core-backend build",
         "build:mic-watch": "swiftc -O -o apps/desktop/assets/mic-watch apps/desktop/mic-watch/main.swift",

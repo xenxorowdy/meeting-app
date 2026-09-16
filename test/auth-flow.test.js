@@ -40,6 +40,7 @@ async function spawnBackend(root, { local = false } = {}) {
             ALPHA_SUMMARY_PROVIDER: 'claude',
             ALPHA_GEMINI_API_KEY: '',
             ALPHA_SARVAM_API_KEY: '',
+            ALPHA_GOOGLE_OAUTH_CLIENT_ID: 'test-only.apps.googleusercontent.com',
             ALPHA_CHAT_EMBEDDINGS: 'off',
         },
     });
@@ -80,6 +81,8 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
 
     // A deployment token gates the workspace and owner-only registration.
     assert.equal((await api('/api/auth/config')).data.registrationAllowed, false);
+    assert.equal((await api('/api/auth/config')).data.googleClientId, 'test-only.apps.googleusercontent.com');
+    assert.equal((await api('/api/auth/google', { code: '', verifier: '', redirectUri: '', nonce: 'test-nonce' })).status, 401);
     assert.equal((await api('/api/auth/register', {name: 'Intruder', email: 'intruder@work.com', password: 'first password'})).status, 403);
     assert.equal((await api('/api/plans')).status, 200);
     assert.equal((await api('/health')).status, 200);

@@ -5,6 +5,7 @@ const widget = require('./widget');
 const menubar = require('./menubar');
 const systemAudio = require('./systemAudio');
 const micUsage = require('./micUsage');
+const googleSignIn = require('./googleSignIn');
 const { showDockIcon } = require('./dock');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -248,6 +249,7 @@ if (!app.requestSingleInstanceLock()) {
         menubar.registerHandlers();
         systemAudio.registerHandlers();
         micUsage.registerHandlers();
+        googleSignIn.registerHandlers();
 
         menubar.create({
             onActivateMain: showMainWindow,

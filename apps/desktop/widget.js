@@ -1,7 +1,7 @@
 const { BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('node:path');
 
-const COLLAPSED = { width: 268, height: 48 };
+const COLLAPSED = { width: 212, height: 64 };
 const EXPANDED = { width: 396, height: 496 };
 const SCREEN_MARGIN = 20;
 const COMMANDS = new Set(['toggle-mic', 'toggle-system', 'toggle-pause', 'stop']);

@@ -34,8 +34,11 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{WebSocketStream, tungstenite::{Message, protocol::{Role, WebSocketConfig}}};
 
 mod accounts;
+mod google_auth;
 mod plans;
+mod supabase;
 use accounts::AccountStore;
+use supabase::SupabaseDb;
 
 mod library;
 mod workspace;
@@ -511,6 +514,7 @@ struct AppState {
     podcast: Arc<PodcastService>,
     chat: Arc<chat::ChatService>,
     accounts: Arc<AccountStore>,
+    supabase: Arc<SupabaseDb>,
 }
 
 impl AppState {
@@ -577,6 +581,7 @@ impl AppState {
         status["stt"] = self.stt_status(Some(&session_provider)).await;
         status["summary"] = self.summarizer.status_value().await;
         status["podcast"] = json!({"enabled":false,"status":"disabled"});
+        status["supabase"] = self.supabase.status_value().await;
         status
     }
 
@@ -1667,6 +1672,10 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    // Local development configuration is intentionally opt-in and ignored by
+    // Git. Existing process environment variables still win, which keeps
+    // deployed secret injection and Electron's recording-path overrides intact.
+    let _ = dotenvy::from_filename(".env.local");
     let port = env::var("CORE_BACKEND_PORT")
         .or_else(|_| env::var("PORT"))
         .ok()
@@ -1717,6 +1726,7 @@ async fn main() -> io::Result<()> {
     let session = Arc::new(Mutex::new(Session::default()));
     chat.start(store.clone(), session.clone());
     let accounts = Arc::new(AccountStore::load().await?);
+    let supabase = Arc::new(SupabaseDb::detect());
     let state = AppState {
         started_at: now_ms(),
         session,
@@ -1730,6 +1740,7 @@ async fn main() -> io::Result<()> {
         calendar: calendar.clone(),
         podcast: podcast.clone(),
         accounts,
+        supabase: supabase.clone(),
     };
 
     println!("[Alpha Core Backend] Rust API listening on http://{host}:{port}");
@@ -1741,6 +1752,28 @@ async fn main() -> io::Result<()> {
         "[Alpha Core Backend] summary engine: {}",
         summarizer.status_value().await
     );
+
+    match supabase.endpoint() {
+        None => println!("[Alpha Core Backend] Supabase: not configured (local storage only)"),
+        Some(endpoint) => {
+            println!(
+                "[Alpha Core Backend] Supabase: connecting to {}:{}/{} as {}",
+                endpoint.host, endpoint.port, endpoint.database, endpoint.username
+            );
+            let probe = supabase.clone();
+            tokio::spawn(async move {
+                let check = probe.check().await;
+                match check.error {
+                    None => println!(
+                        "[Alpha Core Backend] Supabase: connected in {}ms ({})",
+                        check.latency_ms,
+                        check.server_version.unwrap_or_else(|| "unknown version".into())
+                    ),
+                    Some(error) => eprintln!("[Alpha Core Backend] Supabase: unavailable — {error}"),
+                }
+            });
+        }
+    }
 
     // Meeting-client supervision lives here rather than in a per-session task,
     // so it needs no start/stop plumbing and cannot outlive its session.
@@ -1854,9 +1887,9 @@ async fn write_http_response<W: AsyncWriteExt + Unpin>(
 }
 
 /// Paths that must be reachable before any credential exists: the health probe
-/// and the two endpoints that mint credentials in the first place.
+/// and the endpoints that mint credentials in the first place.
 fn is_public_path(path: &str) -> bool {
-    matches!(path, "/health" | "/api/auth/register" | "/api/auth/login" | "/api/plans" | "/api/auth/config")
+    matches!(path, "/health" | "/api/auth/register" | "/api/auth/login" | "/api/auth/google" | "/api/plans" | "/api/auth/config")
 }
 
 /// The gate every request passes before routing: the Host header (DNS
@@ -2025,6 +2058,26 @@ fn auth_grant_json(grant: accounts::AuthGrant) -> Value {
     })
 }
 
+async fn google_sign_in_client_id(settings: &SettingsStore) -> Option<String> {
+    for key in ["ALPHA_GOOGLE_OAUTH_CLIENT_ID", "ALPHA_GOOGLE_CALENDAR_CLIENT_ID"] {
+        if let Ok(value) = env::var(key) {
+            let value = value.trim().to_string();
+            if !value.is_empty() { return Some(value); }
+        }
+    }
+    settings.credential("googleCalendarClientId").await.filter(|value| !value.trim().is_empty())
+}
+
+async fn google_sign_in_client_secret(settings: &SettingsStore) -> Option<String> {
+    for key in ["ALPHA_GOOGLE_OAUTH_CLIENT_SECRET", "ALPHA_GOOGLE_CALENDAR_CLIENT_SECRET"] {
+        if let Ok(value) = env::var(key) {
+            let value = value.trim().to_string();
+            if !value.is_empty() { return Some(value); }
+        }
+    }
+    settings.credential("googleCalendarClientSecret").await.filter(|value| !value.trim().is_empty())
+}
+
 fn build_stamp() -> &'static Value {
     static STAMP: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
     STAMP.get_or_init(|| {
@@ -2067,6 +2120,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 "version": VERSION,
                 "uptimeSeconds": ((now_ms() - state.started_at).max(0) / 1000),
                 "build": build_stamp(),
+                "supabase": state.supabase.public_status().await,
             }),
         ),
         ("POST", "/api/auth/register") => {
@@ -2101,6 +2155,32 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
+        ("POST", "/api/auth/google") => {
+            let Some(client_id) = google_sign_in_client_id(&state.settings).await else {
+                return json_response(503, json!({"error":"Google sign-in needs a Desktop app OAuth client ID in Calendar settings or ALPHA_GOOGLE_OAUTH_CLIENT_ID."}));
+            };
+            let code = body.get("code").and_then(Value::as_str).unwrap_or_default();
+            let verifier = body.get("verifier").and_then(Value::as_str).unwrap_or_default();
+            let redirect = body.get("redirectUri").and_then(Value::as_str).unwrap_or_default();
+            let nonce = body.get("nonce").and_then(Value::as_str).unwrap_or_default();
+            if nonce.is_empty() || nonce.len() > 128 { return json_response(400, json!({"error":"Google sign-in nonce is invalid."})); }
+            if let Err((status,error)) = state.accounts.throttle_google_attempt() {
+                return json_response(status, json!({"error":error}));
+            }
+            let secret = google_sign_in_client_secret(&state.settings).await;
+            let id_token = match google_auth::exchange_code(code, verifier, redirect, &client_id, secret.as_deref()).await {
+                Ok(token) => token,
+                Err(error) => return json_response(401, json!({"error":error})),
+            };
+            let identity = match google_auth::verify_id_token(&id_token, &client_id, nonce).await {
+                Ok(identity) => identity,
+                Err(error) => return json_response(401, json!({"error":error})),
+            };
+            match state.accounts.google_sign_in(&identity.sub, &identity.email, &identity.name, state.security.authorized(&req.headers, false)).await {
+                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Err((status,error)) => json_response(status, json!({"error":error})),
+            }
+        }
         ("POST", "/api/auth/logout") => {
             if let Some(token) = bearer_or_protocol_token(&req.headers, false) {
                 if let Err((status, error)) = state.accounts.logout(&token).await {
@@ -2112,7 +2192,8 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         ("GET", "/api/auth/config") => json_response(200, json!({
             "registrationAllowed": state.security.authorized(&req.headers, false),
             "localAccess": !state.security.hosted,
-            "workspaceScope": "shared"
+            "workspaceScope": "shared",
+            "googleClientId": google_sign_in_client_id(&state.settings).await
         })),
         ("GET", "/api/plans") => json_response(200, plans::catalog()),
         ("POST", "/api/billing/checkout") => json_response(503, json!({
@@ -2142,6 +2223,15 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         }
         (_, path) if path == "/api/chat" || path.starts_with("/api/chat/") => chat::route(req, state, &body).await,
         ("GET", "/api/status") => json_response(200, state.status().await),
+        ("GET", "/api/supabase/status") => json_response(200, state.supabase.status_value().await),
+        ("POST", "/api/supabase/check") => {
+            if state.supabase.configured() {
+                let check = state.supabase.check().await;
+                json_response(if check.ok { 200 } else { 503 }, state.supabase.status_value().await)
+            } else {
+                json_response(503, state.supabase.status_value().await)
+            }
+        }
         ("GET", "/api/meetings") => {
             let limit = req
                 .query

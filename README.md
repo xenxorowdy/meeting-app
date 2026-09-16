@@ -22,7 +22,7 @@ packages/meeting-app/
 - **AI Summary Editor**: Executive summary, key decisions list, interactive action items table, and copy-ready follow-up email drafts.
 - **History Explorer**: Searchable local meeting database with instant full-text search.
 - **Podcast Studio**: Meeting-first, source-grounded two-host scripting, multitrack capture/editing, local speech cleanup, WAV/MP3/MP4 rendering, RSS and owned-YouTube caption import, and private YouTube podcast publishing.
-- **Settings & Accounts**: Audio and AI provider preferences, optional database-backed sign-in, password changes, and a Free/Pro plan catalog. Local use requires no account; paid checkout is not enabled. See [account and pricing setup](docs/PRODUCT-SETUP.md).
+- **Settings & Accounts**: Audio and AI provider preferences, optional database-backed password or desktop Google sign-in, password changes, and a Free/Pro plan catalog. Local use requires no account; paid checkout is not enabled. See [account and pricing setup](docs/PRODUCT-SETUP.md).
 
 ### 2. Core Backend Engine (`apps/core-backend`)
 

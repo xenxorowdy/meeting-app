@@ -1,5 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+contextBridge.exposeInMainWorld('alphaGoogleSignIn', {
+    start: clientId => ipcRenderer.invoke('google-sign-in:start', clientId),
+});
+
 // The renderer talks to the core backend over HTTP and WebSocket, so it needs
 // nothing from Node for that. Screen recording is the one exception: enumerating
 // capture sources and writing a video file are main-process jobs, so this bridge

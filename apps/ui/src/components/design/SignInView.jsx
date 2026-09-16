@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, Moon, Sun } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
-import { createAccount, signIn } from '@/lib/auth.js';
+import { createAccount, signIn, signInWithGoogle } from '@/lib/auth.js';
 import { apiRequest } from '@/lib/backend.js';
 
 const EMPTY_FORM = { name: '', email: '', password: '' };
@@ -13,9 +13,13 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [registrationAllowed, setRegistrationAllowed] = useState(null);
+    const [googleClientId, setGoogleClientId] = useState(null);
     useEffect(() => {
         const controller = new AbortController();
-        apiRequest('/api/auth/config', { signal: controller.signal }).then(config => setRegistrationAllowed(config.registrationAllowed !== false)).catch(() => {});
+        apiRequest('/api/auth/config', { signal: controller.signal }).then(config => {
+            setRegistrationAllowed(config.registrationAllowed !== false);
+            setGoogleClientId(config.googleClientId || '');
+        }).catch(() => {});
         return () => controller.abort();
     }, []);
     const continueLocal = async destination => {
@@ -53,6 +57,20 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
             onAuthenticated?.(account);
         } catch (cause) {
             setError(cause.message || 'Something went wrong. Try again.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const submitGoogle = async () => {
+        if (busy) return;
+        setBusy(true);
+        setError('');
+        try {
+            const account = await signInWithGoogle(googleClientId);
+            onAuthenticated?.(account);
+        } catch (cause) {
+            setError(cause.message || 'Google sign-in failed. Try again.');
         } finally {
             setBusy(false);
         }
@@ -145,6 +163,15 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
                         {busy ? (creating ? 'Creating account…' : 'Signing in…') : creating ? 'Create account' : 'Continue to workspace'}
                     </button>
                 </form>
+                {globalThis.alphaGoogleSignIn?.start && (
+                    <div className="ks-oauth">
+                        <span>OR</span>
+                        <button type="button" disabled={busy || !googleClientId} onClick={submitGoogle}>
+                            {busy ? 'Waiting for Google…' : creating ? 'Create account with Google' : 'Sign in with Google'}
+                        </button>
+                        {googleClientId === '' && <p className="ks-welcome-note">Add a Google Desktop app client ID in Connection &amp; preferences first.</p>}
+                    </div>
+                )}
                 {(error || notice) && (
                     <p className="ks-welcome-error" role="alert">
                         {error || notice}

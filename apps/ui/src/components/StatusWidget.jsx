@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AppWindow, ChevronDown, GripVertical, Mic, MicOff, Pause, Play, Square, Volume2, VolumeX, X } from 'lucide-react';
+import { AppWindow, ChevronDown, ChevronUp, GripVertical, Mic, MicOff, Pause, Play, Square, Volume2, VolumeX, X } from 'lucide-react';
 import { JumpingBalls } from '@/components/JumpingBalls';
 import { StreamingText } from '@/components/StreamingText';
 import { LevelHistory } from '@/components/widget/LevelHistory';
@@ -105,6 +105,7 @@ export function StatusWidget() {
     const micMuted = Boolean(shellState?.micMuted);
     const systemAudioMuted = Boolean(shellState?.systemAudioMuted);
     const isPaused = state === 'paused';
+    const listening = connection === 'online' && state === 'recording';
 
     useEffect(() => {
         shell?.setExpanded(expanded);
@@ -113,6 +114,44 @@ export function StatusWidget() {
     const command = useCallback(action => {
         shell?.sendCommand(action);
     }, []);
+
+    if (!expanded) {
+        return (
+            <div className="ks-app ks-widget is-collapsed" data-theme={theme}>
+                <div className={`ks-pill ${status.modifier}`}>
+                    <button
+                        type="button"
+                        className="ks-pill-face"
+                        onClick={() => setExpanded(true)}
+                        aria-expanded="false"
+                        aria-label={title ? `${status.label} — ${title}. Show the live transcript` : `${status.label}. Show the live transcript`}
+                    >
+                        {isLive ? (
+                            <span className="ks-pill-wave">
+                                <LevelHistory subscribe={subscribeAudioLevels} active={listening} />
+                            </span>
+                        ) : (
+                            <span className="ks-pill-label">
+                                {status.balls ? <JumpingBalls size="sm" /> : <i />}
+                                {status.label}
+                            </span>
+                        )}
+                        {isLive && <span className="ks-pill-clock">{formatClock(durationSeconds)}</span>}
+                    </button>
+
+                    {canControl ? (
+                        <button type="button" className="ks-pill-action is-stop" onClick={() => command('stop')} aria-label="Stop the meeting">
+                            <span className="ks-pill-square" aria-hidden="true" />
+                        </button>
+                    ) : (
+                        <button type="button" className="ks-pill-action" onClick={() => setExpanded(true)} aria-label="Show the live transcript">
+                            <ChevronUp aria-hidden="true" />
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="ks-app ks-widget" data-theme={theme}>
@@ -124,94 +163,83 @@ export function StatusWidget() {
                 <button
                     type="button"
                     className="ks-widget-toggle"
-                    onClick={() => setExpanded(prev => !prev)}
-                    aria-expanded={expanded}
-                    aria-label={expanded ? 'Hide the live transcript' : 'Show the live transcript'}
+                    onClick={() => setExpanded(false)}
+                    aria-expanded="true"
+                    aria-label="Hide the live transcript"
                 >
                     <span className={`ks-widget-status ${status.modifier}`}>
                         {status.balls ? <JumpingBalls size="sm" /> : <i />}
                         {status.label}
                     </span>
-                    {expanded && title && <span className="ks-widget-title">{title}</span>}
+                    {title && <span className="ks-widget-title">{title}</span>}
                     {isLive && <span className="ks-widget-clock">{formatClock(durationSeconds)}</span>}
-                    <ChevronDown className={expanded ? 'ks-widget-chevron is-open' : 'ks-widget-chevron'} aria-hidden="true" />
+                    <ChevronDown className="ks-widget-chevron is-open" aria-hidden="true" />
                 </button>
 
-                {expanded && (
-                    <button
-                        type="button"
-                        className="ks-icon-button"
-                        onClick={() => shell?.hide()}
-                        aria-label="Hide the widget until the app restarts"
-                    >
-                        <X />
-                    </button>
+                <button type="button" className="ks-icon-button" onClick={() => shell?.hide()} aria-label="Hide the widget until the app restarts">
+                    <X />
+                </button>
+            </div>
+
+            <div className="ks-widget-wave">
+                <LevelHistory subscribe={subscribeAudioLevels} active={listening} />
+            </div>
+
+            <div className="ks-widget-body">
+                {connection !== 'online' ? (
+                    <p className="ks-widget-empty">Waiting for the Alpha backend. The transcript appears here once it answers.</p>
+                ) : (
+                    <TranscriptFeed turns={turns} interimTurns={interimTurns} />
                 )}
             </div>
 
-            {expanded && (
-                <>
-                    <div className="ks-widget-wave">
-                        <LevelHistory subscribe={subscribeAudioLevels} active={connection === 'online' && state === 'recording'} />
-                    </div>
+            <div className="ks-widget-foot">
+                <div className="ks-widget-controls">
+                    <button
+                        type="button"
+                        className="ks-icon-button"
+                        onClick={() => command('toggle-mic')}
+                        disabled={!canControl}
+                        aria-pressed={micMuted}
+                        aria-label={micMuted ? 'Unmute your microphone' : 'Mute your microphone'}
+                    >
+                        {micMuted ? <MicOff /> : <Mic />}
+                    </button>
+                    <button
+                        type="button"
+                        className="ks-icon-button"
+                        onClick={() => command('toggle-system')}
+                        disabled={!canControl}
+                        aria-pressed={systemAudioMuted}
+                        aria-label={systemAudioMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
+                    >
+                        {systemAudioMuted ? <VolumeX /> : <Volume2 />}
+                    </button>
+                    <button
+                        type="button"
+                        className={isPaused ? 'ks-icon-button is-paused' : 'ks-icon-button'}
+                        onClick={() => command('toggle-pause')}
+                        disabled={!canControl}
+                        aria-label={isPaused ? 'Resume the meeting' : 'Pause the meeting'}
+                    >
+                        {isPaused ? <Play /> : <Pause />}
+                    </button>
+                    <button
+                        type="button"
+                        className="ks-icon-button ks-red"
+                        onClick={() => command('stop')}
+                        disabled={!canControl}
+                        aria-label="Stop the meeting"
+                    >
+                        <Square />
+                    </button>
+                </div>
 
-                    <div className="ks-widget-body">
-                        {connection !== 'online' ? (
-                            <p className="ks-widget-empty">Waiting for the Alpha backend. The transcript appears here once it answers.</p>
-                        ) : (
-                            <TranscriptFeed turns={turns} interimTurns={interimTurns} />
-                        )}
-                    </div>
-
-                    <div className="ks-widget-foot">
-                        <div className="ks-widget-controls">
-                            <button
-                                type="button"
-                                className="ks-icon-button"
-                                onClick={() => command('toggle-mic')}
-                                disabled={!canControl}
-                                aria-pressed={micMuted}
-                                aria-label={micMuted ? 'Unmute your microphone' : 'Mute your microphone'}
-                            >
-                                {micMuted ? <MicOff /> : <Mic />}
-                            </button>
-                            <button
-                                type="button"
-                                className="ks-icon-button"
-                                onClick={() => command('toggle-system')}
-                                disabled={!canControl}
-                                aria-pressed={systemAudioMuted}
-                                aria-label={systemAudioMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
-                            >
-                                {systemAudioMuted ? <VolumeX /> : <Volume2 />}
-                            </button>
-                            <button
-                                type="button"
-                                className={isPaused ? 'ks-icon-button is-paused' : 'ks-icon-button'}
-                                onClick={() => command('toggle-pause')}
-                                disabled={!canControl}
-                                aria-label={isPaused ? 'Resume the meeting' : 'Pause the meeting'}
-                            >
-                                {isPaused ? <Play /> : <Pause />}
-                            </button>
-                            <button
-                                type="button"
-                                className="ks-icon-button ks-red"
-                                onClick={() => command('stop')}
-                                disabled={!canControl}
-                                aria-label="Stop the meeting"
-                            >
-                                <Square />
-                            </button>
-                        </div>
-
-                        <button type="button" className="ks-text-button" onClick={() => shell?.openMain()}>
-                            <AppWindow />
-                            Open
-                        </button>
-                    </div>
-                </>
-            )}
+                <button type="button" className="ks-text-button" onClick={() => shell?.openMain()}>
+                    <AppWindow />
+                    Open
+                </button>
+            </div>
         </div>
     );
 }
