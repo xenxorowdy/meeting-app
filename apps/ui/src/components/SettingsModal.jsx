@@ -334,6 +334,7 @@ export function SettingsModal({
                         </TabsContent>
 
                         <TabsContent value="audio" className="space-y-4">
+                            {connectionLocked && <p className="text-callout text-muted-foreground">Finish the current meeting before changing audio devices. Mute and noise cancellation remain available.</p>}
                             <SettingGroup>
                                 <SettingRow
                                     id="mic-device"
@@ -341,7 +342,7 @@ export function SettingsModal({
                                     description="Captured in this window at 16 kHz and streamed to the backend. Everything from it is attributed to you."
                                     stacked
                                 >
-                                    <Select value={formData.micDeviceId} onValueChange={value => setFormData({ ...formData, micDeviceId: value })}>
+                                    <Select disabled={connectionLocked} value={formData.micDeviceId} onValueChange={value => setFormData({ ...formData, micDeviceId: value })}>
                                         <SelectTrigger id="mic-device" className="w-full">
                                             <SelectValue />
                                         </SelectTrigger>
@@ -363,6 +364,7 @@ export function SettingsModal({
                                     stacked
                                 >
                                     <Select
+                                        disabled={connectionLocked}
                                         value={formData.systemDeviceId}
                                         onValueChange={value => setFormData({ ...formData, systemDeviceId: value })}
                                     >
@@ -707,6 +709,28 @@ export function SettingsModal({
                                         id="meeting-reminders"
                                         checked={formData.meetingReminders !== false}
                                         onCheckedChange={checked => setFormData({ ...formData, meetingReminders: checked })}
+                                    />
+                                </SettingRow>
+                                <SettingRow
+                                    id="auto-stop-on-meeting-end"
+                                    label="Stop recording when the meeting ends"
+                                    description="When the meeting client reports the call is over — or its tab drops out — recording stops and the summary is generated. A rejoin within a few seconds is not treated as an end."
+                                >
+                                    <Switch
+                                        id="auto-stop-on-meeting-end"
+                                        checked={formData.autoStopOnMeetingEnd !== false}
+                                        onCheckedChange={checked => setFormData({ ...formData, autoStopOnMeetingEnd: checked })}
+                                    />
+                                </SettingRow>
+                                <SettingRow
+                                    id="prompt-unscheduled-calls"
+                                    label="Prompt to record unscheduled calls"
+                                    description="A notification when a call that is not on your calendar is detected — in the browser, or from any app using your microphone. Clicking it starts the recording."
+                                >
+                                    <Switch
+                                        id="prompt-unscheduled-calls"
+                                        checked={formData.promptForUnscheduledCalls !== false}
+                                        onCheckedChange={checked => setFormData({ ...formData, promptForUnscheduledCalls: checked })}
                                     />
                                 </SettingRow>
                             </SettingGroup>

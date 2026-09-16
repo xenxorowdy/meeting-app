@@ -4,6 +4,7 @@ const podcast = require('./podcast');
 const widget = require('./widget');
 const menubar = require('./menubar');
 const systemAudio = require('./systemAudio');
+const micUsage = require('./micUsage');
 const { showDockIcon } = require('./dock');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -246,6 +247,7 @@ if (!app.requestSingleInstanceLock()) {
         widget.registerHandlers();
         menubar.registerHandlers();
         systemAudio.registerHandlers();
+        micUsage.registerHandlers();
 
         menubar.create({
             onActivateMain: showMainWindow,
@@ -282,6 +284,7 @@ if (!app.requestSingleInstanceLock()) {
         widget.destroy();
         menubar.destroy();
         systemAudio.shutdown();
+        micUsage.shutdown();
         await recorder.shutdown();
         stopBackend();
     });

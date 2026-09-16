@@ -6,7 +6,7 @@ use std::{
     env, io,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -59,6 +59,35 @@ const DEFAULT_PORT: u16 = 48900;
 /// How long a stopping meeting waits for Sarvam to return the transcripts it
 /// still owes for audio already streamed to it.
 const LIVE_FLUSH_BUDGET: Duration = Duration::from_secs(10);
+/// After the meeting client reports the meeting ended (or we left it), wait
+/// this long for a rejoin or the UI's own stop before finishing the meeting
+/// here, so an accidental leave click does not kill the recording.
+const MEETING_END_GRACE: Duration = Duration::from_secs(8);
+/// The meeting client is expected to report every couple of seconds; when its
+/// reports stop arriving mid-recording the tab was closed or the machine lost
+/// the meeting, which counts as the meeting ending.
+const CLIENT_DROPOUT: Duration = Duration::from_secs(15);
+/// One unscheduled-call notice per meeting URL per cooldown, no matter how
+/// often the browser re-reports the same call.
+const UNSCHEDULED_COOLDOWN_MS: i64 = 10 * 60 * 1000;
+
+/// Whether an idle observation warrants an unscheduled-call notice: the first
+/// one for a key, a different meeting, or the same one after the cooldown.
+fn unscheduled_notice_due(last: &Option<(String, i64)>, key: &str, now_ms: i64) -> bool {
+    match last {
+        Some((last_key, at)) => *last_key != key || now_ms - *at > UNSCHEDULED_COOLDOWN_MS,
+        None => true,
+    }
+}
+
+/// A report from the meeting client that the call is over, waiting out the
+/// rejoin grace before the meeting is finished here. `deadline` is `None` when
+/// auto-stop is disabled: the fact is recorded but nothing acts on it.
+struct PendingClientEnd {
+    source: String,
+    reason: String,
+    deadline: Option<Instant>,
+}
 
 fn speaker_name(stream_id: u32) -> &'static str {
     if stream_id == STREAM_MIC {
@@ -222,6 +251,14 @@ struct Session {
     echo_suppression: bool,
     system_samples: i64,
     mic_samples: i64,
+    // Meeting-client signals from the browser extension (see
+    // observe_participants): whether the local mic is muted in the call, when
+    // its reports last arrived, a pending end waiting out the rejoin grace,
+    // and the last unscheduled-call notice for the idle prompt.
+    client_mic_muted: Option<bool>,
+    client_last_seen: Option<Instant>,
+    client_end: Option<PendingClientEnd>,
+    last_unscheduled_notice: Option<(String, i64)>,
 }
 
 #[derive(Clone)]
@@ -532,7 +569,7 @@ impl AppState {
             "names": session.participants.roster(),
             "observations": session.participants.observations(),
         });
-        let state = json!({ "state": session.state.as_str(), "meetingId": session.current.as_ref().map(|m| &m.id), "meetingTitle": session.current.as_ref().map(|m| &m.title), "durationSeconds": session.current.as_ref().map(|m| (now_ms() - m.started_at).max(0) / 1000).unwrap_or(0), "turnsCount": turns, "audioLevels": { "mic": session.mic_rms * 100.0, "system": session.system_rms * 100.0 } });
+        let state = json!({ "state": session.state.as_str(), "meetingId": session.current.as_ref().map(|m| &m.id), "meetingTitle": session.current.as_ref().map(|m| &m.title), "durationSeconds": session.current.as_ref().map(|m| (now_ms() - m.started_at).max(0) / 1000).unwrap_or(0), "turnsCount": turns, "audioLevels": { "mic": session.mic_rms * 100.0, "system": session.system_rms * 100.0 }, "clientMicMuted": session.client_mic_muted, "meetingEndPending": session.client_end.as_ref().map(|end| json!({"source": end.source, "reason": end.reason})) });
         drop(session);
 
         let mut status = state;
@@ -610,6 +647,11 @@ impl AppState {
         session.system_vad.reset();
         session.mic_speech.clear();
         session.participants = SpeechLog::default();
+        // A new meeting starts with no meeting-client knowledge: the browser
+        // has to report again before dropout watching or client mute apply.
+        session.client_mic_muted = None;
+        session.client_last_seen = None;
+        session.client_end = None;
         session.speaker_labels = NumberedSpeakers::default();
         session.voices = VoiceRoster::default();
         session.mic_epoch_ms = None;
@@ -840,12 +882,15 @@ impl AppState {
                             (Some(name.as_str()) == self_name.as_deref()).then(|| id.clone())
                         })
                     });
-                    let labels = label_speakers(&batch.turns, mic_speaker.as_deref());
+                    let mut labels = label_speakers(&batch.turns, mic_speaker.as_deref());
                     let named = participants.attribute(
                         &spans,
                         &mic_speaker.as_deref().into_iter().collect::<Vec<_>>(),
                         &self_name.as_deref().into_iter().collect::<Vec<_>>(),
                     );
+                    for (speaker_id, name) in named.iter() {
+                        labels.insert(speaker_id.clone(), name.clone());
+                    }
                     meeting.transcript = batch
                         .turns
                         .into_iter()
@@ -896,14 +941,13 @@ impl AppState {
         }
 
         if !participants.is_empty() {
-            let mut session = self.session.lock().await;
             for turn in meeting.transcript.iter_mut() {
                 if turn.channel != "system" {
                     continue;
                 }
                 if let Some(name) = participants.speaker_during(turn.start_ms, turn.end_ms) {
                     if Some(name.as_str()) != participants.self_name() {
-                        turn.speaker = session.speaker_labels.label(Some(&name));
+                        turn.speaker = name;
                     }
                 }
             }
@@ -950,6 +994,10 @@ impl AppState {
         let mut session = self.session.lock().await;
         session.current = Some(meeting.clone());
         session.state = SessionState::Completed;
+        // Whatever the meeting client was reporting belongs to the finished
+        // meeting, not to whatever the user records next.
+        session.client_end = None;
+        session.client_mic_muted = None;
         drop(session);
         if let Some(warning) = &transcription_warning {
             self.emit(
@@ -1020,6 +1068,11 @@ impl AppState {
         let provider = session.transcription_provider.clone();
         let live_sarvam = provider == "sarvam-realtime";
         let separate_voices = live_sarvam;
+        // The meeting client has the ground truth on the local mic: while it
+        // reports the mic muted, nothing from the mic stream may reach the
+        // transcriber, the voiceprints or the speech log, whatever still
+        // arrives over the socket.
+        let client_mic_muted = session.client_mic_muted == Some(true);
         let meeting = session
             .current
             .as_ref()
@@ -1067,7 +1120,7 @@ impl AppState {
                         session.echo.append_played(played_at, &pcm);
                     }
                     session.system_samples += pcm.len() as i64 / 2;
-                } else if live_sarvam {
+                } else if live_sarvam && !client_mic_muted {
                     let heard_at = epoch + session.mic_samples * 1000 / dsp::SAMPLE_RATE as i64;
                     session.mic_samples += pcm.len() as i64 / 2;
                     if session.echo_suppression {
@@ -1082,7 +1135,14 @@ impl AppState {
                 }
 
                 let utterances = if stream_id == STREAM_MIC {
-                    session.mic_vad.feed(&pcm)
+                    if client_mic_muted {
+                        // Dropping the open utterance keeps the mute from
+                        // gluing pre- and post-mute speech into one turn.
+                        session.mic_vad.reset();
+                        Vec::new()
+                    } else {
+                        session.mic_vad.feed(&pcm)
+                    }
                 } else if separate_voices {
                     session.system_vad.feed(&pcm)
                 } else {
@@ -1164,10 +1224,47 @@ impl AppState {
             .get("self")
             .and_then(Value::as_str)
             .and_then(clean_name);
+        let mic_muted = payload.get("micMuted").and_then(Value::as_bool);
+        let ended = payload.get("ended").and_then(Value::as_bool) == Some(true);
+        let reason = payload
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let url = payload
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
 
         let mut session = self.session.lock().await;
         let state = session.state.as_str();
-        let recording = matches!(session.state, SessionState::Recording);
+
+        // No meeting is running: a browser sitting in a call anyway is an
+        // unscheduled call the record prompt should know about. One notice per
+        // meeting URL per cooldown, so the heartbeat cannot spam it.
+        if !matches!(
+            session.state,
+            SessionState::Starting
+                | SessionState::Recording
+                | SessionState::Paused
+                | SessionState::ProcessingStt
+                | SessionState::Summarizing
+        ) {
+            if !roster.is_empty() {
+                let key = format!("{}|{url}", source.as_deref().unwrap_or_default());
+                let now = now_ms();
+                if unscheduled_notice_due(&session.last_unscheduled_notice, &key, now) {
+                    session.last_unscheduled_notice = Some((key, now));
+                    self.emit(
+                        "unscheduled_call",
+                        json!({"source": source, "url": url, "participants": roster}),
+                    )
+                    .await;
+                }
+            }
+            return json!({"accepted": false, "state": state});
+        }
+
         let Some((meeting_id, started_at)) = session
             .current
             .as_ref()
@@ -1176,22 +1273,70 @@ impl AppState {
             return json!({"accepted": false, "state": state});
         };
 
-        session.participants.set_source(source);
+        session.client_last_seen = Some(Instant::now());
+
+        // The meeting client is the source of truth for the local mic while
+        // the call is running in it; the renderer hears this as `mic_muted`.
+        if let Some(muted) = mic_muted {
+            if session.client_mic_muted != Some(muted) {
+                session.client_mic_muted = Some(muted);
+                self.emit(
+                    "mic_muted",
+                    json!({"meetingId": meeting_id.clone(), "source": source.clone(), "muted": muted}),
+                )
+                .await;
+            }
+        }
+
+        // A live observation without the end flag means the call carried on:
+        // whatever ended-report is waiting out its grace is stale.
+        if session.client_end.is_some() && !ended {
+            session.client_end = None;
+        }
+
+        session.participants.set_source(source.clone());
         session.participants.set_self_name(self_name);
         session.participants.extend_roster(&roster);
+        let recording = matches!(session.state, SessionState::Recording);
         if recording {
             session
                 .participants
                 .observe(&speaking, (now_ms() - started_at).max(0));
         }
 
+        // The call itself is over (or we left it). Report it once and, if
+        // auto-stop is on, wait out the rejoin grace before finishing here —
+        // the UI will usually call the stop itself within the grace.
+        let mut ended_report = None;
+        if ended && matches!(session.state, SessionState::Recording | SessionState::Paused) {
+            if session.client_end.is_none() {
+                let reason = reason.clone().unwrap_or_else(|| "ended".into());
+                let auto_stop = self.settings.get_bool("autoStopOnMeetingEnd").await != Some(false);
+                session.client_end = Some(PendingClientEnd {
+                    source: source.clone().unwrap_or_else(|| "meeting-client".into()),
+                    reason: reason.clone(),
+                    deadline: auto_stop.then(|| Instant::now() + MEETING_END_GRACE),
+                });
+                ended_report = Some(reason);
+            }
+        }
+
         let names = session.participants.roster().to_vec();
         let source = session.participants.source().map(str::to_string);
         if let Some(meeting) = session.current.as_mut() {
             set_meeting_metadata(meeting, "participants", json!(names));
-            if let Some(source) = source {
-                set_meeting_metadata(meeting, "participantSource", json!(source));
+            if let Some(participant_source) = source.as_deref() {
+                set_meeting_metadata(meeting, "participantSource", json!(participant_source));
             }
+        }
+        drop(session);
+
+        if let Some(reason) = ended_report {
+            self.emit(
+                "meeting_ended",
+                json!({"meetingId": meeting_id.clone(), "source": source, "reason": reason}),
+            )
+            .await;
         }
 
         json!({
@@ -1200,6 +1345,77 @@ impl AppState {
             "meetingId": meeting_id,
             "participants": names,
         })
+    }
+
+    /// Watches the meeting-client signals while a recording is live: the
+    /// dropout timeout on its reports, and the rejoin grace on a pending end
+    /// report, finishing the meeting here when neither is cancelled in time.
+    /// A meeting that never received a client report is never touched, so
+    /// recordings made without the extension always run to their own stop.
+    async fn watch_client_end(&self) {
+        let mut ticker = tokio::time::interval(Duration::from_millis(500));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+            let mut session = self.session.lock().await;
+            if !matches!(
+                session.state,
+                SessionState::Recording | SessionState::Paused
+            ) {
+                session.client_end = None;
+                session.client_mic_muted = None;
+                continue;
+            }
+
+            // Reports stopped arriving mid-recording: the meeting is gone as
+            // far as this machine is concerned.
+            if session.client_end.is_none() {
+                if matches!(session.state, SessionState::Recording) {
+                    let dropped = session
+                        .client_last_seen
+                        .is_some_and(|seen| seen.elapsed() > CLIENT_DROPOUT);
+                    if dropped {
+                        let meeting_id = session
+                            .current
+                            .as_ref()
+                            .map(|meeting| meeting.id.clone())
+                            .unwrap_or_default();
+                        let auto_stop =
+                            self.settings.get_bool("autoStopOnMeetingEnd").await != Some(false);
+                        session.client_end = Some(PendingClientEnd {
+                            source: session
+                                .participants
+                                .source()
+                                .unwrap_or("meeting-client")
+                                .to_string(),
+                            reason: "dropout".into(),
+                            deadline: auto_stop.then(|| Instant::now() + MEETING_END_GRACE),
+                        });
+                        self.emit(
+                            "meeting_ended",
+                            json!({"meetingId": meeting_id, "source": session.client_end.as_ref().unwrap().source, "reason": "dropout"}),
+                        )
+                        .await;
+                    }
+                }
+                continue;
+            }
+
+            let expired = session
+                .client_end
+                .as_ref()
+                .and_then(|end| end.deadline)
+                .is_some_and(|deadline| deadline <= Instant::now());
+            if !expired {
+                continue;
+            }
+            drop(session);
+            // The rejoin grace ran out with the meeting still recording: end
+            // it here the same way the UI's stop would. If the UI managed the
+            // stop first, `finish` sees a session already processing and
+            // returns the current meeting without doing anything.
+            let _ = self.finish(&json!({})).await;
+        }
     }
 
     /// Attach a transcribed utterance to the meeting it belongs to and tell the
@@ -1330,7 +1546,7 @@ impl AppState {
                 }
             } else {
                 let identity = remote_identity(&session.participants, turn.start_ms, turn.end_ms);
-                turn.speaker = session.speaker_labels.label(identity.as_deref());
+                turn.speaker = identity.unwrap_or_else(|| session.speaker_labels.label(None));
                 if session.echo_suppression {
                     session.echo.remember_text(turn.start_ms, &turn.text);
                 }
@@ -1375,6 +1591,9 @@ impl AppState {
             return speaker_name(stream_id).to_string();
         }
         let session = self.session.lock().await;
+        if let Some(current) = session.participants.current_speaker() {
+            return current;
+        }
         session
             .speaker_labels
             .peek(None)
@@ -1522,6 +1741,12 @@ async fn main() -> io::Result<()> {
         "[Alpha Core Backend] summary engine: {}",
         summarizer.status_value().await
     );
+
+    // Meeting-client supervision lives here rather than in a per-session task,
+    // so it needs no start/stop plumbing and cannot outlive its session.
+    let supervisor = state.clone();
+    tokio::spawn(async move { supervisor.watch_client_end().await });
+
     loop {
         let (stream, _) = listener.accept().await?;
         let state = state.clone();
@@ -1984,6 +2209,12 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }
             if settings.get("sarvamDiarizeAfterMeeting").is_none() {
                 settings["sarvamDiarizeAfterMeeting"] = json!(true);
+            }
+            if settings.get("autoStopOnMeetingEnd").is_none() {
+                settings["autoStopOnMeetingEnd"] = json!(true);
+            }
+            if settings.get("promptForUnscheduledCalls").is_none() {
+                settings["promptForUnscheduledCalls"] = json!(true);
             }
             json_response(200, json!({"settings": settings}))
         }
@@ -2721,6 +2952,49 @@ mod tests {
     }
 
     #[test]
+    fn diarized_speakers_adopt_proper_participant_names_and_you_for_mic() {
+        use sarvam::BatchTurn;
+
+        let mut participants = SpeechLog::default();
+        participants.set_self_name(Some("Riyam".into()));
+        participants.observe(&["Aditi".to_string()], 0);
+        participants.observe(&["Riyam".to_string()], 10_000);
+        participants.close(20_000);
+
+        let spans = vec![
+            DiarizedSpan {
+                speaker_id: "0".into(),
+                start_ms: 0,
+                end_ms: 9_000,
+            },
+            DiarizedSpan {
+                speaker_id: "1".into(),
+                start_ms: 10_000,
+                end_ms: 19_000,
+            },
+        ];
+
+        let mic_speaker = Some("1");
+        let self_name = Some("Riyam");
+        let mut labels = label_speakers(&[
+            BatchTurn { speaker_id: "0".into(), start_ms: 0, end_ms: 9000, text: "Hi".into(), language: None },
+            BatchTurn { speaker_id: "1".into(), start_ms: 10000, end_ms: 19000, text: "Hello".into(), language: None },
+        ], mic_speaker);
+
+        let named = participants.attribute(
+            &spans,
+            &mic_speaker.into_iter().collect::<Vec<_>>(),
+            &self_name.into_iter().collect::<Vec<_>>(),
+        );
+        for (speaker_id, name) in named.iter() {
+            labels.insert(speaker_id.clone(), name.clone());
+        }
+
+        assert_eq!(labels.get("1").map(String::as_str), Some("You"));
+        assert_eq!(labels.get("0").map(String::as_str), Some("Aditi"));
+    }
+
+    #[test]
     fn a_speaker_number_can_be_read_back_without_claiming_the_next_one() {
         let mut labels = NumberedSpeakers::default();
         assert_eq!(labels.peek(Some("voice-1")), None);
@@ -2917,6 +3191,36 @@ mod tests {
         for meeting in &meetings {
             assert!(!meeting.id.is_empty());
         }
+    }
+
+    #[test]
+    fn the_same_unscheduled_call_is_noticed_once_and_then_lies_quiet() {
+        let now = 1_000_000;
+        let key = "google-meet|https://meet.google.com/abc-defg-hij";
+
+        // The first sighting anywhere always prompts.
+        assert!(unscheduled_notice_due(&None, key, now));
+        let last = Some((key.to_string(), now));
+
+        // The heartbeat re-reports the same call for as long as it runs.
+        for seconds in [1, 30, UNSCHEDULED_COOLDOWN_MS / 1000 - 1] {
+            assert!(
+                !unscheduled_notice_due(&last, key, now + seconds * 1000),
+                "a repeat within the cooldown must not re-prompt"
+            );
+        }
+
+        // A different meeting, or the same one long after, prompts again.
+        assert!(unscheduled_notice_due(
+            &last,
+            "zoom|https://zoom.us/wc/123",
+            now + 5_000
+        ));
+        assert!(unscheduled_notice_due(
+            &last,
+            key,
+            now + UNSCHEDULED_COOLDOWN_MS + 1_000
+        ));
     }
 
     mod access {

@@ -49,9 +49,11 @@ export async function startScreenRecording({
     sourceId,
     mode = 'screen',
     micStream = null,
+    systemStream = null,
     onSystemPcm,
     onError,
     bitsPerSecond = DEFAULT_BITS_PER_SECOND,
+    signal,
 } = {}) {
     const bridge = globalThis.alphaRecorder;
     if (!bridge) throw new Error('Saving a recording needs the desktop app.');
@@ -59,9 +61,21 @@ export async function startScreenRecording({
     const mimeType = pickMimeType(mode);
     if (!mimeType) throw new Error(`This build has no encoder for ${mode === 'audio' ? 'audio' : 'screen'} recording.`);
 
+    const checkAborted = () => {
+        if (signal?.aborted) throw signal.reason || new DOMException('Recording cancelled.', 'AbortError');
+    };
+    const hasLiveAudio = source => source?.getAudioTracks().some(track => track.readyState === 'live');
     let stream = new MediaStream();
+    let mixContext = null;
+    let systemGain = null;
+    let micGain = null;
+    let handle = null;
+    let systemCapture = null;
+    try {
+    checkAborted();
     if (mode === 'screen') {
     const permission = await bridge.screenPermission();
+    checkAborted();
     if (permission === 'denied' || permission === 'restricted') {
         throw new Error(
             'Screen Recording permission is denied. Grant it in System Settings › Privacy & Security › Screen Recording, then restart Alpha.'
@@ -71,6 +85,7 @@ export async function startScreenRecording({
     // Tell the main process which source its display-media handler should hand
     // back; the renderer cannot choose one itself.
     await bridge.selectSource(sourceId || null);
+    checkAborted();
 
     stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -82,9 +97,10 @@ export async function startScreenRecording({
         },
         audio: true,
     });
+    checkAborted();
 
-    } else if (!micStream?.getAudioTracks().some(track => track.readyState === 'live')) {
-        throw new Error('Allow microphone access to record audio without sharing your screen.');
+    } else if (!hasLiveAudio(micStream) && !hasLiveAudio(systemStream)) {
+        throw new Error('Allow microphone or speaker audio access to record this meeting.');
     }
 
     const videoTrack = stream.getVideoTracks()[0] || null;
@@ -92,24 +108,23 @@ export async function startScreenRecording({
         await videoTrack
             .applyConstraints({ frameRate: { min: MIN_FRAME_RATE, ideal: TARGET_FRAME_RATE, max: TARGET_FRAME_RATE } })
             .catch(() => videoTrack.applyConstraints({ frameRate: { ideal: TARGET_FRAME_RATE, max: TARGET_FRAME_RATE } }).catch(() => {}));
+        checkAborted();
     }
 
-    const systemTrack = stream.getAudioTracks()[0] || null;
-    const hasSystemAudio = Boolean(systemTrack);
+    const systemTrack = stream.getAudioTracks().find(track => track.readyState === 'live') || null;
+    // Display capture can already contain speaker output. Add the dedicated
+    // source only when it does not, otherwise the recording doubles every voice.
+    const meetingAudio = systemTrack ? new MediaStream([systemTrack]) : hasLiveAudio(systemStream) ? systemStream : null;
+    const hasSystemAudio = Boolean(meetingAudio);
+    const systemAudioSource = systemTrack ? 'display' : meetingAudio ? 'provided' : null;
 
     // Mix whatever audio exists into one track for the recording. Without this the
     // recording carries only the screen, and a replay of a meeting with no sound
     // is close to useless.
-    let mixContext = null;
-    let systemGain = null;
-    let micGain = null;
-    let handle = null;
-    let systemCapture = null;
-    try {
     let mixed = null;
     const audioSources = [];
-    if (systemTrack) audioSources.push(new MediaStream([systemTrack]));
-    if (micStream && micStream.getAudioTracks().length) audioSources.push(micStream);
+    if (meetingAudio) audioSources.push(meetingAudio);
+    if (hasLiveAudio(micStream)) audioSources.push(micStream);
 
     if (audioSources.length) {
         mixContext = new AudioContext();
@@ -123,11 +138,13 @@ export async function startScreenRecording({
     }
 
     if (mixContext?.state === 'suspended') await mixContext.resume();
+    checkAborted();
 
     const recordedStream = new MediaStream([...stream.getVideoTracks(), ...(mixed ? mixed.stream.getAudioTracks() : [])]);
 
     const startedAtMs = Date.now();
     handle = await bridge.start({ meetingId, mimeType, startedAtMs });
+    checkAborted();
 
     let bytes = 0;
     let writeFailed = null;
@@ -175,6 +192,7 @@ export async function startScreenRecording({
     // hears anyone but its own user, so remote turns depend on it.
     if (systemTrack && onSystemPcm) {
         systemCapture = await startPcmCapture({ stream: new MediaStream([systemTrack]), onPcm: onSystemPcm });
+        checkAborted();
     }
 
     recorder.start(CHUNK_MS);
@@ -182,6 +200,7 @@ export async function startScreenRecording({
     let stopPromise = null;
     const result = {
         hasSystemAudio,
+        systemAudioSource,
         mode,
         mimeType,
         startedAtMs,
@@ -240,6 +259,7 @@ export async function startScreenRecording({
                 bytes: finished?.bytes ?? bytes,
                 mimeType,
                 hasSystemAudio,
+                systemAudioSource,
                 sourceId: sourceId || null,
                 error: writeFailed,
             };

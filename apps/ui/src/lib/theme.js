@@ -48,6 +48,11 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
     if (!storedChoice()) adopt(systemTheme());
 });
 
+window.addEventListener('storage', event => {
+    if (event.key !== STORAGE_KEY) return;
+    adopt(storedChoice() ?? systemTheme());
+});
+
 function subscribe(listener) {
     listeners.add(listener);
     return () => listeners.delete(listener);

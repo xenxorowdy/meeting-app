@@ -38,7 +38,7 @@ function floatToPcm16(samples) {
  */
 export async function startPcmCapture({ stream, onPcm, muted = false } = {}) {
     const context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-
+    try {
     const workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: 'application/javascript' }));
     try {
         await context.audioWorklet.addModule(workletUrl);
@@ -84,4 +84,8 @@ export async function startPcmCapture({ stream, onPcm, muted = false } = {}) {
             await context.close().catch(() => {});
         },
     };
+    } catch (cause) {
+        await context.close().catch(() => {});
+        throw cause;
+    }
 }

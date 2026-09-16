@@ -4,6 +4,7 @@ import { StatusWidget } from '@/components/StatusWidget';
 import { applyTheme, getTheme } from '@/lib/theme';
 import { applyPreferences, getPreferences, subscribePreferences } from '@/lib/preferences';
 import './index.css';
+import './design.css';
 
 applyTheme(getTheme());
 // The widget is its own window, so the personal preferences have to be applied

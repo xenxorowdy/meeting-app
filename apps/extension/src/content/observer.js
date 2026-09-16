@@ -47,6 +47,14 @@
         return same(left.participants, right.participants) && same(left.speaking, right.speaking);
     }
 
+    function reportWarranted(observation, lastSent, micMuted, lastMicMuted, now, lastSentAt) {
+        // A mute/unmute seen in the meeting client is a state change the
+        // backend is waiting for, so it never waits out the heartbeat.
+        if (micMuted !== null && micMuted !== lastMicMuted) return true;
+        if (sameObservation(observation, lastSent)) return now - lastSentAt >= HEARTBEAT_MS;
+        return true;
+    }
+
     class ActivityTracker {
         constructor(windowMs = ACTIVITY_WINDOW_MS) {
             this.windowMs = windowMs;
@@ -161,6 +169,10 @@
         let options = { enabled: true, activityFallback: true };
         let lastSent = null;
         let lastSentAt = 0;
+        let lastMicMuted = null;
+        // Only a tab that has actually seen a meeting reports its end, so the
+        // landing page of the same site sitting in another tab stays silent.
+        let wasInMeeting = false;
 
         chrome.storage.local.get({ enabled: true, activityFallback: true }).then(stored => {
             options = stored;
@@ -187,10 +199,66 @@
             attributeFilter: ['style', 'class', 'aria-label', 'width', 'height'],
         });
 
+        const send = payload => {
+            try {
+                runtime.sendMessage({ type: 'alpha:observation', payload });
+            } catch {
+                mutations.disconnect();
+            }
+        };
+
+        const selfName = () => (profile.self ? tidyName(profile.self()) : '');
+
+        // A closed or navigated-away tab cannot run its poll loop, so the end
+        // of the meeting is reported best-effort here; the backend's dropout
+        // watchdog catches the cases this does not manage to deliver.
+        window.addEventListener('pagehide', () => {
+            if (!wasInMeeting) return;
+            wasInMeeting = false;
+            send({
+                source: profile.source,
+                url: location.href,
+                method: 'none',
+                self: selfName(),
+                participants: [],
+                speaking: [],
+                ended: true,
+                reason: 'tab-closed',
+                endedAt: Date.now(),
+            });
+        }, { once: true });
+
         setInterval(() => {
             if (!options.enabled) return;
             const observation = observationFrom(readEntries(profile));
-            if (observation.participants.length === 0) return;
+            const inMeeting = observation.participants.length > 0;
+            if (inMeeting) wasInMeeting = true;
+
+            // Terminal transition: the meeting ended or we left it. Reported
+            // once; rejoining restarts the cycle from the next observation.
+            if (wasInMeeting && !inMeeting && typeof profile.ended === 'function') {
+                const ended = profile.ended();
+                if (ended) {
+                    wasInMeeting = false;
+                    tracker.hits.clear();
+                    lastSent = null;
+                    lastMicMuted = null;
+                    send({
+                        source: profile.source,
+                        url: location.href,
+                        method: 'none',
+                        self: selfName(),
+                        participants: [],
+                        speaking: [],
+                        ended: true,
+                        reason: ended,
+                        endedAt: Date.now(),
+                    });
+                    return;
+                }
+            }
+
+            if (!inMeeting) return;
 
             let method = observation.speaking.length > 0 ? 'indicator' : 'none';
             if (observation.speaking.length === 0 && options.activityFallback) {
@@ -201,30 +269,27 @@
                 }
             }
 
+            const micMuted = typeof profile.micMuted === 'function' ? profile.micMuted() : null;
             const now = Date.now();
-            if (sameObservation(observation, lastSent) && now - lastSentAt < HEARTBEAT_MS) return;
+            if (!reportWarranted(observation, lastSent, micMuted, lastMicMuted, now, lastSentAt)) return;
             lastSent = observation;
             lastSentAt = now;
+            if (micMuted !== null) lastMicMuted = micMuted;
 
-            try {
-                runtime.sendMessage({
-                    type: 'alpha:observation',
-                    payload: {
-                        source: profile.source,
-                        url: location.href,
-                        method,
-                        self: profile.self ? tidyName(profile.self()) : '',
-                        participants: observation.participants,
-                        speaking: observation.speaking,
-                    },
-                });
-            } catch {
-                mutations.disconnect();
-            }
+            const payload = {
+                source: profile.source,
+                url: location.href,
+                method,
+                self: selfName(),
+                participants: observation.participants,
+                speaking: observation.speaking,
+            };
+            if (micMuted !== null) payload.micMuted = micMuted;
+            send(payload);
         }, POLL_MS);
     }
 
-    const api = { tidyName, observationFrom, sameObservation, ActivityTracker, start };
+    const api = { tidyName, observationFrom, sameObservation, reportWarranted, ActivityTracker, start };
     globalThis.AlphaNames = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

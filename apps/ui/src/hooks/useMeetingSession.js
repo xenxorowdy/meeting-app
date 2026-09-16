@@ -48,6 +48,8 @@ const DEFAULT_SETTINGS = {
     recordingBitsPerSecond: DEFAULT_BITS_PER_SECOND,
     meetingReminders: true,
     floatingWidget: true,
+    autoStopOnMeetingEnd: true,
+    promptForUnscheduledCalls: true,
 };
 
 const clampLevel = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
@@ -66,6 +68,9 @@ export function useMeetingSession() {
     const [systemAudioSeen, setSystemAudioSeen] = useState(false);
     const [interimTurns, setInterimTurns] = useState([]);
     const [micMuted, setMicMuted] = useState(false);
+    // The meeting client's own mute state, reported by the browser extension.
+    // While it is true the microphone is not recorded and not transcribed.
+    const [clientMicMuted, setClientMicMuted] = useState(false);
     const [systemAudioMuted, setSystemAudioMuted] = useState(false);
     const [error, setError] = useState(null);
     const [micError, setMicError] = useState(null);
@@ -78,6 +83,7 @@ export function useMeetingSession() {
     // The mic stream has to be state, not just a ref: the screen recording mixes it
     // in, and it only exists once the capture effect below has run.
     const [micStream, setMicStream] = useState(null);
+    const [systemStream, setSystemStream] = useState(null);
 
     const levelsRef = useRef(null);
     if (!levelsRef.current) levelsRef.current = createLevelChannel();
@@ -95,14 +101,22 @@ export function useMeetingSession() {
     const capturing = sessionState === SESSION_STATES.RECORDING || sessionState === SESSION_STATES.PAUSED;
     const recorderRef = useRef(null);
     const recorderStartRef = useRef(null);
+    const recorderGenerationRef = useRef(0);
+    const recorderAbortRef = useRef(null);
+    const finishedRecordingRef = useRef(null);
     const startingRef = useRef(false);
     const captureMuteRef = useRef({ mic: false, system: false });
-    captureMuteRef.current = { mic: micMuted || sessionState === SESSION_STATES.PAUSED, system: systemAudioMuted || sessionState === SESSION_STATES.PAUSED };
+    // Effective mic mute folds in the meeting client's mute: muting in Zoom or
+    // Meet has to keep the microphone out of the recording and the transcript.
+    captureMuteRef.current = {
+        mic: micMuted || clientMicMuted || sessionState === SESSION_STATES.PAUSED,
+        system: systemAudioMuted || sessionState === SESSION_STATES.PAUSED,
+    };
     // Set when a meeting starts with recording enabled, consumed by the effect that
     // waits for the microphone before opening the file.
     const pendingRecordingRef = useRef(null);
     const activeMeetingIdRef = useRef(null);
-    const callbacksRef = useRef({ onLiveTurn: null, onMeetingCompleted: null, onTranscriptReplaced: null });
+    const callbacksRef = useRef({ onLiveTurn: null, onMeetingCompleted: null, onTranscriptReplaced: null, onMeetingEnded: null, onUnscheduledCall: null });
     // startMeeting reads settings at the moment it runs; a ref keeps it from being
     // rebuilt (and its callers re-rendered) every time a setting changes.
     const settingsRef = useRef(settings);
@@ -124,6 +138,14 @@ export function useMeetingSession() {
 
     const setOnMeetingCompleted = useCallback(fn => {
         callbacksRef.current.onMeetingCompleted = fn;
+    }, []);
+
+    const setOnMeetingEnded = useCallback(fn => {
+        callbacksRef.current.onMeetingEnded = fn;
+    }, []);
+
+    const setOnUnscheduledCall = useCallback(fn => {
+        callbacksRef.current.onUnscheduledCall = fn;
     }, []);
 
     const adoptMeeting = useCallback(raw => {
@@ -246,6 +268,22 @@ export function useMeetingSession() {
                     break;
                 }
 
+                case 'mic_muted':
+                    setClientMicMuted(Boolean(data?.muted));
+                    break;
+
+                case 'meeting_ended':
+                    callbacksRef.current.onMeetingEnded?.(data?.source || '', data?.reason || 'ended');
+                    break;
+
+                case 'unscheduled_call':
+                    callbacksRef.current.onUnscheduledCall?.({
+                        source: data?.source || '',
+                        url: data?.url || '',
+                        participants: Array.isArray(data?.participants) ? data.participants : [],
+                    });
+                    break;
+
                 case 'error':
                 case 'warning':
                     setError(data?.message || data?.error || message.message || 'The backend reported a problem.');
@@ -316,7 +354,12 @@ export function useMeetingSession() {
             muted: captureMuteRef.current.mic,
             noiseSuppression: settingsRef.current.noiseSuppression !== false,
             echoCancellation: settingsRef.current.echoSuppression !== false,
-            onPcm: pcm => socketRef.current?.sendAudio(STREAM_MIC, pcm),
+            onPcm: pcm => {
+                // A muted microphone — in the app or in the meeting client —
+                // sends nothing to the backend, so nothing can be transcribed.
+                if (captureMuteRef.current.mic) return;
+                socketRef.current?.sendAudio(STREAM_MIC, pcm);
+            },
             onReady: capture => {
                 captureRef.current = capture;
                 capture.setMuted(captureMuteRef.current.mic);
@@ -338,23 +381,29 @@ export function useMeetingSession() {
         // meeting audio. Only an active source suppresses that fallback.
         systemControllerRef.current.start({
             deviceId: settings.systemDeviceId,
+            includeStream: true,
             muted: captureMuteRef.current.system,
-            onPcm: pcm => socketRef.current?.sendAudio(STREAM_SYSTEM, pcm),
+            onPcm: pcm => {
+                systemSourceRef.current = systemCaptureRef.current?.source || 'system';
+                socketRef.current?.sendAudio(STREAM_SYSTEM, pcm);
+            },
             onReady: capture => {
                 systemCaptureRef.current = capture;
-                systemSourceRef.current = capture.source;
+                setSystemStream(capture.stream || null);
                 capture.setMuted(captureMuteRef.current.system);
                 setSystemAudioError(null);
             },
             onError: message => {
                 systemCaptureRef.current = null;
                 systemSourceRef.current = null;
+                setSystemStream(null);
                 setSystemAudioError(message);
             },
         });
         return () => {
             systemCaptureRef.current = null;
             systemSourceRef.current = null;
+            setSystemStream(null);
             systemControllerRef.current.stop().catch(() => {});
         };
     }, [capturing, settings.systemDeviceId]);
@@ -372,50 +421,65 @@ export function useMeetingSession() {
 
     useEffect(() => {
         if (captureRef.current) {
-            captureRef.current.setMuted(micMuted || sessionState === SESSION_STATES.PAUSED);
+            captureRef.current.setMuted(captureMuteRef.current.mic);
         }
-        recorderRef.current?.setMicMuted(micMuted || sessionState === SESSION_STATES.PAUSED);
-    }, [micMuted, sessionState]);
+        recorderRef.current?.setMicMuted(captureMuteRef.current.mic);
+    }, [micMuted, clientMicMuted, sessionState]);
 
-    // Open the screen recording once the microphone is available, so its audio can
-    // be mixed in. A microphone that failed outright must not block the recording
-    // forever, so micError releases the wait too — the recording then carries only
-    // the meeting audio, and the HUD says so.
+    // Resolve both inputs before opening the mix. Audio-only files need the
+    // dedicated speaker stream too, including when microphone access was denied.
     useEffect(() => {
         const pending = pendingRecordingRef.current;
         if (!pending || sessionState !== SESSION_STATES.RECORDING) return;
         if (!micStream && !micError) return;
+        if (!systemStream && !systemAudioError) return;
 
         pendingRecordingRef.current = null;
+        const generation = ++recorderGenerationRef.current;
+        const controller = new AbortController();
+        recorderAbortRef.current = controller;
+        const current = () => generation === recorderGenerationRef.current && !controller.signal.aborted;
 
         recorderStartRef.current = startScreenRecording({
             meetingId: pending.meetingId,
             sourceId: pending.sourceId,
             mode: pending.mode,
             micStream,
+            systemStream,
+            signal: controller.signal,
             bitsPerSecond: settingsRef.current.recordingBitsPerSecond,
             onSystemPcm: pcm => {
-                if (systemSourceRef.current) return;
+                if (!current() || systemSourceRef.current) return;
                 if (socketRef.current) socketRef.current.sendAudio(STREAM_SYSTEM, pcm);
             },
-            onError: message => setRecordingState(prev => ({ ...prev, error: message })),
+            onError: message => { if (current()) setRecordingState(prev => ({ ...prev, error: message })); },
         })
-            .then(handle => {
+            .then(async handle => {
+                if (!current()) { await handle.stop(); return; }
                 recorderRef.current = handle;
                 handle.setMicMuted(captureMuteRef.current.mic);
                 handle.setSystemMuted(captureMuteRef.current.system);
                 setRecordingState({ active: true, mode: handle.mode, hasSystemAudio: handle.hasSystemAudio, error: null });
                 // Stopping the share from the OS overlay ends capture without
                 // going through our own stop path.
-                handle.onSourceEnded(() => setRecordingState(prev => ({ ...prev, active: false })));
+                handle.onSourceEnded(() => {
+                    if (!current() || recorderRef.current !== handle) return;
+                    recorderRef.current = null;
+                    finishedRecordingRef.current = handle.stop().catch(cause => {
+                        if (current()) setError(`Could not finish the recording: ${cause.message}`);
+                        return null;
+                    });
+                    setRecordingState(prev => ({ ...prev, active: false, hasSystemAudio: false }));
+                });
             })
             .catch(cause => {
+                if (!current()) return;
                 // A denied permission or a missing encoder must not stop the
                 // meeting from being transcribed, so this only reports.
                 setRecordingState({ active: false, hasSystemAudio: false, error: cause.message });
                 setError(`Recording did not start: ${cause.message}`);
             });
-    }, [sessionState, micStream, micError]);
+    }, [sessionState, micStream, micError, systemStream, systemAudioError]);
 
     // Muting meeting audio has to stop it reaching the transcriber too, not just
     // the level meter, or a muted meeting still gets transcribed.
@@ -429,6 +493,9 @@ export function useMeetingSession() {
 
     useEffect(
         () => () => {
+            recorderGenerationRef.current += 1;
+            recorderAbortRef.current?.abort();
+            pendingRecordingRef.current = null;
             if (recorderRef.current) {
                 recorderRef.current.stop().catch(() => {});
                 recorderRef.current = null;
@@ -439,11 +506,12 @@ export function useMeetingSession() {
 
     const startMeeting = useCallback(
         async (title, { sourceId = null, event = null, mode = 'audio' } = {}) => {
-            if (startingRef.current) return null;
-            setError(null);
-            setMicError(null);
-            setSystemAudioError(null);
-            systemAudioSeenRef.current = false;
+        if (startingRef.current) return null;
+        setError(null);
+        setMicError(null);
+        setSystemAudioError(null);
+        setClientMicMuted(false);
+        systemAudioSeenRef.current = false;
             setSystemAudioSeen(false);
             setRecordingState({ active: false, mode, hasSystemAudio: false, error: null });
             if (settingsRef.current.transcriptionProvider === 'sarvam' && (isRemoteBackend() || settingsRef.current.supportsLocalRecording === false)) {
@@ -456,6 +524,7 @@ export function useMeetingSession() {
             }
             startingRef.current = true;
             try {
+                finishedRecordingRef.current = null;
                 const calendarEvent = calendarEventMetadata(event);
                 const response = await apiRequest('/api/meetings/start', {
                     method: 'POST',
@@ -513,22 +582,23 @@ export function useMeetingSession() {
             // A meeting stopped before the recorder ever opened must not leave a
             // request behind for the next one to pick up.
             pendingRecordingRef.current = null;
+            recorderGenerationRef.current += 1;
+            recorderAbortRef.current?.abort();
+            recorderStartRef.current = null;
 
             // Finish the recording before telling the backend the meeting is over,
             // so its path and duration can be stored on the same record.
-            let recording = null;
-            if (recorderStartRef.current) {
-                await recorderStartRef.current;
-                recorderStartRef.current = null;
-            }
+            let recording = finishedRecordingRef.current ? await finishedRecordingRef.current : null;
+            finishedRecordingRef.current = null;
             if (recorderRef.current) {
-                recording = await recorderRef.current.stop().catch(cause => {
+                const handle = recorderRef.current;
+                recorderRef.current = null;
+                recording = await handle.stop().catch(cause => {
                     setRecordingState(prev => ({ ...prev, error: cause.message }));
                     return null;
                 });
-                recorderRef.current = null;
-                setRecordingState({ active: false, hasSystemAudio: false, error: null });
             }
+            setRecordingState(prev => ({ ...prev, active: false, hasSystemAudio: false }));
 
             try {
                 const response = await apiRequest('/api/meetings/stop', {
@@ -752,6 +822,7 @@ export function useMeetingSession() {
         subscribeAudioLevels: levels.subscribe,
         systemAudioSeen,
         micMuted,
+        clientMicMuted,
         systemAudioMuted,
         recordingState,
         error,
@@ -776,6 +847,8 @@ export function useMeetingSession() {
         setOnLiveTurn,
         setOnTranscriptReplaced,
         setOnMeetingCompleted,
+        setOnMeetingEnded,
+        setOnUnscheduledCall,
         clearError: useCallback(() => setError(null), []),
     };
 }

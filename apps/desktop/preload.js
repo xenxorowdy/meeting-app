@@ -73,6 +73,23 @@ contextBridge.exposeInMainWorld('alphaSystemAudio', {
     onStatus: listener => subscribe(systemAudioListeners.status, listener),
 });
 
+const micUsageListeners = new Set();
+
+ipcRenderer.on('mic-usage:event', (_event, usage) => {
+    if (!usage || typeof usage.active !== 'boolean') return;
+    fanOut(micUsageListeners, Object.freeze({ active: usage.active, at: usage.at ?? null }));
+});
+
+// Lets the app notice a call that Alpha is not part of: any process opening
+// the microphone. The watcher keeps running across reloads; subscribing again
+// is what pulls the current state into the fresh page.
+contextBridge.exposeInMainWorld('alphaMicUsage', {
+    available: () => ipcRenderer.invoke('mic-usage:available'),
+    start: () => ipcRenderer.invoke('mic-usage:start'),
+    stop: () => ipcRenderer.invoke('mic-usage:stop'),
+    onEvent: listener => subscribe(micUsageListeners, listener),
+});
+
 const MENUBAR_COMMANDS = new Set(['record', 'new-note', 'new-meeting', 'settings']);
 const menuBarListeners = new Set();
 

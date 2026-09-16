@@ -97,6 +97,19 @@ impl SpeechLog {
         self.spans.is_empty() && self.open.is_empty()
     }
 
+    pub fn current_speaker(&self) -> Option<String> {
+        let others: Vec<_> = self
+            .open
+            .keys()
+            .filter(|name| Some(name.as_str()) != self.self_name())
+            .collect();
+        if others.len() == 1 {
+            Some(others[0].clone())
+        } else {
+            None
+        }
+    }
+
     pub fn observe(&mut self, speaking: &[String], at_ms: i64) {
         self.observations += 1;
         self.extend_roster(speaking);
@@ -414,6 +427,25 @@ mod tests {
             end_ms: 900,
         }];
         assert!(log.attribute(&spans, &[], &[]).is_empty());
+    }
+
+    #[test]
+    fn current_speaker_identifies_the_sole_open_remote_speaker() {
+        let mut log = SpeechLog::default();
+        log.set_self_name(Some("Riyam".into()));
+        assert_eq!(log.current_speaker(), None);
+
+        log.observe(&["Riyam".to_string()], 0);
+        assert_eq!(log.current_speaker(), None);
+
+        log.observe(&["Riyam".to_string(), "Aditi".to_string()], 1_000);
+        assert_eq!(log.current_speaker().as_deref(), Some("Aditi"));
+
+        log.observe(&["Riyam".to_string(), "Aditi".to_string(), "Ben".to_string()], 2_000);
+        assert_eq!(log.current_speaker(), None); // multiple speakers is ambiguous
+
+        log.observe(&["Ben".to_string()], 3_000);
+        assert_eq!(log.current_speaker().as_deref(), Some("Ben"));
     }
 
     #[test]

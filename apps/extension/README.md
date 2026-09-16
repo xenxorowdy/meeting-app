@@ -31,9 +31,20 @@ The content script polls the page every 700 ms and posts a snapshot to
     "source": "google-meet",
     "participants": ["Riyam Jain", "Aditi Sharma"],
     "speaking": ["Aditi Sharma"],
-    "self": "Riyam Jain"
+    "self": "Riyam Jain",
+    "micMuted": false
 }
 ```
+
+Two more signals ride along when the page offers them:
+
+- **`micMuted`** — whether *your* microphone is muted in the meeting client. Alpha stops
+  capturing and transcribing your side of the call while it is true, and picks up again the
+  moment you unmute. It is omitted when the page state cannot be read.
+- **`ended`** — sent once, with a `reason` (`ended`, `left`, or `tab-closed`), when the page
+  shows a post-leave screen, the meeting is over, or the tab closes. Alpha uses it to stop the
+  recording and summarize; a rejoin within the grace window cancels the stop. Only a tab that
+  actually joined a meeting reports this, so a parked `meet.google.com` home tab stays silent.
 
 The backend turns that stream of snapshots into named speech intervals stamped against the
 meeting clock, and uses them three ways:
@@ -57,6 +68,8 @@ tried in order, so repairing a site is a one-file edit:
 - `tiles` — the elements that represent one participant.
 - `name` — where the display name sits inside a tile.
 - `speaking` — the indicator that is visible only while that participant talks.
+- `micMuted()` — whether the local microphone is muted in the client (`null` when unknown).
+- `ended()` — why the meeting is over (`'ended'` or `'left'`), read from the post-leave screen.
 
 If none of the `speaking` selectors ever match, the extension falls back to watching which tile
 mutates most often — the speaking indicator is usually the only thing animating inside a tile.

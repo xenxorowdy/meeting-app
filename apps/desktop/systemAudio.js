@@ -8,7 +8,8 @@ const SOURCE_SAMPLE_RATE = 24000;
 const SOURCE_CHANNELS = 2;
 const TARGET_SAMPLE_RATE = 16000;
 const SOURCE_FRAME_BYTES = SOURCE_CHANNELS * 2;
-const CHUNK_SAMPLES = TARGET_SAMPLE_RATE / 10;
+const CHUNK_MS = 20;
+const CHUNK_SAMPLES = (TARGET_SAMPLE_RATE / 1000) * CHUNK_MS;
 
 const DATA_CHANNEL = 'system-audio:data';
 const STATUS_CHANNEL = 'system-audio:status';
@@ -176,10 +177,10 @@ async function start(sender, { spawnFn = spawn } = {}) {
             child = null;
             target = null;
         }
-        if (!wasCurrent || code === 0 || code === null) return;
+        if (!wasCurrent) return;
         post(sender, {
             state: 'error',
-            message: process.platform === 'darwin' ? PERMISSION_MESSAGE : `The system audio helper stopped with code ${code}.`,
+            message: `Speaker audio capture stopped unexpectedly${code === null ? '' : ` (code ${code})`}. Check Screen Recording permission and restart the meeting.`,
         });
     });
 

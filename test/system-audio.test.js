@@ -113,13 +113,14 @@ test('resampling stays continuous when the helper splits a block', () => {
     assert.ok(second.every(sample => sample === 700));
 });
 
-test('the converter emits fixed 100 ms chunks of 16 kHz mono PCM', () => {
+test('the converter emits fixed short chunks of 16 kHz mono PCM', () => {
     const chunks = [];
     const feed = createConverter(chunk => chunks.push(chunk));
 
     feed(stereoBuffer(24000));
 
-    assert.equal(chunks.length, 10);
+    assert.ok(CHUNK_SAMPLES * 2 <= 16000 / 25, 'meeting audio must not be buffered long enough to outrun the echo gate');
+    assert.equal(chunks.length, 16000 / CHUNK_SAMPLES);
     for (const chunk of chunks) assert.equal(chunk.length, CHUNK_SAMPLES * 2);
 });
 
@@ -150,7 +151,7 @@ test('capture forwards converted audio to the window that asked for it', { skip:
     helper().stdout.emit('data', stereoBuffer(24000));
 
     const audio = sender.messages.filter(message => message.channel === 'system-audio:data');
-    assert.equal(audio.length, 10);
+    assert.equal(audio.length, 16000 / CHUNK_SAMPLES);
     assert.equal(audio[0].payload.length, CHUNK_SAMPLES * 2);
 
     assert.deepEqual(systemAudio.stop(), { stopped: true });
@@ -180,5 +181,16 @@ test('a helper that exits on its own reports the failure once', { skip: process.
 
     const failures = sender.messages.filter(message => message.channel === 'system-audio:status' && message.payload.state === 'error');
     assert.equal(failures.length, 1);
+    assert.deepEqual(systemAudio.stop(), { stopped: false });
+});
+
+test('an unexpected clean exit also releases speaker capture', { skip: process.platform !== 'darwin' }, async () => {
+    const sender = fakeSender();
+    const { spawnFn, helper } = fakeSpawner();
+    await systemAudio.start(sender, { spawnFn });
+    helper().emit('close', 0);
+    const failures = sender.messages.filter(message => message.channel === 'system-audio:status' && message.payload.state === 'error');
+    assert.equal(failures.length, 1);
+    assert.match(failures[0].payload.message, /stopped unexpectedly/);
     assert.deepEqual(systemAudio.stop(), { stopped: false });
 });

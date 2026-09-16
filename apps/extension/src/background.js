@@ -1,8 +1,13 @@
 const DEFAULT_PORT = 48900;
 const DEFAULTS = { port: DEFAULT_PORT, enabled: true, activityFallback: true };
 const STALE_MS = 15000;
+// Observations are serialized so a stale snapshot can never land after a
+// newer one. The queue is capped for ordinary reports, but a report that
+// carries the end of the meeting is always let through.
+const MAX_QUEUE = 10;
 
-let inflight = false;
+let queued = 0;
+let queue = Promise.resolve();
 
 function backendUrl(port, path) {
     return `http://127.0.0.1:${port}${path}`;
@@ -32,15 +37,12 @@ async function badge(state) {
     await chrome.action.setBadgeText({ text: text[state] ?? '' });
 }
 
-async function report(payload, sender) {
+async function sendReport(payload, sender) {
     const { port, enabled } = await settings();
     if (!enabled) {
         await badge('off');
         return { ok: false, reason: 'paused' };
     }
-    if (inflight) return { ok: false, reason: 'busy' };
-
-    inflight = true;
     try {
         const response = await fetch(backendUrl(port, '/api/session/participants'), {
             method: 'POST',
@@ -61,9 +63,19 @@ async function report(payload, sender) {
         });
         await badge('error');
         return { ok: false, error: String(cause?.message || cause) };
-    } finally {
-        inflight = false;
     }
+}
+
+function report(payload, sender) {
+    if (queued >= MAX_QUEUE && !payload?.ended) {
+        return Promise.resolve({ ok: false, reason: 'busy' });
+    }
+    queued += 1;
+    const run = queue.then(() => sendReport(payload, sender));
+    queue = run.then(() => {}, () => {});
+    return run.finally(() => {
+        queued -= 1;
+    });
 }
 
 async function status() {

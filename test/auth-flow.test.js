@@ -168,6 +168,14 @@ test('local use needs no account and paid checkout cannot pretend to succeed', {
         await fs.rm(root, { recursive: true, force: true });
     });
     for (const route of ['/api/status', '/api/settings', '/api/meetings', '/api/folders']) assert.equal((await api(route)).status, 200, route);
+    const status = await api('/api/status');
+    assert.equal(status.data.podcast.enabled, false);
+    assert.equal(status.data.podcast.status, 'disabled');
+    for (const [route, body] of [['/api/podcast/status', undefined], ['/api/podcasts/test/script', {}]]) {
+        const disabled = await api(route, body);
+        assert.equal(disabled.status, 403, route);
+        assert.equal(disabled.data.code, 'FEATURE_DISABLED', route);
+    }
     const config = await api('/api/auth/config');
     assert.equal(config.data.registrationAllowed, true);
     const session = await api('/api/auth/session');

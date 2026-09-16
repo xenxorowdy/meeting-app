@@ -3,6 +3,7 @@ use crate::{audio::rms, dsp};
 const BUCKET_MS: i64 = 20;
 const HISTORY_MS: i64 = 12_000;
 const MAX_DELAY_MS: i64 = 600;
+const REFERENCE_LAG_MS: i64 = 300;
 const MIN_OVERLAP_BUCKETS: usize = 15;
 const CORRELATION: f32 = 0.7;
 const LOUDER_THAN_SOURCE: f32 = 2.5;
@@ -24,6 +25,10 @@ fn gate_bytes() -> usize {
 
 fn context_bytes() -> usize {
     (dsp::SAMPLE_RATE as i64 / 1000 * CONTEXT_MS) as usize * 2
+}
+
+fn alignments() -> impl Iterator<Item = i64> {
+    (0..=MAX_DELAY_MS / BUCKET_MS).chain(-(REFERENCE_LAG_MS / BUCKET_MS)..0)
 }
 
 fn span_ms(pcm: &[u8]) -> i64 {
@@ -165,7 +170,7 @@ impl EchoWindow {
         let context_level = rms(&self.context);
         let level = rms(window);
 
-        (0..=MAX_DELAY_MS / BUCKET_MS).any(|steps| {
+        alignments().any(|steps| {
             self.matches_at(window_ms, &heard, level, steps)
                 && self.matches_at(context_ms, &context, context_level, steps)
         })
@@ -216,7 +221,7 @@ impl EchoWindow {
         }
         let level = rms(pcm);
 
-        (0..=MAX_DELAY_MS / BUCKET_MS).any(|steps| self.matches_at(start_ms, &heard, level, steps))
+        alignments().any(|steps| self.matches_at(start_ms, &heard, level, steps))
     }
 
     pub fn remember_partial(&mut self, at_ms: i64, text: &str) {
@@ -303,6 +308,40 @@ mod tests {
         let window = playing(10_000, &played);
 
         assert!(window.is_echo(10_000, &encode(&delayed(&played, 120, 0.3))));
+    }
+
+    #[test]
+    fn a_speaker_feed_timestamped_later_than_the_microphone_still_matches() {
+        let played = sentence(2_000, 7, 0.5);
+        let window = playing(10_106, &played);
+
+        assert!(window.is_echo(10_000, &encode(&delayed(&played, 0, 0.3))));
+    }
+
+    #[test]
+    fn a_speaker_feed_lagging_further_than_the_search_is_not_forced_to_match() {
+        let played = sentence(2_000, 7, 0.5);
+        let window = playing(11_000, &played);
+
+        assert!(!window.is_echo(10_000, &encode(&delayed(&played, 0, 0.3))));
+    }
+
+    #[test]
+    fn the_user_talking_while_the_speaker_feed_lags_is_still_left_alone() {
+        let window = playing(10_106, &sentence(2_000, 7, 0.5));
+
+        assert!(!window.is_echo(10_000, &encode(&sentence(2_000, 991, 0.4))));
+    }
+
+    #[test]
+    fn live_bleed_is_silenced_even_when_the_speaker_feed_lags() {
+        let played = sentence(12_000, 7, 0.5);
+        let mut window = playing(106, &played);
+        let heard = encode(&delayed(&played, 0, 0.3));
+
+        let passed = gated(&mut window, &heard);
+
+        assert!(rms(&passed[warmup_bytes()..]) < rms(&heard) * 0.05);
     }
 
     #[test]

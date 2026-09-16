@@ -8,6 +8,7 @@ import { useCalendar } from '@/hooks/useCalendar';
 import { eventForNow, attendeeNames } from '@/lib/calendarEvents';
 import { useMeetingReminder } from '@/hooks/useMeetingReminder';
 import { useShellCommands } from '@/hooks/useShellCommands';
+import { useUnscheduledCallPrompt } from '@/hooks/useUnscheduledCallPrompt';
 import { SourcePicker } from '@/components/SourcePicker';
 import { useOnceOpen } from '@/hooks/useOnceOpen';
 
@@ -138,6 +139,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         subscribeAudioLevels,
         systemAudioSeen,
         micMuted,
+        clientMicMuted,
         systemAudioMuted,
         recordingState,
         error,
@@ -162,6 +164,8 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         setOnLiveTurn,
         setOnTranscriptReplaced,
         setOnMeetingCompleted,
+        setOnMeetingEnded,
+        setOnUnscheduledCall,
         setOnCalendarConnection,
         addNote,
         deleteNote,
@@ -255,6 +259,16 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         globalThis.alphaShell?.setRecordingIndicator(isRecording);
     }, [isRecording]);
 
+    useEffect(() => {
+        globalThis.alphaShell?.setWidgetState({
+            sessionState,
+            micMuted,
+            systemAudioMuted,
+            title: activeMeeting?.title || null,
+            canControl: isRecording || isPaused,
+        });
+    }, [sessionState, micMuted, systemAudioMuted, activeMeeting?.title, isRecording, isPaused]);
+
     useMeetingReminder({
         events: calendar.events,
         enabled: settings.meetingReminders !== false && !globalThis.alphaShell?.ownsMeetingReminders,
@@ -281,6 +295,58 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     const handleStopRecording = useCallback(() => {
         stopMeeting(turns);
     }, [stopMeeting, turns]);
+
+    // A notice the user has to see while it is still relevant: it lives only
+    // as long as the session state it describes.
+    const [endNotice, setEndNotice] = useState(null);
+    useEffect(() => {
+        setEndNotice(null);
+    }, [sessionState]);
+
+    // The meeting client reports the call is over (extension, or the tab
+    // dropped out). Auto-stop finishes the recording exactly like the Stop
+    // button; with auto-stop off the user still chooses, so say what happened.
+    useEffect(() => {
+        setOnMeetingEnded((source, reason) => {
+            if (settings.autoStopOnMeetingEnd !== false) {
+                handleStopRecording();
+                return;
+            }
+            const where = source === 'google-meet' ? 'Google Meet' : source === 'zoom' ? 'Zoom' : null;
+            setEndNotice(
+                where
+                    ? `The meeting ended in ${where} — recording continues until you stop it.`
+                    : reason === 'dropout'
+                      ? 'The meeting tab stopped responding — recording continues until you stop it.'
+                      : 'The meeting ended — recording continues until you stop it.'
+            );
+        });
+    }, [setOnMeetingEnded, handleStopRecording, settings.autoStopOnMeetingEnd]);
+
+    // Unscheduled-call prompts: browser meetings arrive through the backend
+    // socket, microphone use through the desktop shell (subscribed in the hook).
+    const { notifyUnscheduledCall } = useUnscheduledCallPrompt({
+        enabled: settings.promptForUnscheduledCalls !== false,
+        canRecord: isConnected && isIdle,
+        events: calendar.events,
+        onStart: () => startWithSource('', null, null, 'audio'),
+    });
+    useEffect(() => {
+        setOnUnscheduledCall(notifyUnscheduledCall);
+    }, [setOnUnscheduledCall, notifyUnscheduledCall]);
+
+    useEffect(() => {
+        return globalThis.alphaShell?.onWidgetCommand(action => {
+            if (action === 'toggle-mic') toggleMicMute();
+            else if (action === 'toggle-system') toggleSystemAudioMute();
+            else if (action === 'toggle-pause') {
+                if (isPaused) resumeMeeting();
+                else if (isRecording) pauseMeeting();
+            } else if (action === 'stop') {
+                if (isRecording || isPaused) handleStopRecording();
+            }
+        });
+    }, [toggleMicMute, toggleSystemAudioMute, isPaused, isRecording, resumeMeeting, pauseMeeting, handleStopRecording]);
 
     const handleSelectHistoryMeeting = useCallback(
         async (meeting, citation = null) => {
@@ -359,7 +425,9 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
           ? { tone: 'warning', text: `Microphone unavailable: ${micError}` }
           : meetingAudioError
             ? { tone: 'warning', text: `Meeting audio: ${meetingAudioError}` }
-            : error
+            : endNotice
+              ? { tone: 'warning', text: endNotice }
+              : error
               ? { tone: 'warning', text: error }
               : recordingState?.error
                 ? { tone: 'warning', text: `Screen recording: ${recordingState.error}` }
@@ -386,6 +454,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                     durationSeconds,
                     subscribeAudioLevels,
                     micMuted,
+                    clientMicMuted,
                     systemAudioMuted,
                     systemAudioSeen,
                     systemAudioError: meetingAudioError,
@@ -457,7 +526,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                         calendar={calendar}
                         onUpdateSettings={updateSettings}
                         onActivateLicense={activateLicense}
-                        sessionActive={!isIdle}
+                        connectionLocked={!isIdle}
                     />
                 )}
             </Suspense>

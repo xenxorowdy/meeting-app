@@ -1,4 +1,5 @@
 import { startPcmCapture } from './pcmCapture.js';
+import { createPcmMediaStream } from './pcmMediaStream.js';
 
 const LOOPBACK_HINTS = [
     /blackhole/i,
@@ -38,18 +39,17 @@ export async function systemAudioAvailability() {
     return { available: false, source: null, reason: state?.reason || NO_SOURCE_MESSAGE };
 }
 
-async function startNativeCapture({ onPcm, onError, muted }) {
+async function startNativeCapture({ onPcm, onError, muted, includeStream }) {
     const bridge = globalThis.alphaSystemAudio;
     let isMuted = muted;
+    const recording = includeStream ? await createPcmMediaStream({ muted }) : null;
 
     const offData = bridge.onData(bytes => {
-        if (!onPcm || !bytes?.byteLength) return;
-        if (isMuted) {
-            onPcm(new Int16Array(bytes.byteLength / 2));
-            return;
-        }
+        if (!bytes?.byteLength) return;
         const aligned = bytes.byteOffset % 2 === 0 ? bytes : new Uint8Array(bytes);
-        onPcm(new Int16Array(aligned.buffer, aligned.byteOffset, aligned.byteLength / 2));
+        const pcm = new Int16Array(aligned.buffer, aligned.byteOffset, Math.floor(aligned.byteLength / 2));
+        recording?.write(pcm);
+        onPcm?.(isMuted ? new Int16Array(pcm.length) : pcm);
     });
 
     const offStatus = bridge.onStatus(status => {
@@ -61,19 +61,23 @@ async function startNativeCapture({ onPcm, onError, muted }) {
     } catch (cause) {
         offData();
         offStatus();
+        await recording?.stop();
         throw cause;
     }
 
     return {
         source: 'native',
         label: 'System audio',
+        stream: recording?.stream || null,
         setMuted(next) {
             isMuted = next;
+            recording?.setMuted(next);
         },
         async stop() {
             offData();
             offStatus();
             await bridge.stop().catch(() => {});
+            await recording?.stop();
         },
     };
 }
@@ -103,6 +107,7 @@ async function startDeviceCapture({ deviceId, label, onPcm, onError, muted }) {
     return {
         source: 'device',
         label: label || 'Meeting audio device',
+        stream,
         setMuted(next) {
             capture.setMuted(next);
         },
@@ -114,7 +119,7 @@ async function startDeviceCapture({ deviceId, label, onPcm, onError, muted }) {
     };
 }
 
-export async function startSystemCapture({ onPcm, onError, deviceId = 'default', muted = false } = {}) {
+export async function startSystemCapture({ onPcm, onError, deviceId = 'default', muted = false, includeStream = false } = {}) {
     if (deviceId && deviceId !== 'default') {
         const device = (await listAudioInputs()).find(entry => entry.deviceId === deviceId);
         return startDeviceCapture({ deviceId, label: device?.label, onPcm, onError, muted });
@@ -123,7 +128,7 @@ export async function startSystemCapture({ onPcm, onError, deviceId = 'default',
     const bridge = globalThis.alphaSystemAudio;
     if (bridge) {
         const state = await bridge.available().catch(() => null);
-        if (state?.available) return startNativeCapture({ onPcm, onError, muted });
+        if (state?.available) return startNativeCapture({ onPcm, onError, muted, includeStream });
         const loopback = (await listAudioInputs()).find(device => device.isLoopback);
         if (loopback) return startDeviceCapture({ deviceId: loopback.deviceId, label: loopback.label, onPcm, onError, muted });
         throw new Error(state?.reason || NO_SOURCE_MESSAGE);

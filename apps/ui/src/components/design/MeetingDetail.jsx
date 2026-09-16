@@ -280,6 +280,9 @@ export function MeetingDetail({
         if (citationFocus?.meetingId === meeting?.id) setTab('transcript');
     }, [citationFocus, meeting?.id]);
     const recording = session.isRecording || session.isPaused;
+    // The microphone is effectively muted from either side: the app's own
+    // toggle, or the meeting client (reported by the browser extension).
+    const micMuted = session.micMuted || session.clientMicMuted;
     useEffect(() => {
         if (recording) setTab(current => (LIVE_TABS.includes(current) ? current : 'transcript'));
     }, [recording]);
@@ -352,11 +355,16 @@ export function MeetingDetail({
                         <div className="ks-hud-controls">
                             <button
                                 className="ks-icon-button"
-                                aria-label={session.micMuted ? 'Unmute microphone' : 'Mute microphone'}
-                                aria-pressed={session.micMuted}
+                                aria-label={micMuted ? 'Unmute microphone' : 'Mute microphone'}
+                                aria-pressed={micMuted}
+                                title={
+                                    session.clientMicMuted && !session.micMuted
+                                        ? 'Muted in the meeting client — your voice is not being recorded. Unmute there to record it.'
+                                        : undefined
+                                }
                                 onClick={session.onToggleMic}
                             >
-                                {session.micMuted ? <MicOff /> : <Mic />}
+                                {micMuted ? <MicOff /> : <Mic />}
                             </button>
                             <button
                                 className="ks-icon-button"
