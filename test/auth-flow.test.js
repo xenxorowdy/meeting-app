@@ -23,7 +23,7 @@ async function freePort() {
     return port;
 }
 
-async function spawnBackend(root, { local = false } = {}) {
+async function spawnBackend(root, { local = false, supabase = false } = {}) {
     const port = await freePort();
     const backend = spawn(BINARY, [], {
         cwd: root,
@@ -41,6 +41,11 @@ async function spawnBackend(root, { local = false } = {}) {
             ALPHA_GEMINI_API_KEY: '',
             ALPHA_SARVAM_API_KEY: '',
             ALPHA_GOOGLE_OAUTH_CLIENT_ID: 'test-only.apps.googleusercontent.com',
+            ALPHA_AUTH_PROVIDER: supabase ? 'supabase' : 'google',
+            ALPHA_SUPABASE_URL: supabase ? 'https://test-project.supabase.co' : '',
+            ALPHA_SUPABASE_PUBLISHABLE_KEY: supabase ? 'test-publishable-key' : '',
+            ALPHA_SUPABASE_DB_URL: '',
+            ALPHA_SUPABASE_DB_PASSWORD: '',
             ALPHA_CHAT_EMBEDDINGS: 'off',
         },
     });
@@ -82,6 +87,8 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
     // A deployment token gates the workspace and owner-only registration.
     assert.equal((await api('/api/auth/config')).data.registrationAllowed, false);
     assert.equal((await api('/api/auth/config')).data.googleClientId, 'test-only.apps.googleusercontent.com');
+    assert.equal((await api('/api/auth/config')).data.googleAuth, null);
+    assert.equal((await api('/api/auth/supabase/google', { code: 'code', verifier: 'v'.repeat(64) })).status, 503);
     assert.equal((await api('/api/auth/google', { code: '', verifier: '', redirectUri: '', nonce: 'test-nonce' })).status, 401);
     assert.equal((await api('/api/auth/register', {name: 'Intruder', email: 'intruder@work.com', password: 'first password'})).status, 403);
     assert.equal((await api('/api/plans')).status, 200);
@@ -135,6 +142,20 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
     const stillValid = await api('/api/auth/session', undefined, 'GET', login.data.token);
     assert.equal(stillValid.status, 200);
     assert.equal(stillValid.data.account.email, 'asha@work.com');
+});
+
+test('Supabase configuration enables desktop sign-in without exposing keys, and malformed proofs fail', { timeout: 60000 }, async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-supabase-auth-'));
+    const { backend, api } = await spawnBackend(root, { local: true, supabase: true });
+    t.after(async () => {
+        if (backend.exitCode === null) { backend.kill('SIGTERM'); await once(backend, 'exit'); }
+        await fs.rm(root, { recursive: true, force: true });
+    });
+    const config = await api('/api/auth/config');
+    assert.deepEqual(config.data.googleAuth, { provider: 'supabase', configured: true, url: 'https://test-project.supabase.co' });
+    assert.equal(JSON.stringify(config.data).includes('test-publishable-key'), false);
+    assert.equal((await api('/api/auth/supabase/google', { code: 'code', verifier: 'short' })).status, 400);
+    assert.equal((await api('/api/auth/session')).data.account, null);
 });
 
 test('accounts and sessions survive a backend restart', { timeout: 60000 }, async t => {

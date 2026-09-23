@@ -14,11 +14,13 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
     const [error, setError] = useState('');
     const [registrationAllowed, setRegistrationAllowed] = useState(null);
     const [googleClientId, setGoogleClientId] = useState(null);
+    const [googleAuth, setGoogleAuth] = useState(null);
     useEffect(() => {
         const controller = new AbortController();
         apiRequest('/api/auth/config', { signal: controller.signal }).then(config => {
             setRegistrationAllowed(config.registrationAllowed !== false);
             setGoogleClientId(config.googleClientId || '');
+            setGoogleAuth(config.googleAuth || null);
         }).catch(() => {});
         return () => controller.abort();
     }, []);
@@ -67,7 +69,7 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
         setBusy(true);
         setError('');
         try {
-            const account = await signInWithGoogle(googleClientId);
+            const account = await signInWithGoogle(googleAuth || googleClientId);
             onAuthenticated?.(account);
         } catch (cause) {
             setError(cause.message || 'Google sign-in failed. Try again.');
@@ -166,10 +168,11 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
                 {globalThis.alphaGoogleSignIn?.start && (
                     <div className="ks-oauth">
                         <span>OR</span>
-                        <button type="button" disabled={busy || !googleClientId} onClick={submitGoogle}>
+                        <button type="button" disabled={busy || (googleAuth ? !googleAuth.configured : !googleClientId)} onClick={submitGoogle}>
                             {busy ? 'Waiting for Google…' : creating ? 'Create account with Google' : 'Sign in with Google'}
                         </button>
-                        {googleClientId === '' && <p className="ks-welcome-note">Add a Google Desktop app client ID in Connection &amp; preferences first.</p>}
+                        {googleAuth && !googleAuth.configured && <p className="ks-welcome-note">Google sign-in is unavailable. You can continue locally.</p>}
+                        {!googleAuth && googleClientId === '' && <p className="ks-welcome-note">Add a Google Desktop app client ID in Connection &amp; preferences first.</p>}
                     </div>
                 )}
                 {(error || notice) && (

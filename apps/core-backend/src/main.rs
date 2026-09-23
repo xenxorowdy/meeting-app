@@ -34,7 +34,9 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{WebSocketStream, tungstenite::{Message, protocol::{Role, WebSocketConfig}}};
 
 mod accounts;
+mod billing;
 mod google_auth;
+mod supabase_auth;
 mod plans;
 mod supabase;
 use accounts::AccountStore;
@@ -113,6 +115,18 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+/// Local-time start of the current calendar month, for the free tier's
+/// monthly recording allowance.
+fn month_start_ms() -> i64 {
+    use chrono::{Datelike, TimeZone};
+    let now = chrono::Local::now();
+    chrono::Local
+        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
+        .single()
+        .map(|month_start| month_start.timestamp_millis())
+        .unwrap_or(0)
 }
 
 fn invited_names(metadata: &Value) -> Vec<String> {
@@ -262,6 +276,10 @@ struct Session {
     client_last_seen: Option<Instant>,
     client_end: Option<PendingClientEnd>,
     last_unscheduled_notice: Option<(String, i64)>,
+    /// Entitlement tier decided when this meeting started. `finish` reads it
+    /// because the stop can arrive from routes, the socket, or the watchdog —
+    /// none of which carry the account's session token.
+    meeting_tier: String,
 }
 
 #[derive(Clone)]
@@ -514,7 +532,10 @@ struct AppState {
     podcast: Arc<PodcastService>,
     chat: Arc<chat::ChatService>,
     accounts: Arc<AccountStore>,
+    billing: Arc<billing::BillingStore>,
+    billing_config: billing::ProviderConfig,
     supabase: Arc<SupabaseDb>,
+    supabase_auth: Arc<supabase_auth::SupabaseAuth>,
 }
 
 impl AppState {
@@ -591,7 +612,34 @@ impl AppState {
             .send(json!({"type": kind, "data": data, "timestamp": now_ms()}).to_string());
     }
 
-    async fn start(&self, payload: &Value) -> Result<Meeting, String> {
+    /// The entitlement tier of the request's account session. Anonymous and
+    /// unrecognized callers are the free tier.
+    async fn session_tier(&self, req: &HttpRequest) -> &'static str {
+        let Some(token) = bearer_or_protocol_token(&req.headers, false) else {
+            return "free";
+        };
+        let Some(account) = self.accounts.session_account(&token).await else {
+            return "free";
+        };
+        let subscription = self.billing.active_subscription(&account.id).await;
+        billing::tier_for(subscription.as_ref())
+    }
+
+    /// Recording minutes already stored in the current calendar month. Every
+    /// account on one backend shares the meeting library, so the free
+    /// allowance is per backend rather than per account.
+    async fn month_minutes_used(&self) -> i64 {
+        let month_start = month_start_ms();
+        let meetings = self.store.list("", 10_000, 0).await;
+        meetings
+            .iter()
+            .filter(|meeting| meeting.started_at >= month_start)
+            .map(|meeting| meeting.duration_seconds.max(0))
+            .sum::<i64>()
+            / 60
+    }
+
+    async fn start(&self, payload: &Value, tier: &'static str) -> Result<Meeting, String> {
         let provider = self
             .settings
             .get_str("transcriptionProvider")
@@ -667,6 +715,7 @@ impl AppState {
         session.system_samples = 0;
         session.mic_samples = 0;
         session.transcription_provider = provider.clone();
+        session.meeting_tier = tier.to_string();
         let now = now_ms();
 
         let mut metadata = payload
@@ -964,6 +1013,9 @@ impl AppState {
         let mut session = self.session.lock().await;
         session.current = Some(meeting.clone());
         session.state = SessionState::Summarizing;
+        // The lock is dropped for the (slow) summarize call below, so the
+        // tier decided at meeting start is read out here.
+        let meeting_tier = session.meeting_tier.clone();
         drop(session);
         self.emit(
             "state_change",
@@ -973,10 +1025,19 @@ impl AppState {
 
         // `autoSummarize: false` means "keep everything on device" — so do not
         // send the transcript anywhere, and do not fabricate notes either.
+        // The free tier keeps local transcription but has no AI: summaries
+        // stay empty until the workspace's account upgrades to Pro.
         let summary = if self.settings.get_bool("autoSummarize").await == Some(false) {
             MeetingSummary {
                 summary_markdown: String::new(),
                 provider: "disabled".into(),
+                ..Default::default()
+            }
+        } else if meeting_tier != "pro" {
+            MeetingSummary {
+                summary_markdown: String::new(),
+                provider: "unavailable".into(),
+                warning: Some("AI summaries require the Pro plan. Upgrade under Plans & pricing.".into()),
                 ..Default::default()
             }
         } else {
@@ -1675,7 +1736,24 @@ async fn main() -> io::Result<()> {
     // Local development configuration is intentionally opt-in and ignored by
     // Git. Existing process environment variables still win, which keeps
     // deployed secret injection and Electron's recording-path overrides intact.
-    let _ = dotenvy::from_filename(".env.local");
+    let _ = dotenvy::from_filename(".env.local")
+        .or_else(|_| dotenvy::from_filename("apps/core-backend/.env.local"));
+    if env::args().any(|arg| arg == "--migrate-users" || arg == "--migrate-billing") {
+        // Only this explicit operator command reads development DB credentials.
+        // Normal desktop startup never loads the owner connection from .env.
+        let _ = dotenvy::from_filename(".env")
+            .or_else(|_| dotenvy::from_filename("apps/core-backend/.env"));
+        let database = SupabaseDb::detect();
+        if env::args().any(|arg| arg == "--migrate-users") {
+            database.migrate_users().await.map_err(io::Error::other)?;
+            println!("Supabase public.users migration is applied.");
+        }
+        if env::args().any(|arg| arg == "--migrate-billing") {
+            database.migrate_billing().await.map_err(io::Error::other)?;
+            println!("Supabase public.billing and public.billing_events migration is applied.");
+        }
+        return Ok(());
+    }
     let port = env::var("CORE_BACKEND_PORT")
         .or_else(|_| env::var("PORT"))
         .ok()
@@ -1726,6 +1804,8 @@ async fn main() -> io::Result<()> {
     let session = Arc::new(Mutex::new(Session::default()));
     chat.start(store.clone(), session.clone());
     let accounts = Arc::new(AccountStore::load().await?);
+    let billing = Arc::new(billing::BillingStore::load().await?);
+    let billing_config = billing::ProviderConfig::from_env();
     let supabase = Arc::new(SupabaseDb::detect());
     let state = AppState {
         started_at: now_ms(),
@@ -1740,7 +1820,10 @@ async fn main() -> io::Result<()> {
         calendar: calendar.clone(),
         podcast: podcast.clone(),
         accounts,
+        billing,
+        billing_config,
         supabase: supabase.clone(),
+        supabase_auth: Arc::new(supabase_auth::SupabaseAuth::from_env()),
     };
 
     println!("[Alpha Core Backend] Rust API listening on http://{host}:{port}");
@@ -1838,6 +1921,7 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
         return Ok(());
     }
     if websocket {
+        let tier = state.session_tier(&request).await;
         return websocket_session(
             stream,
             request
@@ -1850,6 +1934,7 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
                 .get("sec-websocket-protocol")
                 .is_some_and(|value| value.split(',').any(|p| p.trim() == "alpha")),
             state,
+            tier,
         )
         .await;
     }
@@ -1889,7 +1974,9 @@ async fn write_http_response<W: AsyncWriteExt + Unpin>(
 /// Paths that must be reachable before any credential exists: the health probe
 /// and the endpoints that mint credentials in the first place.
 fn is_public_path(path: &str) -> bool {
-    matches!(path, "/health" | "/api/auth/register" | "/api/auth/login" | "/api/auth/google" | "/api/plans" | "/api/auth/config")
+    matches!(path, "/health" | "/api/auth/register" | "/api/auth/login" | "/api/auth/google" | "/api/auth/supabase/google" | "/api/plans" | "/api/auth/config")
+        // Provider webhooks authenticate with their own HMAC signatures.
+        || path == "/api/billing/webhook/stripe" || path == "/api/billing/webhook/razorpay"
 }
 
 /// The gate every request passes before routing: the Host header (DNS
@@ -2181,6 +2268,24 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Err((status,error)) => json_response(status, json!({"error":error})),
             }
         }
+        ("POST", "/api/auth/supabase/google") => {
+            if let Err((status, error)) = state.accounts.throttle_google_attempt() {
+                return json_response(status, json!({"error": error}));
+            }
+            let identity = match state.supabase_auth.exchange_google_code(
+                body.get("code").and_then(Value::as_str).unwrap_or_default(),
+                body.get("verifier").and_then(Value::as_str).unwrap_or_default(),
+            ).await {
+                Ok(identity) => identity,
+                Err((status, error)) => return json_response(status, json!({"error": error})),
+            };
+            // Preserve the Google subject mapping when moving an existing local
+            // account to Supabase. Matching email alone never links accounts.
+            match state.accounts.google_sign_in(&identity.sub, &identity.email, &identity.name, state.security.authorized(&req.headers, false)).await {
+                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Err((status, error)) => json_response(status, json!({"error": error})),
+            }
+        }
         ("POST", "/api/auth/logout") => {
             if let Some(token) = bearer_or_protocol_token(&req.headers, false) {
                 if let Err((status, error)) = state.accounts.logout(&token).await {
@@ -2193,12 +2298,106 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             "registrationAllowed": state.security.authorized(&req.headers, false),
             "localAccess": !state.security.hosted,
             "workspaceScope": "shared",
-            "googleClientId": google_sign_in_client_id(&state.settings).await
+            "googleClientId": google_sign_in_client_id(&state.settings).await,
+            "googleAuth": state.supabase_auth.public_config()
         })),
-        ("GET", "/api/plans") => json_response(200, plans::catalog()),
-        ("POST", "/api/billing/checkout") => json_response(503, json!({
-            "error": "Paid plans are not available yet. Local features remain free."
-        })),
+        ("GET", "/api/plans") => {
+            json_response(200, plans::catalog(state.billing_config.billing_enabled()))
+        }
+        ("POST", "/api/billing/checkout") => {
+            let Some(token) = bearer_or_protocol_token(&req.headers, false) else {
+                return json_response(401, json!({"error": "Sign in to start a subscription."}));
+            };
+            let Some(account) = state.accounts.session_account(&token).await else {
+                return json_response(401, json!({"error": "Sign in to start a subscription."}));
+            };
+            let plan = body.get("plan").and_then(Value::as_str).unwrap_or_default();
+            let currency = body.get("currency").and_then(Value::as_str).unwrap_or_default();
+            let origin = req.headers.get("origin").cloned().unwrap_or_default();
+            match billing::create_checkout(
+                &state.billing_config,
+                plan,
+                currency,
+                &account.id,
+                &account.email,
+                &origin,
+            )
+            .await
+            {
+                Ok(value) => json_response(200, value),
+                Err((status, error)) => json_response(status, json!({"error": error})),
+            }
+        }
+        // Webhooks authenticate by their HMAC signatures, not by the workspace
+        // token, so they are exempt from it (see is_public_path) and must
+        // never be treated as account sessions.
+        ("POST", "/api/billing/webhook/stripe") => {
+            let Some(secret) = state.billing_config.stripe_webhook_secret.as_deref() else {
+                return json_response(503, json!({"error": "Stripe billing is not configured on this backend."}));
+            };
+            let signature = req.headers.get("stripe-signature").map(String::as_str).unwrap_or_default();
+            if let Err(error) = billing::verify_stripe_signature(secret, signature, &req.body, now_ms()) {
+                return json_response(400, json!({"error": error}));
+            }
+            let Ok(event) = serde_json::from_slice::<Value>(&req.body) else {
+                return json_response(400, json!({"error": "The webhook payload is not valid JSON."}));
+            };
+            match billing::parse_stripe_event(&event) {
+                Ok((event_type, event_id, payload)) => {
+                    match billing::apply_webhook(&state.billing, "stripe", &event_type, &event_id, &payload).await {
+                        Ok(value) => json_response(200, value),
+                        Err((status, error)) => json_response(status, json!({"error": error})),
+                    }
+                }
+                Err(error) => json_response(400, json!({"error": error})),
+            }
+        }
+        ("POST", "/api/billing/webhook/razorpay") => {
+            let Some(secret) = state.billing_config.razorpay_webhook_secret.as_deref() else {
+                return json_response(503, json!({"error": "Razorpay billing is not configured on this backend."}));
+            };
+            let signature = req.headers.get("x-razorpay-signature").map(String::as_str).unwrap_or_default();
+            if let Err(error) = billing::verify_razorpay_signature(secret, signature, &req.body) {
+                return json_response(400, json!({"error": error}));
+            }
+            let Ok(event) = serde_json::from_slice::<Value>(&req.body) else {
+                return json_response(400, json!({"error": "The webhook payload is not valid JSON."}));
+            };
+            let event_type = event.get("event").and_then(Value::as_str).unwrap_or_default();
+            let event_id = req.headers.get("x-razorpay-event-id").cloned().unwrap_or_default();
+            if event_id.is_empty() {
+                return json_response(400, json!({"error": "The Razorpay webhook carries no event id."}));
+            }
+            let payload = event
+                .pointer("/payload/subscription/entity")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            match billing::apply_webhook(&state.billing, "razorpay", event_type, &event_id, &payload).await {
+                Ok(value) => json_response(200, value),
+                Err((status, error)) => json_response(status, json!({"error": error})),
+            }
+        }
+        ("GET", "/api/billing/subscription") => {
+            let Some(token) = bearer_or_protocol_token(&req.headers, false) else {
+                return json_response(401, json!({"error": "Sign in to read your subscription."}));
+            };
+            let Some(account) = state.accounts.session_account(&token).await else {
+                return json_response(401, json!({"error": "Sign in to read your subscription."}));
+            };
+            let subscription = state.billing.active_subscription(&account.id).await;
+            let tier = billing::tier_for(subscription.as_ref());
+            let minutes_used = state.month_minutes_used().await;
+            json_response(200, json!({
+                "tier": tier,
+                "subscription": subscription.as_ref().map(billing::BillingStore::subscription_value),
+                "billing": state.billing_config.public_status(),
+                "usage": {
+                    "minutesUsed": minutes_used,
+                    "freeMonthlyMinutes": plans::FREE_MONTHLY_MINUTES,
+                    "canRecord": tier == "pro" || minutes_used < plans::FREE_MONTHLY_MINUTES,
+                }
+            }))
+        }
         ("POST", "/api/auth/password") => {
             let token = bearer_or_protocol_token(&req.headers, false).unwrap_or_default();
             match state.accounts.change_password(&token,
@@ -2221,7 +2420,15 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Err(error) => json_response(400, json!({"error":error})),
             }
         }
-        (_, path) if path == "/api/chat" || path.starts_with("/api/chat/") => chat::route(req, state, &body).await,
+        (_, path) if path == "/api/chat" || path.starts_with("/api/chat/") => {
+            if state.session_tier(&req).await != "pro" {
+                return json_response(402, json!({
+                    "error": "AI chat requires the Pro plan. Upgrade under Plans & pricing.",
+                    "code": "PRO_REQUIRED",
+                }));
+            }
+            chat::route(req, state, &body).await
+        }
         ("GET", "/api/status") => json_response(200, state.status().await),
         ("GET", "/api/supabase/status") => json_response(200, state.supabase.status_value().await),
         ("POST", "/api/supabase/check") => {
@@ -2232,6 +2439,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json_response(503, state.supabase.status_value().await)
             }
         }
+        ("POST", "/api/supabase/secret-check") => match supabase_auth::check_secret_key().await {
+            Ok(result) => json_response(200, result),
+            Err((status, error)) => json_response(status, json!({ "ok": false, "error": error })),
+        },
         ("GET", "/api/meetings") => {
             let limit = req
                 .query
@@ -2248,9 +2459,27 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json!({"meetings":state.store.list(req.query.get("search").map(String::as_str).unwrap_or(""),limit,offset).await}),
             )
         }
-        ("POST", "/api/meetings/start") => match state.start(&body).await {
-            Ok(m) => json_response(200, json!({"success":true,"meeting":m})),
-            Err(e) => json_response(409, json!({"error":e})),
+        ("POST", "/api/meetings/start") => {
+            // The free tier buys one hour of recording per calendar month;
+            // Pro records without limits. Anonymous local use is free tier.
+            let tier = state.session_tier(&req).await;
+            if tier != "pro" {
+                let used = state.month_minutes_used().await;
+                if used >= plans::FREE_MONTHLY_MINUTES {
+                    return json_response(402, json!({
+                        "error": format!(
+                            "Monthly free limit reached ({used} of {limit} recording minutes this month). Upgrade to Pro for unlimited recording.",
+                            used = used.min(plans::FREE_MONTHLY_MINUTES),
+                            limit = plans::FREE_MONTHLY_MINUTES,
+                        ),
+                        "code": "FREE_MONTHLY_LIMIT",
+                    }));
+                }
+            }
+            match state.start(&body, tier).await {
+                Ok(m) => json_response(200, json!({"success":true,"meeting":m})),
+                Err(e) => json_response(409, json!({"error":e})),
+            }
         },
         ("POST", "/api/meetings/pause") => {
             let mut s = state.session.lock().await;
@@ -2273,10 +2502,25 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             Ok(m) => json_response(200, json!({"success":true,"meeting":m})),
             Err(e) => json_response(409, json!({"error":e})),
         },
-        ("GET", "/api/license/status") => json_response(
-            200,
-            json!({"tier":"free","status":"active","canRecord":true,"requiresAccount":false,"billingEnabled":false,"licenseActivationSupported":false,"usage":{}}),
-        ),
+        ("GET", "/api/license/status") => {
+            let tier = state.session_tier(&req).await;
+            let minutes_used = state.month_minutes_used().await;
+            json_response(
+                200,
+                json!({
+                    "tier": tier,
+                    "status": "active",
+                    "canRecord": tier == "pro" || minutes_used < plans::FREE_MONTHLY_MINUTES,
+                    "requiresAccount": false,
+                    "billingEnabled": state.billing_config.billing_enabled(),
+                    "licenseActivationSupported": false,
+                    "usage": {
+                        "minutesUsed": minutes_used,
+                        "freeMonthlyMinutes": plans::FREE_MONTHLY_MINUTES,
+                    }
+                }),
+            )
+        },
         ("POST", "/api/license/activate") => json_response(
             200,
             json!({"success":false,"error":"License verification is not implemented in the Rust core yet."}),
@@ -2718,6 +2962,16 @@ async fn route_meeting(
                 })
                 .unwrap_or(false);
 
+            // Stored summaries stay readable on the free tier, but asking the
+            // AI for a fresh one is a paid feature.
+            let wants_ai = !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty());
+            if wants_ai && state.session_tier(req).await != "pro" {
+                return json_response(402, json!({
+                    "error": "AI summaries require the Pro plan. Upgrade under Plans & pricing.",
+                    "code": "PRO_REQUIRED",
+                }));
+            }
+
             let mut provider = "stored".to_string();
             let mut warning = None;
             if !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty())
@@ -2781,6 +3035,7 @@ async fn websocket_session(
     key: &str,
     alpha_protocol: bool,
     state: AppState,
+    tier: &'static str,
 ) -> io::Result<()> {
     let (mut reader, mut writer) = stream.into_split();
     let accept = websocket_accept(key);
@@ -2821,7 +3076,7 @@ async fn websocket_session(
     loop {
         match read_ws_frame(&mut reader).await {
             Ok(Some(WsFrame::Binary(bytes))) => state.feed_audio(&bytes).await,
-            Ok(Some(WsFrame::Text(text))) => handle_ws_message(&state, &text).await,
+            Ok(Some(WsFrame::Text(text))) => handle_ws_message(&state, &text, tier).await,
             Ok(Some(WsFrame::Ping(payload))) => {
                 if pongs.send(payload).is_err() {
                     break;
@@ -2837,7 +3092,7 @@ async fn websocket_session(
     Ok(())
 }
 
-async fn handle_ws_message(state: &AppState, text: &str) {
+async fn handle_ws_message(state: &AppState, text: &str, tier: &'static str) {
     if let Ok(mut msg) = serde_json::from_str::<Value>(text) {
         let action = msg
             .get("action")
@@ -2851,7 +3106,7 @@ async fn handle_ws_message(state: &AppState, text: &str) {
             .unwrap_or_else(|| msg.clone());
         match action.as_str() {
             "start_meeting" => {
-                let _ = state.start(&payload).await;
+                let _ = state.start(&payload, tier).await;
             }
             "pause_meeting" => {
                 let mut s = state.session.lock().await;

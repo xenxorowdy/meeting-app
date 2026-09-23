@@ -69,7 +69,7 @@ function CitationCard({ citation, onOpen }) {
     );
 }
 
-export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, draft = null }) {
+export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, draft = null, onClose = null }) {
     const chat = useMeetingChat(scope, isConnected);
     const [sourceError, setSourceError] = useState(null);
     const log = useRef(null);
@@ -157,6 +157,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                         <Trash2 />
                     </button>
                 )}
+                {onClose && <button type="button" className="ks-icon-button ks-chat-header-close" onClick={onClose} aria-label="Close Ask AI" title="Close Ask AI"><X /></button>}
             </header>
             {isLive && (
                 <p className="ks-chat-live" role="status">
@@ -183,7 +184,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                         <p>{isLive ? 'Catch up on what was said, find a decision, or check the next steps while the meeting continues.' : 'Find the decision, the next step, or the detail you missed. Ask a question and follow the answer back to its source.'}</p>
                         <div className="ks-chat-starters">
                             {starters.map(([label, prompt, Icon]) => (
-                                <button key={prompt} type="button" disabled={actionsDisabled} aria-label={prompt} onClick={() => prepareQuestion(prompt)}>
+                                <button key={prompt} type="button" disabled={actionsDisabled} aria-label={prompt} onClick={() => chat.send(prompt)}>
                                     <Icon aria-hidden="true" /><span><strong>{label}</strong><small>{prompt}</small></span><ArrowUpRight aria-hidden="true" />
                                 </button>
                             ))}

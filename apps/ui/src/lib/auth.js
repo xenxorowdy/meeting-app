@@ -29,10 +29,11 @@ export async function signIn({ email, password }) {
     return result.account;
 }
 
-export async function signInWithGoogle(clientId) {
+export async function signInWithGoogle(options) {
     if (!globalThis.alphaGoogleSignIn?.start) throw new Error('Google sign-in is available in the desktop app.');
-    const authorization = await globalThis.alphaGoogleSignIn.start(clientId);
-    const result = await apiRequest('/api/auth/google', { method: 'POST', body: authorization });
+    const authorization = await globalThis.alphaGoogleSignIn.start(options);
+    const route = options?.provider === 'supabase' ? '/api/auth/supabase/google' : '/api/auth/google';
+    const result = await apiRequest(route, { method: 'POST', body: authorization });
     await rememberSession(result.token);
     return result.account;
 }

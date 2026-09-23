@@ -183,8 +183,8 @@ export function TranscriptView({
     const totalWords = speakerStats.reduce((acc, stat) => acc + stat.words, 0);
 
     return (
-        <section aria-label="Transcript" className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
+        <section aria-label="Transcript" className="ks-transcript relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="ks-transcript-toolbar flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
                 <div className="flex items-center gap-2">
                     <MessageSquareText className="size-4 text-muted-foreground" aria-hidden="true" />
                     <h3 className="text-headline font-semibold">Transcript</h3>
@@ -228,7 +228,7 @@ export function TranscriptView({
                 </div>
             </div>
 
-            <div className="flex items-center gap-2 px-4 pb-3">
+            <div className="ks-transcript-discovery flex items-center gap-2 px-4 pb-3">
                 <div className="relative min-w-0 flex-1 sm:max-w-xs">
                     <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                     <Input
@@ -269,7 +269,7 @@ export function TranscriptView({
                 </SegmentedControl>
             </div>
 
-            <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto">
+            <div ref={scrollRef} onScroll={handleScroll} className="ks-transcript-list min-h-0 flex-1 overflow-y-auto">
                 {filtered.length === 0 && pending.length === 0 ? (
                     <div className="flex h-full flex-col justify-center px-8 py-16">
                         <p className="text-headline font-semibold">{needle ? 'No matches' : isLive ? 'Listening to your meeting…' : 'No transcript yet'}</p>
@@ -291,7 +291,7 @@ export function TranscriptView({
                                     key={turn.id}
                                     data-turn-id={turn.id}
                                     className={cn(
-                                        'turn-in group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60',
+                                        'ks-transcript-turn turn-in group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60',
                                         citationFocus?.turnIds?.includes(turn.id) && 'bg-primary/10 ring-1 ring-inset ring-primary/30'
                                     )}
                                 >
@@ -460,7 +460,7 @@ export function TranscriptView({
             )}
 
             {speakerStats.length > 0 && (
-                <div className="px-4 pb-4 pt-3 hairline-top">
+                <div className="ks-talk-time px-4 pb-4 pt-3 hairline-top">
                     <div className="mb-2 flex items-center justify-between text-footnote text-muted-foreground">
                         <span>Talk time</span>
                         <span className="tnum">{totalWords} words</span>

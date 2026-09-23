@@ -105,6 +105,33 @@ test('Google desktop authorization is exchanged through the backend and stores t
     }
 });
 
+test('Supabase desktop sign-in sends only its proof to the backend and stores the local session', async () => {
+    const { signInWithGoogle } = await import(MODULE_URL);
+    const fetches = [], saved = [];
+    const originalGoogle = globalThis.alphaGoogleSignIn;
+    const options = { provider: 'supabase', configured: true, url: 'https://project.supabase.co' };
+    const authorization = { code: 'supabase-code', verifier: 'v'.repeat(64) };
+    globalThis.alphaGoogleSignIn = { start: async input => { assert.deepEqual(input, options); return authorization; } };
+    const restore = withStubs(fetches, saved, { responses: [{ ok: true, status: 200, text: async () => JSON.stringify({ token: 'local-session', account: { id: 'g1', authProvider: 'google' } }) }] });
+    try {
+        assert.equal((await signInWithGoogle(options)).authProvider, 'google');
+        assert.equal(fetches[0].url, 'http://127.0.0.1:48900/api/auth/supabase/google');
+        assert.deepEqual(JSON.parse(fetches[0].options.body), authorization);
+        assert.equal(saved[0].token, 'local-session');
+    } finally { restore(); globalThis.alphaGoogleSignIn = originalGoogle; }
+});
+
+test('Supabase verification failure does not persist a session', async () => {
+    const { signInWithGoogle } = await import(MODULE_URL);
+    const saved = [], originalGoogle = globalThis.alphaGoogleSignIn;
+    globalThis.alphaGoogleSignIn = { start: async () => ({ code: 'bad', verifier: 'v'.repeat(64) }) };
+    const restore = withStubs([], saved, { responses: [{ ok: false, status: 401, text: async () => '{"error":"Identity rejected"}' }] });
+    try {
+        await assert.rejects(signInWithGoogle({ provider: 'supabase' }), /Identity rejected/);
+        assert.equal(saved.length, 0);
+    } finally { restore(); globalThis.alphaGoogleSignIn = originalGoogle; }
+});
+
 test('sign-out revokes the stored token server-side, then clears it locally', async () => {
     const { signOut } = await import(MODULE_URL);
     const fetches = [];

@@ -40,6 +40,7 @@ dependencies = [
  "dotenvy",
  "fastembed",
  "futures-util",
+ "hmac",
  "jsonwebtoken",
  "reqwest",
  "rusqlite",

@@ -3,7 +3,6 @@ import {
     ArrowLeft,
     Check,
     Download,
-    HelpCircle,
     Mic,
     MicOff,
     Monitor,
@@ -267,7 +266,7 @@ export function MeetingDetail({
     onDeleteNote,
 }) {
     const [tab, setTab] = useState(initialTab || 'transcript');
-    const [chatOpen, setChatOpen] = useState(false);
+    const [chatOpen, setChatOpen] = useState(true);
     const [chatDraft, setChatDraft] = useState(null);
     const [replayCitation, setReplayCitation] = useState(null);
     const [editing, setEditing] = useState(false);
@@ -451,7 +450,7 @@ export function MeetingDetail({
                             onClick={() => setChatOpen(!chatOpen)}
                             disabled={!meeting?.id || !isConnected}
                         >
-                            <HelpCircle />
+                            <Sparkles />
                             Ask AI
                         </button>
                     </div>
@@ -591,6 +590,7 @@ export function MeetingDetail({
                         isConnected={isConnected}
                         onSelectMeeting={onSelectMeeting}
                         draft={chatDraft}
+                        onClose={() => setChatOpen(false)}
                     />}
             </ResizableChatPanel>
         </div>

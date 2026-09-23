@@ -21,3 +21,23 @@ test('a missing catalog produces an actionable error instead of a blank pricing 
     try { await assert.rejects(fetchPlans(), /Plans are unavailable/); }
     finally { globalThis.fetch = original; }
 });
+
+test('pickPlanPrice picks the price matching the viewer region', async () => {
+    const { pickPlanPrice } = await import(moduleUrl);
+    const prices = [
+        { amountMinor: 80000, currency: 'INR' },
+        { amountMinor: 1000, currency: 'USD' },
+    ];
+    assert.equal(pickPlanPrice(prices, 'en-IN').currency, 'INR');
+    assert.equal(pickPlanPrice(prices, 'en-US').currency, 'USD');
+    assert.equal(pickPlanPrice([]), null);
+    assert.equal(pickPlanPrice(null), null);
+});
+
+test('formatPlanExpiry renders a readable date or nothing', async () => {
+    const { formatPlanExpiry } = await import(moduleUrl);
+    assert.equal(formatPlanExpiry(1_800_000_000_000), 'Jan 15, 2027');
+    assert.equal(formatPlanExpiry(0), null);
+    assert.equal(formatPlanExpiry(null), null);
+    assert.equal(formatPlanExpiry(-5), null);
+});

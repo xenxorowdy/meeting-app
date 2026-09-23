@@ -9,6 +9,8 @@
     "dev": "cargo run --manifest-path Cargo.toml",
     "test": "cargo test --manifest-path Cargo.toml",
     "test:legacy": "node test/run-tests.js",
+    "migrate:users": "cargo run --manifest-path Cargo.toml -- --migrate-users",
+    "migrate:billing": "cargo run --manifest-path Cargo.toml -- --migrate-billing",
     "build": "cargo build --release --manifest-path Cargo.toml"
   },
   "keywords": [

@@ -1,5 +1,6 @@
 import { PricingView } from './PricingView';
 import { AccountSecurity } from './AccountSecurity';
+import { PlanBilling } from './PlanBilling';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
@@ -242,7 +243,7 @@ export function DesignWorkspace({
     const plan = license?.tier ? `${license.tier[0].toUpperCase()}${license.tier.slice(1)} Plan` : 'Meeting workspace';
 
     return (
-        <div className="ks-workspace">
+        <div className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}`}>
             <aside className="ks-sidebar" aria-label="Workspace navigation">
                 <div className="ks-traffic drag-region">
                     {!isDesktop && <span className="ks-sidebar-brand"><LogoMark size={18} /> KESAMI</span>}
@@ -617,6 +618,7 @@ export function DesignWorkspace({
                                 </div>
                                 <span className="ks-tag">{isConnected ? 'CONNECTED' : 'OFFLINE'}</span>
                             </section>
+                            {account && <PlanBilling onUpgrade={() => setActiveTab('pricing')} />}
                             {account && <AccountSecurity account={account} onAccountChange={onAccountChange} disabled={locked} />}
                             <section className="ks-account-card ks-account-stack">
                                 <h2>Preferences</h2>

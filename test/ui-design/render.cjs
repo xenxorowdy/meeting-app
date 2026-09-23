@@ -176,7 +176,7 @@ async function run() {
         'a running meeting offers only the views that have something to show'
     );
     assert.equal(await evaluate("[...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Export')"), false);
-    assert(await evaluate("(() => { const button = [...document.querySelectorAll('.ks-meeting-actions button')].find(b => b.textContent.trim() === 'Ask AI'); if (!button || button.disabled) return false; button.click(); return true; })()"));
+    assert(await evaluate("document.querySelector('.ks-meeting-chat') !== null"), 'Ask AI opens alongside a meeting');
     await settle();
     assert(await evaluate("document.querySelector('.ks-meeting-chat').textContent.includes('transcript captured when you send')"));
     assert(await evaluate("document.querySelector('.ks-recording-hud') !== null"));
@@ -201,9 +201,8 @@ async function run() {
     assert.equal(await evaluate("document.querySelector('.ks-meeting-chat').getBoundingClientRect().width"), startingWidth + 60);
     await capture('03-live-chat');
     await click('Summarize the discussion so far');
-    assert.equal(await evaluate("document.querySelector('[aria-label=\"Meeting question\"]').value"), 'Summarize the discussion so far');
-    await evaluate("document.querySelector('[aria-label=\"Send question\"]').click()");
     await settle();
+    assert(await evaluate("window.fixtureCalls.some(call => call.path === '/api/chat/threads/fixture-live-chat/messages' && call.body?.question === 'Summarize the discussion so far')"), 'a suggested question sends to the real chat flow');
     assert(await evaluate("document.querySelector('.ks-meeting-chat').textContent.includes('Transcript captured through 0:23')"));
     assert(await evaluate("document.querySelector('.ks-recording-hud') !== null"));
     await capture('03-live-answer');
@@ -315,10 +314,12 @@ async function run() {
         }
         assert(await evaluate("document.querySelectorAll('.ks-balls i').length >= 3"), `${theme}: the listening indicator is animated`);
         await click('Stop');
-        await click('Ask AI');
-        await evaluate("new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('.ks-chat-copy')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Chat fixture timeout')); } }, 25); })");
+        if (!(await evaluate("document.querySelector('.ks-meeting-chat') !== null"))) await click('Ask AI');
+        await evaluate("new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('.ks-chat-starters button:not(:disabled)')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Chat fixture timeout')); } }, 25); })");
+        await click('What decisions did we make?');
+        await evaluate("new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('.ks-chat-assistant')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Chat answer timeout')); } }, 25); })");
         await capture(`12-ask-${theme}`);
-        const chat = await probe(['.ks-chat-bubble', '.ks-chat-ai-label', '.ks-chat-head-text h2', '.ks-chat-followups button']);
+        const chat = await probe(['.ks-chat-bubble', '.ks-chat-ai-label', '.ks-chat-head-text h2']);
         for (const { selector, ratio } of chat) {
             assert(ratio !== null, `${theme}: ${selector} is rendered`);
             assert(ratio >= 4.5, `${theme}: ${selector} contrast ${ratio} must reach 4.5:1`);

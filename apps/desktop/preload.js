@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('alphaGoogleSignIn', {
-    start: clientId => ipcRenderer.invoke('google-sign-in:start', clientId),
+    start: options => ipcRenderer.invoke('google-sign-in:start', options),
 });
 
 // The renderer talks to the core backend over HTTP and WebSocket, so it needs

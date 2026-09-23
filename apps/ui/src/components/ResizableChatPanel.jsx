@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
 
-const DEFAULT_WIDTH = 420;
+const DEFAULT_WIDTH = 360;
 
 export function ResizableChatPanel({ open, onClose, children }) {
     const panel = useRef(null);
@@ -18,7 +17,7 @@ export function ResizableChatPanel({ open, onClose, children }) {
         const host = panel.current.parentElement;
         const measure = () => {
             const available = host.getBoundingClientRect().width;
-            const overlay = window.matchMedia('(max-width: 700px)').matches;
+            const overlay = window.matchMedia('(max-width: 1100px)').matches;
             setMaximum(Math.max(0, Math.min(800, overlay ? available : Math.max(320, available - 320))));
         };
         measure();
@@ -88,7 +87,6 @@ export function ResizableChatPanel({ open, onClose, children }) {
             >
                 <span />
             </div>
-            <button type="button" className="ks-close-chat" onClick={onClose} aria-label="Close Ask AI"><X /></button>
             {children}
         </aside>
     );

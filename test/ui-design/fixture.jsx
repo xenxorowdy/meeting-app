@@ -76,6 +76,10 @@ window.fetch = async (url, options = {}) => {
     }
     if (path === `/api/chat/sources/${base.id}`) return new Response(JSON.stringify({ meeting: base }));
     if (path === '/api/auth/config') return new Response(JSON.stringify({ registrationAllowed: true }));
+    if (path === '/api/billing/subscription') return new Response(JSON.stringify({
+        tier: 'free', subscription: null, billing: { billingEnabled: false },
+        usage: { minutesUsed: 0, freeMonthlyMinutes: 60, canRecord: true },
+    }));
     if (path === '/api/plans') return new Response(JSON.stringify({ billingEnabled: false, plans: [
         { id: 'free', name: 'Local', status: 'available', price: { amountMinor: 0 }, description: 'Your meetings, on your device. No account required.', features: ['Record meetings on your device', 'Keep and export your meeting library', 'Use your own transcription and AI providers'], note: 'Provider API usage may be billed separately by your chosen provider.' },
         { id: 'pro', name: 'Pro', status: 'coming_soon', price: null, description: 'Optional paid services are in development.', features: ['Planned: managed AI usage', 'Planned: account billing and subscription management'], note: 'Not available for purchase. No paid features or cloud sync are enabled.' },
