@@ -361,13 +361,14 @@ This needs `apps/ui/.env` with `KESAMI_AUTH_PROVIDER=supabase`, `KESAMI_SUPABASE
 
 ### Publish a release
 
-Pushing a `v*` tag runs `.github/workflows/release-mac.yml` on a GitHub macOS runner. It sets the
-app version from the tag, builds the `.dmg` and `.zip`, and attaches them to a release with the same
-tag in `kesami-releases`.
+After committing the release changes, pushing a `v*` tag runs
+`.github/workflows/release-mac.yml` on a GitHub macOS runner. It sets the app version from the tag,
+builds the `.dmg` and `.zip`, and attaches them to a release with the same tag in `kesami-releases`.
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git push origin HEAD
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 You can also start it by hand from the Actions tab (**Release macOS → Run workflow**) with a tag
@@ -387,15 +388,13 @@ is why publishing to `kesami-releases` needs `RELEASES_TOKEN`.
 
 ### Signing and notarization
 
-Builds are ad-hoc signed, not signed with an Apple Developer ID and not notarized, because that
-requires the paid Apple Developer Program. As a result macOS may show "Apple could not verify
+Builds are unsigned and not notarized, because signing for distribution requires the paid Apple
+Developer Program. As a result macOS may show "Apple could not verify
 Kesami" on first launch, most reliably after a browser download. Users who trust the app click
-**Open Anyway** in System Settings → Privacy & Security once. The
-[`install.sh`](https://github.com/xenxorowdy/kesami-releases/blob/main/install.sh) route
-(`curl … | bash`) usually avoids the prompt because curl downloads aren't flagged by macOS, but that
-isn't guaranteed. The installer never disables Gatekeeper or SIP and never removes quarantine
-attributes. Auto-update is not available for unsigned builds.
+**Open Anyway** in System Settings → Privacy & Security once. Download the DMG from the GitHub
+release and drag Kesami into Applications. Auto-update is not available for unsigned builds.
 
-If you later join the Apple Developer Program, add `MAC_CERTS` (base64 `.p12`), `MAC_CERTS_PASSWORD`,
-`MAC_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` as secrets.
-The same workflow then signs with hardened runtime and notarizes, and the warning goes away.
+The separate `kesami-releases/install.sh` currently requires a valid code signature and therefore
+cannot install this unsigned build. Use the DMG until that installer supports unsigned releases.
+
+The release workflow does not need Apple signing or notarization credentials.

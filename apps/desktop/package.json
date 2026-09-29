@@ -75,8 +75,9 @@
             ],
             "icon": "packaging/icon.icns",
             "category": "public.app-category.productivity",
-            "identity": "-",
+            "identity": null,
             "hardenedRuntime": false,
+            "notarize": false,
             "entitlements": "packaging/entitlements.mac.plist",
             "entitlementsInherit": "packaging/entitlements.mac.plist",
             "extendInfo": {
