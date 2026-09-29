@@ -37,6 +37,7 @@ jobs:
         env:
           KESAMI_SUPABASE_URL: ${{ vars.KESAMI_SUPABASE_URL }}
           KESAMI_SUPABASE_PUBLISHABLE_KEY: ${{ vars.KESAMI_SUPABASE_PUBLISHABLE_KEY }}
+          KESAMI_CLOUD_URL: ${{ vars.KESAMI_CLOUD_URL }}
         run: |
           if [ -z "$KESAMI_SUPABASE_URL" ] || [ -z "$KESAMI_SUPABASE_PUBLISHABLE_KEY" ]; then
             echo "::error::Set repository variables KESAMI_SUPABASE_URL and KESAMI_SUPABASE_PUBLISHABLE_KEY"
@@ -46,6 +47,7 @@ jobs:
             echo "KESAMI_AUTH_PROVIDER=supabase"
             echo "KESAMI_SUPABASE_URL=$KESAMI_SUPABASE_URL"
             echo "KESAMI_SUPABASE_PUBLISHABLE_KEY=$KESAMI_SUPABASE_PUBLISHABLE_KEY"
+            if [ -n "$KESAMI_CLOUD_URL" ]; then echo "KESAMI_CLOUD_URL=$KESAMI_CLOUD_URL"; fi
           } > apps/ui/.env
 
       - name: Set app version from tag

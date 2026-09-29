@@ -379,6 +379,7 @@ One-time repo setup (Settings → Secrets and variables → Actions):
 | -------- | --------------------------------- | ------------------------------------------------------------------------------ |
 | Variable | `KESAMI_SUPABASE_URL`             | Supabase project URL                                                           |
 | Variable | `KESAMI_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` key                                                         |
+| Variable | `KESAMI_CLOUD_URL` (optional)     | HTTPS origin of the transcription relay (see `CLOUD_TRANSCRIPTION.md`)         |
 | Secret   | `RELEASES_TOKEN`                  | Fine-grained token with **Contents: read and write** on `kesami-releases` only |
 
 The workflow's built-in `GITHUB_TOKEN` stays read-only. It can't write to another repository, which
