@@ -89,15 +89,15 @@ jobs:
             NOTES="Download **Kesami-${TAG#v}-arm64.dmg**, open it, and drag Kesami into Applications. Requires an Apple Silicon Mac."
           else
             NOTES=$(printf '%s\n' \
-              "Download **Kesami-${TAG#v}-arm64.dmg**, open it, and drag Kesami into Applications. Requires an Apple Silicon Mac." \
-              "" \
-              "This build is not notarized by Apple yet, so macOS blocks the first launch. After copying it to Applications, run once in Terminal:" \
+              "**Install:** open Terminal and run" \
               "" \
               '```' \
-              "xattr -dr com.apple.quarantine /Applications/Kesami.app" \
+              "curl -fsSL https://raw.githubusercontent.com/${RELEASES_REPO}/main/install.sh | bash" \
               '```' \
               "" \
-              "Or open it once, then go to System Settings → Privacy & Security and click **Open Anyway**.")
+              "Or download **Kesami-${TAG#v}-arm64.dmg**, open it, and drag Kesami into Applications. Requires an Apple Silicon Mac." \
+              "" \
+              "This build is not notarized by Apple, so macOS may block the first launch. If you trust Kesami, open System Settings → Privacy & Security and click **Open Anyway**.")
           fi
           FILES=(apps/desktop/release/*.dmg apps/desktop/release/*.zip)
           if gh release view "$TAG" -R "$RELEASES_REPO" >/dev/null 2>&1; then

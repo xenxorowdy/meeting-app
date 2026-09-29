@@ -339,3 +339,62 @@ npm run test:podcast
 # Run the legacy JavaScript compatibility suite during migration
 npm run --prefix apps/core-backend test:legacy
 ```
+
+## macOS releases
+
+Kesami is distributed for free through
+[xenxorowdy/kesami-releases](https://github.com/xenxorowdy/kesami-releases). That repo holds only
+the downloads, the install instructions, and `install.sh`; the source stays here.
+
+**Supported:** Apple Silicon Macs (arm64) only. The bundled `SystemAudioDump` helper and the build
+target are arm64-only, so there is no Intel or universal build yet.
+
+### Build locally
+
+```bash
+npm ci
+npm run dist:mac    # UI + release backend + mic-watch, then electron-builder
+```
+
+This needs `apps/ui/.env` with `KESAMI_AUTH_PROVIDER=supabase`, `KESAMI_SUPABASE_URL`, and
+`KESAMI_SUPABASE_PUBLISHABLE_KEY`. The `.dmg` and `.zip` land in `apps/desktop/release/`.
+
+### Publish a release
+
+Pushing a `v*` tag runs `.github/workflows/release-mac.yml` on a GitHub macOS runner. It sets the
+app version from the tag, builds the `.dmg` and `.zip`, and attaches them to a release with the same
+tag in `kesami-releases`.
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+You can also start it by hand from the Actions tab (**Release macOS → Run workflow**) with a tag
+name.
+
+One-time repo setup (Settings → Secrets and variables → Actions):
+
+| Kind     | Name                              | Value                                                                          |
+| -------- | --------------------------------- | ------------------------------------------------------------------------------ |
+| Variable | `KESAMI_SUPABASE_URL`             | Supabase project URL                                                           |
+| Variable | `KESAMI_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` key                                                         |
+| Secret   | `RELEASES_TOKEN`                  | Fine-grained token with **Contents: read and write** on `kesami-releases` only |
+
+The workflow's built-in `GITHUB_TOKEN` stays read-only. It can't write to another repository, which
+is why publishing to `kesami-releases` needs `RELEASES_TOKEN`.
+
+### Signing and notarization
+
+Builds are ad-hoc signed, not signed with an Apple Developer ID and not notarized, because that
+requires the paid Apple Developer Program. As a result macOS may show "Apple could not verify
+Kesami" on first launch, most reliably after a browser download. Users who trust the app click
+**Open Anyway** in System Settings → Privacy & Security once. The
+[`install.sh`](https://github.com/xenxorowdy/kesami-releases/blob/main/install.sh) route
+(`curl … | bash`) usually avoids the prompt because curl downloads aren't flagged by macOS, but that
+isn't guaranteed. The installer never disables Gatekeeper or SIP and never removes quarantine
+attributes. Auto-update is not available for unsigned builds.
+
+If you later join the Apple Developer Program, add `MAC_CERTS` (base64 `.p12`), `MAC_CERTS_PASSWORD`,
+`MAC_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` as secrets.
+The same workflow then signs with hardened runtime and notarizes, and the warning goes away.
