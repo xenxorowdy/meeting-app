@@ -3,16 +3,15 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { env, LIBRARY } = require('./legacy');
 
 // One visible folder per meeting, holding its recording next to the transcript and
 // summary the backend writes. The shell streams into `.in-progress/<meetingId>`
 // while the meeting runs — a uuid directory has no business sitting in a folder the
 // user browses — and the backend moves the finished file into the meeting's folder.
 // Both processes must agree on this root: it reaches the backend as
-// ALPHA_LIBRARY_DIR and ALPHA_RECORDINGS_DIR.
-const LIBRARY_ROOT = process.env.ALPHA_LIBRARY_DIR
-    ? path.resolve(process.env.ALPHA_LIBRARY_DIR)
-    : path.join(app.getPath('documents'), 'Alpha Meetings');
+// KESAMI_LIBRARY_DIR and KESAMI_RECORDINGS_DIR.
+const LIBRARY_ROOT = env('LIBRARY_DIR') ? path.resolve(env('LIBRARY_DIR')) : path.join(app.getPath('documents'), LIBRARY);
 const IN_PROGRESS = path.join(LIBRARY_ROOT, '.in-progress');
 
 // Where recordings lived before the library existed. Meetings recorded then still
@@ -24,7 +23,7 @@ const LEGACY_ROOT = path.join(app.getPath('userData'), 'recordings');
 // seek, and `net.fetch` over a file URL implements them; serving the file through
 // the Rust core would mean hand-writing 206 partial-content support into a server
 // whose every response is currently `Connection: close`.
-const MEDIA_SCHEME = 'alpha-media';
+const MEDIA_SCHEME = 'kesami-media';
 
 const streams = new Map();
 let nextId = 1;
@@ -95,7 +94,7 @@ function registerMediaScheme() {
 
 function serveMediaScheme() {
     protocol.handle(MEDIA_SCHEME, request => {
-        // alpha-media://recordings/<meetingId>/<file>
+        // kesami-media://recordings/<meetingId>/<file>
         let withoutHost;
         try {
             const url = new URL(request.url);

@@ -296,7 +296,7 @@ async function runAllTests() {
     /* ----------------------------------------------------------------- */
     console.log('\n📦 6. SQLite Storage & Full-Text Search:');
 
-    const tempDbPath = path.join(os.tmpdir(), `test_alpha_${Date.now()}.sqlite`);
+    const tempDbPath = path.join(os.tmpdir(), `test_kesami_${Date.now()}.sqlite`);
     const store = new SqliteStore({ dbPath: tempDbPath });
 
     await test('Creates meeting, saves turns, and executes search', async () => {

@@ -1,8 +1,8 @@
-# Alpha Podcast Studio — Product Requirements Document
+# Kesami Podcast Studio — Product Requirements Document
 
 **Status:** Implemented MVP  
-**Owner:** Alpha Meeting Assistant  
-**Platforms:** Alpha desktop for macOS and Windows  
+**Owner:** Kesami Meeting Assistant  
+**Platforms:** Kesami desktop for macOS and Windows  
 **Primary audience:** People turning recorded meetings into useful, publishable audio/video recaps  
 **Secondary audience:** Podcast creators recording or editing material they own
 
@@ -10,16 +10,16 @@
 
 Meeting recordings contain useful decisions and explanations, but raw recordings are too long and meeting notes lose tone and context. Podcast creators also have to move between capture, transcription, cleanup, editing, rendering, and publishing tools.
 
-Podcast Studio turns an Alpha meeting—or owned audio/video—into an editable production project. It can write a fact-grounded two-host script, synthesize it with distinct voices, clean spoken audio locally, combine audio and video on a non-destructive timeline, export delivery-quality files, and privately upload a finished video episode to YouTube for final review.
+Podcast Studio turns an Kesami meeting—or owned audio/video—into an editable production project. It can write a fact-grounded two-host script, synthesize it with distinct voices, clean spoken audio locally, combine audio and video on a non-destructive timeline, export delivery-quality files, and privately upload a finished video episode to YouTube for final review.
 
-The feature is successful when a user can complete the meeting-to-private-YouTube flow without leaving Alpha except for final YouTube Studio review, while existing meeting payloads and stored data remain backward-compatible.
+The feature is successful when a user can complete the meeting-to-private-YouTube flow without leaving Kesami except for final YouTube Studio review, while existing meeting payloads and stored data remain backward-compatible.
 
 ## 2. Goals and non-goals
 
 ### Goals
 
 - Make **From meeting** the shortest and most prominent workflow.
-- Support four project sources: completed Alpha meeting, local media, public RSS enclosure, and a new in-app recording.
+- Support four project sources: completed Kesami meeting, local media, public RSS enclosure, and a new in-app recording.
 - Import metadata and captions for videos owned by the connected YouTube account.
 - Generate an editable, source-grounded, two-host script in the source language by default, with language and voice overrides.
 - Provide a non-destructive multitrack editor with waveform preview, trim, split, reorder, gain, mute/solo, fades, transitions, captions, and undo/redo.
@@ -97,7 +97,7 @@ The feature is successful when a user can complete the meeting-to-private-YouTub
 ### Capture
 
 - Enumerate real device labels after permission is granted.
-- Show mic level and camera preview before recording; screen/window uses the existing Alpha source picker.
+- Show mic level and camera preview before recording; screen/window uses the existing Kesami source picker.
 - Capture at up to 1080p30 and retain microphone separately at 48 kHz. A source ending unexpectedly finalizes the recoverable take.
 
 ### Import and security
@@ -143,6 +143,6 @@ The feature is successful when a user can complete the meeting-to-private-YouTub
 - Projects and source media stay local unless the user explicitly initiates Gemini generation or YouTube publication.
 - No API key, OAuth token, transcript, or local path appears in logs or public status responses.
 - YouTube uploads default to private; public release remains a user action in YouTube Studio and depends on Google audit/verification requirements.
-- Alpha does not provide arbitrary YouTube downloading. Users must supply original media for editing.
+- Kesami does not provide arbitrary YouTube downloading. Users must supply original media for editing.
 - DeepFilterNet and the shipped media binaries must pass commercial-license review and ship with notices. FFmpeg must be an LGPL-compatible build using platform H.264 encoders.
 - The browser UI explains that Podcast Studio requires the desktop app; no partial browser workflow pretends capture/render/publish is available.

@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 
 /// Settings the backend understands. Anything else is rejected with a warning so
 /// the UI finds out rather than believing a write landed.
-const KNOWN_SETTINGS: [&str; 19] = [
+const KNOWN_SETTINGS: [&str; 20] = [
     "transcriptionProvider",
     "sarvamLanguage",
     "sarvamMode",
@@ -36,6 +36,7 @@ const KNOWN_SETTINGS: [&str; 19] = [
     "recordingSource",
     "recordingBitsPerSecond",
     "meetingReminders",
+    "autoRecordMeetings",
     "floatingWidget",
     "autoStopOnMeetingEnd",
     "promptForUnscheduledCalls",
@@ -57,17 +58,45 @@ const IGNORED_ON_WRITE: [&str; 14] = [
 ];
 
 /// Where both files live. Deliberately derived the same way as the meeting store
-/// so a single `ALPHA_DATA_DIR` moves everything together.
+/// so a single `KESAMI_DATA_DIR` moves everything together.
+pub const DATA_DIR_NAME: &str = ".kesami";
+const LEGACY_DATA_DIR_NAME: &str = ".alpha-meeting-assistant";
+
+pub fn data_base() -> PathBuf {
+    kesami_core_backend::env_compat::var_os("KESAMI_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+}
+
 pub fn data_dir() -> PathBuf {
     if let Some(file) = env::var_os("CORE_BACKEND_DATA_FILE").map(PathBuf::from) {
         if let Some(parent) = file.parent() {
             return parent.to_path_buf();
         }
     }
-    let base = env::var_os("ALPHA_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    base.join(".alpha-meeting-assistant")
+    data_base().join(DATA_DIR_NAME)
+}
+
+pub fn adopt_legacy_dir(parent: &Path, legacy: &str, current: &str) -> io::Result<bool> {
+    let old = parent.join(legacy);
+    let new = parent.join(current);
+    if new.exists() || !old.is_dir() {
+        return Ok(false);
+    }
+    std::fs::rename(&old, &new)?;
+    Ok(true)
+}
+
+pub fn adopt_legacy_data_dir() {
+    if env::var_os("CORE_BACKEND_DATA_FILE").is_some() {
+        return;
+    }
+    let base = data_base();
+    match adopt_legacy_dir(&base, LEGACY_DATA_DIR_NAME, DATA_DIR_NAME) {
+        Ok(true) => println!("[Kesami Core Backend] moved {LEGACY_DATA_DIR_NAME} to {DATA_DIR_NAME} in {}", base.display()),
+        Ok(false) => {}
+        Err(cause) => eprintln!("[Kesami Core Backend] could not move {LEGACY_DATA_DIR_NAME} to {DATA_DIR_NAME}: {cause}"),
+    }
 }
 
 pub struct SettingsStore {
@@ -244,6 +273,21 @@ impl SettingsStore {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_legacy_folder_is_moved_once_and_never_over_a_new_one() {
+        let base = env::temp_dir().join(format!("kesami-adopt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(base.join(".old/inner")).unwrap();
+        std::fs::write(base.join(".old/inner/data.json"), "{}").unwrap();
+        assert!(adopt_legacy_dir(&base, ".old", ".new").unwrap());
+        assert!(base.join(".new/inner/data.json").exists());
+        assert!(!base.join(".old").exists());
+        std::fs::create_dir_all(base.join(".old")).unwrap();
+        assert!(!adopt_legacy_dir(&base, ".old", ".new").unwrap());
+        assert!(base.join(".old").exists());
+        assert!(!adopt_legacy_dir(&base, ".missing", ".other").unwrap());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
     async fn store_in(dir: &Path) -> SettingsStore {
         SettingsStore {
             settings_path: dir.join("settings.json"),
@@ -254,7 +298,7 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = env::temp_dir().join(format!("alpha-settings-test-{name}"));
+        let dir = env::temp_dir().join(format!("kesami-settings-test-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

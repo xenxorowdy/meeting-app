@@ -30,21 +30,47 @@ test('preload keeps meeting recording available without exposing the podcast bri
                 on: (name, listener) => subscriptions.set(name, listener),
                 removeListener: name => subscriptions.delete(name),
                 invoke: async (...args) => { invocations.push(args); return { available: true }; },
+                sendSync: () => ({ url: '', token: '' }),
             },
         },
     });
 
-    assert.equal(bridges.has('alphaPodcast'), false);
-    assert.ok(bridges.has('alphaRecorder'));
-    assert.ok(bridges.has('alphaSystemAudio'));
-    assert.ok(bridges.has('alphaShell'));
+    assert.equal(bridges.has('kesamiPodcast'), false);
+    assert.ok(bridges.has('kesamiRecorder'));
+    assert.ok(bridges.has('kesamiSystemAudio'));
+    assert.ok(bridges.has('kesamiShell'));
     assert.equal([...subscriptions.keys()].some(channel => channel.startsWith('podcast:')), false);
 
     // Verify that disabling podcast does not also cut off meeting capture.
     const options = { meetingId: 'meeting-one' };
-    await bridges.get('alphaRecorder').start(options);
-    await bridges.get('alphaSystemAudio').available();
+    await bridges.get('kesamiRecorder').start(options);
+    await bridges.get('kesamiSystemAudio').available();
     assert.deepEqual(invocations, [['recorder:start', options], ['system-audio:available']]);
+});
+
+test('preload restores the saved backend connection and keeps saves in step', async () => {
+    const bridges = new Map();
+    const saved = [];
+    runDesktopFile('preload.js', {
+        electron: {
+            contextBridge: { exposeInMainWorld: (name, bridge) => bridges.set(name, bridge) },
+            ipcRenderer: {
+                on() {},
+                removeListener() {},
+                sendSync: channel => (channel === 'connection:get' ? { url: 'http://127.0.0.1:48900', token: 'restored' } : assert.fail(channel)),
+                invoke: async (channel, value) => {
+                    saved.push([channel, value]);
+                    return value;
+                },
+            },
+        },
+    });
+
+    const connection = bridges.get('kesamiConnection');
+    assert.deepEqual(connection.get(), { url: 'http://127.0.0.1:48900', token: 'restored' });
+    await connection.save({ url: 'http://127.0.0.1:48900', token: '' });
+    assert.deepEqual(saved, [['connection:save', { url: 'http://127.0.0.1:48900', token: '' }]]);
+    assert.deepEqual(connection.get(), { url: 'http://127.0.0.1:48900', token: '' });
 });
 
 test('desktop startup and shutdown do not register or activate podcast capabilities', async () => {
@@ -100,6 +126,7 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
         './menubar': { registerHandlers() {}, create() {}, destroy() {} },
         './systemAudio': { registerHandlers() {}, shutdown() {} },
         './dock': { showDockIcon: async () => {} },
+        './connection': { registerHandlers: recordCall('connection:register-handlers') },
         'node:child_process': { spawn: () => assert.fail('The healthy existing backend should be reused') },
         'node:fs': { existsSync: () => true },
         'node:path': path,

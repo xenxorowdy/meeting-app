@@ -1,4 +1,4 @@
-# Alpha Commercial Meeting Assistant
+# Kesami Commercial Meeting Assistant
 
 A standalone, privacy-first, bot-free meeting assistant for **macOS** and **Windows**.
 
@@ -75,12 +75,12 @@ summary.
 
 | Variable                       | Default             | Purpose                                                                                         |
 | :----------------------------- | :------------------ | :---------------------------------------------------------------------------------------------- |
-| `ALPHA_SUMMARY_PROVIDER`       | `auto`              | `auto` uses the CLI when installed; `heuristic` forces the offline summarizer.                  |
-| `ALPHA_CLAUDE_BIN`             | _(auto-discovered)_ | Explicit path to the `claude` binary. Checked before `PATH` and the per-user install locations. |
-| `ALPHA_SUMMARY_MODEL`          | `sonnet`            | Model alias or full name passed to `--model`.                                                   |
-| `ALPHA_SUMMARY_TIMEOUT_SECS`   | `180`               | Per-summary wall-clock budget.                                                                  |
-| `ALPHA_SUMMARY_MAX_BUDGET_USD` | _(unset)_           | Optional `--max-budget-usd` cap per summary.                                                    |
-| `ALPHA_SUMMARY_SAFE_MODE`      | `1`                 | Set to `0` to let local Claude Code customizations apply.                                       |
+| `KESAMI_SUMMARY_PROVIDER`       | `auto`              | `auto` uses the CLI when installed; `heuristic` forces the offline summarizer.                  |
+| `KESAMI_CLAUDE_BIN`             | _(auto-discovered)_ | Explicit path to the `claude` binary. Checked before `PATH` and the per-user install locations. |
+| `KESAMI_SUMMARY_MODEL`          | `sonnet`            | Model alias or full name passed to `--model`.                                                   |
+| `KESAMI_SUMMARY_TIMEOUT_SECS`   | `180`               | Per-summary wall-clock budget.                                                                  |
+| `KESAMI_SUMMARY_MAX_BUDGET_USD` | _(unset)_           | Optional `--max-budget-usd` cap per summary.                                                    |
+| `KESAMI_SUMMARY_SAFE_MODE`      | `1`                 | Set to `0` to let local Claude Code customizations apply.                                       |
 
 `GET /health` and `GET /api/status` report the resolved engine under `summary`
 (`{"provider":"claude-cli","binary":"…","model":"sonnet"}`), `POST /api/summary/config` switches the
@@ -98,16 +98,16 @@ The realtime socket returns no speakers of its own, so live turns are numbered f
 
 Both Sarvam flows name the diarized speaker whose turns line up with the microphone `You` rather than `Speaker N`. The microphone timeline comes from the local VAD, which runs for every provider; a speaker is only named when the microphone was open for at least 60% of what they said and no other speaker comes close, so speaker bleed into the microphone costs a rename rather than a wrong attribution.
 
-Sarvam batch mode requires the Alpha desktop app because Electron owns the recording files. It also requires screen recording to remain enabled so the saved recording contains both microphone and meeting audio. Live streaming needs neither to transcribe, but its post-meeting diarization pass reads the same recording, so a realtime meeting recorded without one keeps the speaker numbers the live pass gave it. Both share one API key, configured in Settings; it is stored in the private local credentials file and is never returned by the backend. `sarvamLanguage` and `sarvamMode` apply to both, and the language value `unknown` is sent to the realtime endpoint as `auto`.
+Sarvam batch mode requires the Kesami desktop app because Electron owns the recording files. It also requires screen recording to remain enabled so the saved recording contains both microphone and meeting audio. Live streaming needs neither to transcribe, but its post-meeting diarization pass reads the same recording, so a realtime meeting recorded without one keeps the speaker numbers the live pass gave it. Both flows use a key held by the Rust backend, never returned to the UI. Set `KESAMI_SARVAM_API_KEY` in the backend environment or its `.env.local`, or save it in the backend's private `0600` credentials file. The desktop package runs a separate backend on each Mac under `~/Library/Application Support/Kesami`; keys in a source checkout do not follow the DMG. To share one provider key across installations, deploy a hosted backend and connect clients to its public HTTPS URL. Do not put the Sarvam key in the UI env or DMG. `sarvamLanguage` and `sarvamMode` apply to both flows, and the language value `unknown` is sent to the realtime endpoint as `auto`.
 
 | Variable                      | Default                                          | Purpose                                             |
 | :---------------------------- | :----------------------------------------------- | :-------------------------------------------------- |
-| `ALPHA_SARVAM_API_KEY`        | _(stored key)_                                   | Overrides the saved Sarvam API key.                 |
-| `ALPHA_SARVAM_TIMEOUT_SECS`   | `900`                                            | Maximum wait for a batch transcription job.         |
-| `ALPHA_SARVAM_BASE_URL`       | `https://api.sarvam.ai`                          | Batch API base override, primarily for testing.     |
-| `ALPHA_SARVAM_REALTIME_URL`   | `wss://api.sarvam.ai/speech-to-text-realtime/ws` | Realtime WebSocket override, primarily for testing. |
-| `ALPHA_SARVAM_REALTIME_MODEL` | `saaras:v3-realtime`                             | Realtime model override.                            |
-| `ALPHA_RECORDINGS_DIR`        | _(set by Electron)_                              | Trusted root used to resolve recording paths.       |
+| `KESAMI_SARVAM_API_KEY`        | _(stored key)_                                   | Overrides the saved Sarvam API key.                 |
+| `KESAMI_SARVAM_TIMEOUT_SECS`   | `900`                                            | Maximum wait for a batch transcription job.         |
+| `KESAMI_SARVAM_BASE_URL`       | `https://api.sarvam.ai`                          | Batch API base override, primarily for testing.     |
+| `KESAMI_SARVAM_REALTIME_URL`   | `wss://api.sarvam.ai/speech-to-text-realtime/ws` | Realtime WebSocket override, primarily for testing. |
+| `KESAMI_SARVAM_REALTIME_MODEL` | `saaras:v3-realtime`                             | Realtime model override.                            |
+| `KESAMI_RECORDINGS_DIR`        | _(set by Electron)_                              | Trusted root used to resolve recording paths.       |
 
 ---
 
@@ -116,7 +116,7 @@ Sarvam batch mode requires the Alpha desktop app because Electron owns the recor
 Every meeting is a folder you can open, back up, or hand to somebody:
 
 ```
-~/Documents/Alpha Meetings/
+~/Documents/Kesami Meetings/
 ├── 2026-09-05 Design review/
 │   ├── meeting.json      # the record: transcript, summary, action items, metadata
 │   ├── transcript.md     # timestamped speaker turns
@@ -134,17 +134,17 @@ speakers are renamed. Deleting a meeting deletes its folder.
 
 The shell records into `.in-progress/<meetingId>/screen.webm` — a uuid directory has no business
 sitting in a folder you browse — and the backend moves the finished file in as `recording.webm` when
-the meeting ends. That move only happens when `ALPHA_RECORDINGS_DIR` and `ALPHA_LIBRARY_DIR` are the
+the meeting ends. That move only happens when `KESAMI_RECORDINGS_DIR` and `KESAMI_LIBRARY_DIR` are the
 same directory, which is how the desktop shell launches the backend. Recordings made before the
 library existed stay under `userData/recordings` and the media scheme still resolves them there.
 
 | Variable            | Default                      | Purpose                                                        |
 | :------------------ | :--------------------------- | :------------------------------------------------------------- |
-| `ALPHA_LIBRARY_DIR` | `~/Documents/Alpha Meetings` | Where meeting folders live. The shell sets it for the backend. |
-| `ALPHA_DATA_DIR`    | _(working directory)_        | Parent of `Alpha Meetings/` when no library dir is set.        |
+| `KESAMI_LIBRARY_DIR` | `~/Documents/Kesami Meetings` | Where meeting folders live. The shell sets it for the backend. |
+| `KESAMI_DATA_DIR`    | _(working directory)_        | Parent of `Kesami Meetings/` when no library dir is set.        |
 
-The first run after an upgrade imports the old `.alpha-meeting-assistant/meetings.json` into folders.
-That file is left untouched, and the ids it brought over are recorded in `.alpha-library.json` inside
+The first run after an upgrade imports the old `.kesami/meetings.json` into folders.
+That file is left untouched, and the ids it brought over are recorded in `.kesami-library.json` inside
 the library, so a meeting deleted after the import is not resurrected on the next start.
 
 ---
@@ -276,9 +276,9 @@ dynamic port; do not pin one.
 
 | Variable                              | Purpose                                                    |
 | :------------------------------------ | :--------------------------------------------------------- |
-| `ALPHA_GOOGLE_CALENDAR_CLIENT_ID`     | Google OAuth client id. Checked before the stored setting. |
-| `ALPHA_GOOGLE_CALENDAR_CLIENT_SECRET` | Only if Google's token endpoint demands it.                |
-| `ALPHA_MICROSOFT_CALENDAR_CLIENT_ID`  | Entra application (client) id.                             |
+| `KESAMI_GOOGLE_CALENDAR_CLIENT_ID`     | Google OAuth client id. Checked before the stored setting. |
+| `KESAMI_GOOGLE_CALENDAR_CLIENT_SECRET` | Only if Google's token endpoint demands it.                |
+| `KESAMI_MICROSOFT_CALENDAR_CLIENT_ID`  | Entra application (client) id.                             |
 
 ### API
 
@@ -299,19 +299,19 @@ because the consent round trip runs through the browser.
 
 The desktop sidebar includes **Podcast Studio**. Projects and copied media are stored beneath Electron's private `userData/podcast-projects` directory with atomic, versioned manifests. Existing meeting records are linked by ID and are not rewritten.
 
-Script and multi-speaker voice generation use the Gemini key configured in Alpha. The user must explicitly start each cloud operation; only transcript or script text is sent. Media cleanup and rendering remain local. YouTube uses OAuth PKCE, imports metadata/captions only for videos owned by the connected account, and uploads new episodes as private before opening YouTube Studio.
+Script and multi-speaker voice generation use the Gemini key configured in Kesami. The user must explicitly start each cloud operation; only transcript or script text is sent. Media cleanup and rendering remain local. YouTube uses OAuth PKCE, imports metadata/captions only for videos owned by the connected account, and uploads new episodes as private before opening YouTube Studio.
 
 Local media operations require FFmpeg/ffprobe. Speech cleanup additionally requires the DeepFilterNet `deep-filter` executable. Development builds discover these on `PATH` or through the variables below; packaged builds should place reviewed binaries under `resources/media-tools/<platform>/<arch>/`. See `apps/desktop/media-tools/README.md` for the packaging contract and license checklist.
 
 | Variable                       | Purpose                                                                            |
 | :----------------------------- | :--------------------------------------------------------------------------------- |
-| `ALPHA_FFMPEG_PATH`            | Explicit FFmpeg executable; Electron passes its resolved copy to the Rust backend. |
-| `ALPHA_FFPROBE_PATH`           | Explicit ffprobe executable.                                                       |
-| `ALPHA_DEEP_FILTER_PATH`       | Explicit DeepFilterNet CLI executable.                                             |
-| `ALPHA_PODCAST_SCRIPT_MODEL`   | Gemini structured-script model override.                                           |
-| `ALPHA_PODCAST_TTS_MODEL`      | Gemini multi-speaker TTS model override.                                           |
-| `ALPHA_PODCAST_TIMEOUT_SECS`   | Gemini request timeout; defaults to 300 seconds.                                   |
-| `ALPHA_GOOGLE_OAUTH_CLIENT_ID` | Packaged or developer Google desktop OAuth client ID for YouTube.                  |
+| `KESAMI_FFMPEG_PATH`            | Explicit FFmpeg executable; Electron passes its resolved copy to the Rust backend. |
+| `KESAMI_FFPROBE_PATH`           | Explicit ffprobe executable.                                                       |
+| `KESAMI_DEEP_FILTER_PATH`       | Explicit DeepFilterNet CLI executable.                                             |
+| `KESAMI_PODCAST_SCRIPT_MODEL`   | Gemini structured-script model override.                                           |
+| `KESAMI_PODCAST_TTS_MODEL`      | Gemini multi-speaker TTS model override.                                           |
+| `KESAMI_PODCAST_TIMEOUT_SECS`   | Gemini request timeout; defaults to 300 seconds.                                   |
+| `KESAMI_GOOGLE_OAUTH_CLIENT_ID` | Packaged or developer Google desktop OAuth client ID for YouTube.                  |
 
 The full product definition, security boundaries, data contract, and acceptance criteria are in [the Podcast Studio PRD](docs/PODCAST-STUDIO-PRD.md).
 

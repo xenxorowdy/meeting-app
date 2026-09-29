@@ -1,4 +1,4 @@
-# Deploying the Alpha backend
+# Deploying the Kesami backend
 
 The Rust core backend (`apps/core-backend`) runs as a hosted service on
 [Fly.io](https://fly.io). A desktop or browser client connects to it over
@@ -8,9 +8,15 @@ the machine's local recording/screen-capture features stay on the client.
 ```
 ┌─────────────────────┐        HTTPS + WebSocket (bearer token)
 │  Client (Electron   │ ───────────────────────────────────────────────▶  Fly.io
-│  app or browser)    │ ◀───────────────────────────────────────────────  alpha-core-backend
+│  app or browser)    │ ◀───────────────────────────────────────────────  kesami-core-backend
 └─────────────────────┘         live transcripts, events, REST            (persistent /data volume)
 ```
+
+
+Environment variables use the `KESAMI_` prefix. Deployments configured before
+the rename keep working: whenever a `KESAMI_*` variable is unset, the backend
+reads the matching `ALPHA_*` one. The fly volume keeps its original name,
+`alpha_data`, because renaming it would mount an empty volume.
 
 ## What hosted mode changes
 
@@ -19,7 +25,7 @@ Binding to a non-loopback address flips the backend into **hosted mode**
 
 - requires every route except `GET /health`, CORS preflights, and the
   credential-minting auth routes to carry the workspace token
-  (`Authorization: Bearer …`, or the `alpha-token.*` WebSocket subprotocol),
+  (`Authorization: Bearer …`, or the `kesami-token.*` WebSocket subprotocol),
 - only answers browser requests whose `Origin` is on the allowlist,
 - refuses `POST /api/calendar/connect` and post-meeting diarization (both need
   OAuth browsers / recording files on the same machine),
@@ -59,19 +65,19 @@ fly volumes create alpha_data --size 5 --region bom
 # automatically on first deploy if you skip this step.)
 
 # 3. Generate and set the workspace token clients will paste into Settings.
-openssl rand -base64 48 | tr -d '\n' > /tmp/alpha-token   # ≥32 printable chars
-fly secrets set ALPHA_BACKEND_TOKEN="$(cat /tmp/alpha-token)"
-rm /tmp/alpha-token
+openssl rand -base64 48 | tr -d '\n' > /tmp/kesami-token   # ≥32 printable chars
+fly secrets set KESAMI_BACKEND_TOKEN="$(cat /tmp/kesami-token)"
+rm /tmp/kesami-token
 
 # 4. Provider keys live in fly secrets, never in the image or the repo.
-fly secrets set ALPHA_SARVAM_API_KEY=sk_… ALPHA_GEMINI_API_KEY=AIza…
+fly secrets set KESAMI_SARVAM_API_KEY=sk_… KESAMI_GEMINI_API_KEY=AIza…
 
 # 5. Tell the backend which browser origins may connect. The Electron desktop
 #    app needs no entry — it loads its UI from file://, so Chromium sends
 #    `Origin: null` on fetch and the literal `file://` on the WebSocket
-#    handshake. ALPHA_ALLOW_NULL_ORIGIN covers both, and fly.toml sets it
+#    handshake. KESAMI_ALLOW_NULL_ORIGIN covers both, and fly.toml sets it
 #    while the workspace token still guards every route.
-fly secrets set ALPHA_ALLOWED_ORIGINS="https://app.example.com"
+fly secrets set KESAMI_ALLOWED_ORIGINS="https://app.example.com"
 ```
 
 Deploy:
@@ -102,13 +108,13 @@ cd apps/ui
 VITE_BACKEND_URL=https://<your-app>.fly.dev npm run build
 ```
 
-The browser origin you serve it from must be in `ALPHA_ALLOWED_ORIGINS`. If
+The browser origin you serve it from must be in `KESAMI_ALLOWED_ORIGINS`. If
 only browser clients will use this deployment, also lock the null-origin
 allowance back down (this closes `null` and `file://` together, so the
 Electron app can no longer connect to it):
 
 ```bash
-fly secrets set ALPHA_ALLOW_NULL_ORIGIN=false
+fly secrets set KESAMI_ALLOW_NULL_ORIGIN=false
 ```
 
 Local development is unchanged: `npm run dev` still starts the local backend on
@@ -116,10 +122,10 @@ Local development is unchanged: `npm run dev` still starts the local backend on
 
 ## Data on the volume
 
-`/data` holds everything under `ALPHA_DATA_DIR`:
+`/data` holds everything under `KESAMI_DATA_DIR`:
 
-- `.alpha-meeting-assistant/meetings/…` — the meeting library,
-- `.alpha-meeting-assistant/settings.json` and `credentials.json` (mode 0600),
+- `.kesami/meetings/…` — the meeting library,
+- `.kesami/settings.json` and `credentials.json` (mode 0600),
 - the chat embedding model (~470 MB, downloaded on first AI-chat use).
 
 Back it up with `fly sftp get` on the machine, or snapshot the volume.

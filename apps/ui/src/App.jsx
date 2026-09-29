@@ -128,7 +128,6 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     const newMeetingMounted = useOnceOpen(isNewMeetingOpen);
 
     const {
-        backendUrl,
         connection,
         isConnected,
         sessionState,
@@ -147,7 +146,6 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         systemAudioError,
         settings,
         license,
-        engine,
         startMeeting,
         pauseMeeting,
         resumeMeeting,
@@ -167,6 +165,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         setOnMeetingEnded,
         setOnUnscheduledCall,
         setOnCalendarConnection,
+        setOnConnectorConnection,
         addNote,
         deleteNote,
         clearError,
@@ -236,31 +235,31 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     );
 
     useEffect(() => {
-        globalThis.alphaShell?.setWidgetVisible(settings.floatingWidget !== false);
+        globalThis.kesamiShell?.setWidgetVisible(settings.floatingWidget !== false);
     }, [settings.floatingWidget]);
 
     useEffect(() => {
         if (isRecording || isPaused || isProcessing) {
             wasLiveRef.current = true;
-            globalThis.alphaShell?.setWidgetLive(true);
+            globalThis.kesamiShell?.setWidgetLive(true);
             return undefined;
         }
 
         const justFinished = sessionState === SESSION_STATES.COMPLETED && wasLiveRef.current;
         wasLiveRef.current = false;
-        globalThis.alphaShell?.setWidgetLive(justFinished);
+        globalThis.kesamiShell?.setWidgetLive(justFinished);
         if (!justFinished) return undefined;
 
-        const timer = setTimeout(() => globalThis.alphaShell?.setWidgetLive(false), NOTES_READY_WIDGET_MS);
+        const timer = setTimeout(() => globalThis.kesamiShell?.setWidgetLive(false), NOTES_READY_WIDGET_MS);
         return () => clearTimeout(timer);
     }, [isRecording, isPaused, isProcessing, sessionState]);
 
     useEffect(() => {
-        globalThis.alphaShell?.setRecordingIndicator(isRecording);
+        globalThis.kesamiShell?.setRecordingIndicator(isRecording);
     }, [isRecording]);
 
     useEffect(() => {
-        globalThis.alphaShell?.setWidgetState({
+        globalThis.kesamiShell?.setWidgetState({
             sessionState,
             micMuted,
             systemAudioMuted,
@@ -271,7 +270,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
 
     useMeetingReminder({
         events: calendar.events,
-        enabled: settings.meetingReminders !== false && !globalThis.alphaShell?.ownsMeetingReminders,
+        enabled: settings.meetingReminders !== false && !globalThis.kesamiShell?.ownsMeetingReminders,
         canRecord: isConnected && isIdle,
         onStart: event => {
             setActiveTab('live');
@@ -280,9 +279,17 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     });
 
     useShellCommands({
-        onRecord: event => {
+        onRecord: (event, { auto = false } = {}) => {
+            if (!isConnected || !isIdle) return;
+            // An automatic start at meeting time has nobody at the keyboard to answer the mode picker, so it
+            // records sound only; screen recording stays a choice someone makes by hand.
+            if (auto) {
+                if (settings.autoRecordMeetings === false) return;
+                void startWithSource(event?.title || '', null, event, 'audio');
+                return;
+            }
             setActiveTab('live');
-            if (isConnected && isIdle) handleStartRecording(event?.title, event);
+            handleStartRecording(event?.title, event);
         },
         onNewNote: () => {
             setActiveTab('live');
@@ -336,7 +343,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     }, [setOnUnscheduledCall, notifyUnscheduledCall]);
 
     useEffect(() => {
-        return globalThis.alphaShell?.onWidgetCommand(action => {
+        return globalThis.kesamiShell?.onWidgetCommand(action => {
             if (action === 'toggle-mic') toggleMicMute();
             else if (action === 'toggle-system') toggleSystemAudioMute();
             else if (action === 'toggle-pause') {
@@ -492,6 +499,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                 onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                 noiseSuppression={settings.noiseSuppression !== false}
                 onUpdateSettings={updateSettings}
+                onPlanChanged={refresh}
             />
 
             <SourcePicker
@@ -520,12 +528,11 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                         onClose={() => setIsSettingsOpen(false)}
                         settings={settings}
                         license={license}
-                        engine={engine}
-                        backendUrl={backendUrl}
                         isConnected={isConnected}
                         calendar={calendar}
                         onUpdateSettings={updateSettings}
                         onActivateLicense={activateLicense}
+                        onConnectorConnection={setOnConnectorConnection}
                         connectionLocked={!isIdle}
                     />
                 )}

@@ -42,7 +42,9 @@ export function PlanBilling({ onUpgrade }) {
             <p>{price} / month{expiry && <> · {subscription.status === 'canceled' ? 'access ends' : 'renews'} {expiry}</>}</p>
         </> : <>
             <p>{usage.minutesUsed} of {usage.freeMonthlyMinutes} free minutes used this month.</p>
+            <p>{usage.aiUses ?? 0} of {usage.freeMonthlyAiUses ?? 3} shared AI summaries or chat replies used this month.</p>
             {!usage.canRecord && <p role="alert" className="ks-account-feedback">You've used your free minutes for this month.</p>}
+            {usage.canUseAi === false && <p role="alert" className="ks-account-feedback">You've used your free AI allowance for this month.</p>}
             <button className="ks-button ks-primary" onClick={onUpgrade}>Upgrade to Pro</button>
         </>}
     </section>;

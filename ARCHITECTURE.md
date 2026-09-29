@@ -1,10 +1,10 @@
-# Alpha Meeting Assistant — Project Architecture
+# Kesami Meeting Assistant — Project Architecture
 
 Source snapshot: 19 September 2026. This document describes the current working tree, including the in-progress billing implementation. It is a source-level architecture map, not a claim that every integration has been deployed or verified live.
 
 ## 1. System overview
 
-Alpha is a desktop meeting assistant built as an npm workspace. React provides the interface, Electron owns operating-system integration and recording files, and a Rust service owns meeting sessions, transcription, summaries, search, accounts, and persistence.
+Kesami is a desktop meeting assistant built as an npm workspace. React provides the interface, Electron owns operating-system integration and recording files, and a Rust service owns meeting sessions, transcription, summaries, search, accounts, and persistence.
 
 The default backend address is `http://127.0.0.1:48900`; its WebSocket endpoint is `/ws`. The UI can also be configured to use a remote HTTPS backend, with capability restrictions described below.
 
@@ -76,11 +76,11 @@ The Vite development port defaults to `5173`. Although proxy entries exist for `
 
 ### Backend client boundary
 
-[connection.js](apps/ui/src/lib/connection.js) resolves the backend URL from an optional `alphaConnection` bridge, browser storage, `VITE_BACKEND_URL`, or the loopback default. Remote URLs must use HTTPS. It supplies bearer headers and WebSocket subprotocol authentication.
+[connection.js](apps/ui/src/lib/connection.js) resolves the backend URL from an optional `kesamiConnection` bridge, browser storage, `VITE_BACKEND_URL`, or the loopback default. Remote URLs must use HTTPS. It supplies bearer headers and WebSocket subprotocol authentication.
 
 [backend.js](apps/ui/src/lib/backend.js) provides `apiRequest`, `apiText`, WebSocket reconnect behavior, binary audio encoding, backend-state mapping and transcript normalization. Other feature clients should use these utilities to keep connection and authentication behavior consistent.
 
-The optional `alphaConnection` interface is consumed by the UI but is not exposed by the current desktop `preload.js`. In that shell, the client falls back to browser storage: URL in local storage and token in session storage. Do not assume desktop token encryption/persistence is implemented from the frontend abstraction alone.
+The optional `kesamiConnection` interface is consumed by the UI but is not exposed by the current desktop `preload.js`. In that shell, the client falls back to browser storage: URL in local storage and token in session storage. Do not assume desktop token encryption/persistence is implemented from the frontend abstraction alone.
 
 ### Main presentation modules
 
@@ -100,7 +100,7 @@ Some older components remain in the tree; presence alone does not mean that `App
 ### Startup and shutdown
 
 1. Probe the local `/health` endpoint and inspect build metadata before reusing an existing backend.
-2. If needed, launch `target/release/alpha-core-backend`; fall back to `cargo run --release` when the binary is absent.
+2. If needed, launch `target/release/kesami-core-backend`; fall back to `cargo run --release` when the binary is absent.
 3. Pass the shared recording/library root and media-tool path to the backend.
 4. Load the Vite URL in development or `apps/ui/dist/index.html` otherwise.
 5. On shutdown, terminate the backend process owned by this shell; an externally started/reused backend is not owned by it.
@@ -113,17 +113,17 @@ The main window enables `contextIsolation`, disables `nodeIntegration`, and curr
 
 | Interface | Purpose |
 | --- | --- |
-| `alphaRecorder` | List/select display sources, check permissions, open/write/close recordings, remove recording data, report usage and create playback URLs. |
-| `alphaSystemAudio` | Native system-audio availability, start/stop and PCM/status subscriptions. |
-| `alphaMicUsage` | Observe microphone use by other processes for unscheduled-call prompts. |
-| `alphaShell` | Widget visibility/state, recording indicator, menu commands and widget controls. |
-| `alphaGoogleSignIn` | Start the desktop Google OAuth sign-in flow. |
+| `kesamiRecorder` | List/select display sources, check permissions, open/write/close recordings, remove recording data, report usage and create playback URLs. |
+| `kesamiSystemAudio` | Native system-audio availability, start/stop and PCM/status subscriptions. |
+| `kesamiMicUsage` | Observe microphone use by other processes for unscheduled-call prompts. |
+| `kesamiShell` | Widget visibility/state, recording indicator, menu commands and widget controls. |
+| `kesamiGoogleSignIn` | Start the desktop Google OAuth sign-in flow. |
 
 The widget has its own [widgetPreload.js](apps/desktop/widgetPreload.js) with a smaller interface. The renderer is not given unrestricted IPC or a Node module loader.
 
 ### Native and media modules
 
-- [recorder.js](apps/desktop/recorder.js): source selection, chunked file writes, path validation and the `alpha-media://recordings/...` playback scheme.
+- [recorder.js](apps/desktop/recorder.js): source selection, chunked file writes, path validation and the `kesami-media://recordings/...` playback scheme.
 - [systemAudio.js](apps/desktop/systemAudio.js): native system-audio helper lifecycle; bundled `SystemAudioDump` provides the macOS path.
 - [micUsage.js](apps/desktop/micUsage.js) and `mic-watch/main.swift`: macOS microphone activity monitoring.
 - [widget.js](apps/desktop/widget.js), [menubar.js](apps/desktop/menubar.js), [dock.js](apps/desktop/dock.js): desktop surfaces and application visibility.
@@ -150,7 +150,7 @@ The backend uses Tokio with a TCP listener and custom HTTP request parsing/routi
 | [accounts.rs](apps/core-backend/src/accounts.rs), [google_auth.rs](apps/core-backend/src/google_auth.rs) | Password/Google accounts, hashed sessions and identity verification. |
 | [plans.rs](apps/core-backend/src/plans.rs), [billing.rs](apps/core-backend/src/billing.rs) | Plan catalog, allowances, provider checkout, signed webhook processing and subscription storage. |
 | [security.rs](apps/core-backend/src/security.rs) | Host/origin rules, bearer/subprotocol tokens and request size limits. |
-| [supabase.rs](apps/core-backend/src/supabase.rs) | Optional PostgreSQL pool and diagnostic connectivity checks. |
+| [supabase.rs](apps/core-backend/src/supabase.rs) | Optional PostgreSQL pool, diagnostic connectivity checks, migrations, and the billing copy into Supabase. |
 | [podcast.rs](apps/core-backend/src/podcast.rs) | Retained podcast implementation; public podcast routes are disabled. |
 
 ## 6. Recording and transcription flow
@@ -278,7 +278,7 @@ For deeper design details, see [MEETING-CHAT-ARCHITECTURE.md](docs/MEETING-CHAT-
     recording.webm               Adopted recording, when present
   .in-progress/<meetingId>/       Desktop recording staging
   .folders.json                  Logical folder definitions
-  .alpha-chat/
+  .kesami-chat/
     search.sqlite                FTS passages, revisions and vectors
     threads.sqlite               Conversations and messages
     models/                      Pinned embedding model cache
@@ -292,9 +292,9 @@ For deeper design details, see [MEETING-CHAT-ARCHITECTURE.md](docs/MEETING-CHAT-
 
 Paths are configurable and need not share the same parent:
 
-- Electron defaults the library to the user's Documents `Alpha Meetings` directory and passes it as both `ALPHA_LIBRARY_DIR` and `ALPHA_RECORDINGS_DIR`.
-- Standalone Rust resolves the library from `ALPHA_LIBRARY_DIR`, then `ALPHA_RECORDINGS_DIR`, then `<ALPHA_DATA_DIR or cwd>/Alpha Meetings`.
-- Settings default to `<ALPHA_DATA_DIR or cwd>/.alpha-meeting-assistant`. `CORE_BACKEND_DATA_FILE` can override the legacy file location and influence the settings directory.
+- Electron defaults the library to the user's Documents `Kesami Meetings` directory and passes it as both `KESAMI_LIBRARY_DIR` and `KESAMI_RECORDINGS_DIR`.
+- Standalone Rust resolves the library from `KESAMI_LIBRARY_DIR`, then `KESAMI_RECORDINGS_DIR`, then `<KESAMI_DATA_DIR or cwd>/Kesami Meetings`.
+- Settings default to `<KESAMI_DATA_DIR or cwd>/.kesami`. `CORE_BACKEND_DATA_FILE` can override the legacy file location and influence the settings directory.
 - `library.rs` imports the older monolithic `meetings.json` format. Electron also retains legacy recording-root playback support.
 
 JSON writes use temporary files and rename. Finished recordings are adopted into visible meeting folders when the roots permit it. The meeting JSON/file library is the main meeting store; SQLite serves specific supporting domains. Supabase currently does not replace this storage or synchronize meetings.
@@ -341,6 +341,7 @@ The following groups describe the implemented router, not a full OpenAPI schema.
 | `GET /api/plans` | Public plan catalog. |
 | `POST /api/billing/checkout` | Create a provider checkout/subscription flow. |
 | `GET /api/billing/subscription` | Account subscription status. |
+| `POST /api/billing/razorpay/sync` | After Checkout, read the account's own Razorpay subscription from Razorpay's API and apply it, so Pro does not depend on the webhook reaching this backend. |
 | `POST /api/billing/webhook/stripe`, `/razorpay` | Signed provider events updating entitlement. |
 | `GET /api/license/status`, `POST /api/license/activate` | Compatibility/license surface; not a substitute for verified subscription entitlement. |
 | `GET /api/supabase/status`, `POST /api/supabase/check` | Optional database connection diagnostics. |
@@ -372,7 +373,7 @@ The client reconnects with increasing delays from 500 ms to 8 seconds. Reconnect
 
 Local mode permits use without an account. Accounts support password and Google sign-in; account/session persistence is SQLite-backed. Account tokens can authorize backend access as an alternative to the configured deployment token, but neither authentication mode creates an isolated meeting library.
 
-The current billing code integrates Stripe and Razorpay, verifies webhook signatures, records processed events and derives Pro access from stored subscriptions. The free recording allowance is 60 minutes per calendar month and is measured across the backend's shared library. AI summaries and chat are gated by entitlement. A public pricing entry alone does not grant access.
+The current billing code integrates Stripe and Razorpay, verifies webhook signatures, records processed events and derives Pro access from stored subscriptions. When a Supabase database connection is configured, a background pass copies processed events and subscription state into `public.billing_events` and `public.billing` (see [SUPABASE_AUTH.md](SUPABASE_AUTH.md#billing-tables)); the local store stays authoritative. The free recording allowance is 60 minutes per calendar month and is measured across the backend's shared library. AI summaries and chat are gated by entitlement. A public pricing entry alone does not grant access.
 
 Billing files and their router changes were already uncommitted when this document was created. Their presence describes the working implementation, not proven production checkout/payment behavior. The UI's existing plans client reads the catalog; backend checkout endpoints should not be treated as evidence of a fully wired purchase UI.
 
@@ -391,7 +392,7 @@ The backend maps observation intervals onto transcript timing and uses sufficien
 ## 11. Security and configuration
 
 - Provider credentials belong in the backend credential store or environment overrides. `credentials.json` uses owner-only permissions on Unix; account and billing stores also apply private file handling.
-- HTTP uses bearer authorization; the WebSocket client carries its token in the `alpha-token.*` subprotocol alongside `alpha`.
+- HTTP uses bearer authorization; the WebSocket client carries its token in the `kesami-token.*` subprotocol alongside `kesami`.
 - Host and origin validation, HTTP/WebSocket size limits, and recording-path confinement enforce process boundaries.
 - Non-loopback backend binding requires a deployment token. Public authentication/catalog routes and signed webhook routes have explicit exceptions; `/health` is also public.
 - Account-session fallback does not override rejected hosts or origins.
@@ -402,14 +403,14 @@ The backend maps observation intervals onto transcript timing and uses sufficien
 | `CORE_BACKEND_HOST`, `CORE_BACKEND_PORT` / `PORT` | Rust listen address and port. |
 | `VITE_BACKEND_URL` | Build-time frontend backend default. |
 | `MEETING_UI_URL` | Electron development UI URL. |
-| `ALPHA_DATA_DIR` | Base for backend data/settings defaults. |
-| `ALPHA_LIBRARY_DIR`, `ALPHA_RECORDINGS_DIR` | Library and trusted local media roots. |
-| `ALPHA_BACKEND_TOKEN`, `ALPHA_ALLOWED_ORIGINS`, `ALPHA_ALLOW_NULL_ORIGIN` | Hosted access and origin rules. |
-| `ALPHA_SARVAM_API_KEY`, `ALPHA_GEMINI_API_KEY` | Provider credentials; environment overrides saved keys. |
-| `ALPHA_SUMMARY_PROVIDER`, `ALPHA_SUMMARY_MODEL`, `ALPHA_CLAUDE_BIN` | Summary provider/model/process configuration. |
-| `ALPHA_GOOGLE_OAUTH_CLIENT_ID`, `ALPHA_GOOGLE_OAUTH_CLIENT_SECRET` | Account Google OAuth configuration. |
-| `ALPHA_SUPABASE_DB_URL` or Supabase project/password variables | Optional PostgreSQL connection. |
-| `ALPHA_STRIPE_*`, `ALPHA_RAZORPAY_*` | Provider checkout and webhook configuration; see `billing.rs` for exact names. |
+| `KESAMI_DATA_DIR` | Base for backend data/settings defaults. |
+| `KESAMI_LIBRARY_DIR`, `KESAMI_RECORDINGS_DIR` | Library and trusted local media roots. |
+| `KESAMI_BACKEND_TOKEN`, `KESAMI_ALLOWED_ORIGINS`, `KESAMI_ALLOW_NULL_ORIGIN` | Hosted access and origin rules. |
+| `KESAMI_SARVAM_API_KEY`, `KESAMI_GEMINI_API_KEY` | Provider credentials; environment overrides saved keys. |
+| `KESAMI_SUMMARY_PROVIDER`, `KESAMI_SUMMARY_MODEL`, `KESAMI_CLAUDE_BIN` | Summary provider/model/process configuration. |
+| `KESAMI_GOOGLE_OAUTH_CLIENT_ID`, `KESAMI_GOOGLE_OAUTH_CLIENT_SECRET` | Account Google OAuth configuration. |
+| `KESAMI_SUPABASE_DB_URL` or Supabase project/password variables | Optional PostgreSQL connection. |
+| `KESAMI_STRIPE_*`, `KESAMI_RAZORPAY_*` | Provider checkout and webhook configuration; see `billing.rs` for exact names. |
 
 The Rust process optionally loads `.env.local` from its working directory. Do not copy real configuration values, credentials or meeting contents into documentation.
 
@@ -423,7 +424,7 @@ The Rust process optionally loads `.env.local` from its working directory. Do no
 
 [Dockerfile](apps/core-backend/Dockerfile), [entrypoint.sh](apps/core-backend/entrypoint.sh) and [fly.toml](apps/core-backend/fly.toml) define a backend container/deployment path with persistent `/data`, HTTPS ingress and `/health` checks. These files are deployment scaffolding; their existence does not establish a successful image build or live deployment.
 
-Root `package` and `make` scripts delegate to the parent Alpha repository. Distribution therefore depends on packaging configuration outside this package.
+Root `package` and `make` scripts delegate to the parent Kesami repository. Distribution therefore depends on packaging configuration outside this package.
 
 Important current limits:
 

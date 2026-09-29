@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Monitor, AppWindow, TriangleAlert, Mic } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { listSources } from '@/lib/screenRecorder';
+import { listSources, screenPermission } from '@/lib/screenRecorder';
 
 /**
  * Choose what to record. Shown in the app rather than using Chromium's own picker,
@@ -16,28 +16,42 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
     const [selectedId, setSelectedId] = useState(null);
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [screenAccess, setScreenAccess] = useState(null);
+    const requestRef = useRef(0);
+
+    const refreshSources = async (requestPermission = false) => {
+        const request = ++requestRef.current;
+        setIsLoading(true);
+        setError(null);
+        try {
+            const access = await screenPermission();
+            if (request !== requestRef.current) return;
+            setScreenAccess(access);
+            // Electron can keep reporting the status of an earlier ad hoc build
+            // after macOS accepts the installed app. A deliberate retry must
+            // ask the capture API itself rather than stop at this status check.
+            if ((access === 'denied' || access === 'restricted' || access === 'not-determined') && !requestPermission) return;
+
+            const found = await listSources();
+            if (request !== requestRef.current) return;
+            setSources(found);
+            setSelectedId(found.find(source => source.kind === 'screen')?.id || found[0]?.id || null);
+            if (found.length) setScreenAccess('granted');
+        } catch (cause) {
+            if (request !== requestRef.current) return;
+            setError(cause.message || 'Could not list screens and windows.');
+        } finally {
+            if (request === requestRef.current) setIsLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (!isOpen) return undefined;
-
-        let cancelled = false;
-        setIsLoading(true);
-        setError(null);
-
-        listSources()
-            .then(found => {
-                if (cancelled) return;
-                setSources(found);
-                // Default to a whole screen: it is what most people mean by
-                // "record the meeting", and it survives them switching apps.
-                setSelectedId(found.find(source => source.kind === 'screen')?.id || found[0]?.id || null);
-            })
-            .catch(cause => !cancelled && setError(cause.message || 'Could not list what can be recorded.'))
-            .finally(() => !cancelled && setIsLoading(false));
-
-        return () => {
-            cancelled = true;
-        };
+        setSources([]);
+        setSelectedId(null);
+        setScreenAccess(null);
+        void refreshSources();
+        return () => { requestRef.current += 1; };
     }, [isOpen]);
 
     const screens = sources.filter(source => source.kind === 'screen');
@@ -76,7 +90,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
         <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
             <DialogContent className="flex max-h-[80vh] flex-col gap-0 p-0 sm:max-w-2xl">
                 <DialogHeader className="space-y-1 p-4 pb-4 pr-12 text-left hairline-bottom">
-                    <DialogTitle className="text-title2 font-semibold">What should Alpha record?</DialogTitle>
+                    <DialogTitle className="text-title2 font-semibold">What should Kesami record?</DialogTitle>
                     <DialogDescription className="text-callout text-muted-foreground">
                         {batchUpload
                             ? 'The recording is saved on this Mac, then its mixed audio is uploaded to Sarvam after the meeting ends.'
@@ -104,13 +118,23 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                         Or record a screen with sound
                         <span className="h-px flex-1 bg-border" />
                     </div>
-                    {error ? (
-                        <p className="flex items-start gap-2 rounded-lg border bg-muted px-4 py-4 text-callout text-warning">
-                            <TriangleAlert className="mt-[2px] size-4 shrink-0" aria-hidden="true" />
-                            {error}
-                        </p>
-                    ) : isLoading ? (
+                    {isLoading ? (
                         <p className="p-4 text-callout text-muted-foreground">Looking for screens and windows…</p>
+                    ) : screenAccess === 'not-determined' && !error ? (
+                        <div className="space-y-3 rounded-lg border bg-muted p-4">
+                            <p className="text-callout text-muted-foreground">To record your screen, allow Kesami to access screens and windows when macOS asks. Recording your voice also needs separate Microphone access.</p>
+                            <Button variant="outline" onClick={() => void refreshSources(true)}>Choose a screen or window</Button>
+                        </div>
+                    ) : screenAccess === 'denied' || screenAccess === 'restricted' || error ? (
+                        <div className="space-y-3 rounded-lg border bg-muted p-4 text-callout">
+                            <p className="flex items-start gap-2 text-warning">
+                                <TriangleAlert className="mt-[2px] size-4 shrink-0" aria-hidden="true" />
+                                {screenAccess === 'denied' || screenAccess === 'restricted'
+                                    ? 'Allow Kesami in System Settings › Privacy & Security › Screen & System Audio Recording, then restart Kesami.'
+                                    : 'Screens are unavailable. If you just granted access, restart Kesami and try again.'}
+                            </p>
+                            <Button variant="outline" onClick={() => void refreshSources(true)}>Try again</Button>
+                        </div>
                     ) : (
                         <Tabs defaultValue="screens">
                             <TabsList className="mb-4 w-full">

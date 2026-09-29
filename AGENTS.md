@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This repository is an npm workspace for the Alpha desktop meeting assistant.
+This repository is an npm workspace for the Kesami desktop meeting assistant.
 
 - `apps/ui`: React 19, Vite, Tailwind CSS, and Shadcn-based interface.
 - `apps/desktop`: Electron shell, recording integration, and backend lifecycle.
@@ -39,9 +39,9 @@ Prefer the narrowest relevant build or test while iterating, then run broader ve
 ## Credentials and local data
 
 - Never commit API keys or print them in logs, test output, or responses.
-- Gemini and Sarvam credentials are stored locally in `apps/core-backend/.alpha-meeting-assistant/credentials.json` and must remain ignored by Git with owner-only permissions.
-- The backend also accepts `ALPHA_GEMINI_API_KEY` and `ALPHA_SARVAM_API_KEY` as environment overrides.
-- Treat files under `.alpha-meeting-assistant` as user data. Do not delete or overwrite them unless the task explicitly requires it.
+- Gemini and Sarvam credentials are stored locally in `apps/core-backend/.kesami/credentials.json` and must remain ignored by Git with owner-only permissions.
+- The backend also accepts `KESAMI_GEMINI_API_KEY` and `KESAMI_SARVAM_API_KEY` as environment overrides.
+- Treat files under `.kesami` as user data. Do not delete or overwrite them unless the task explicitly requires it.
 
 ## Validation expectations
 

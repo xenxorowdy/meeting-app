@@ -132,12 +132,12 @@ function NextSteps({ items, index, onJump }) {
     if (!items?.length) return null;
     return (
         <div className="ks-next-steps">
-            <h3>NEXT STEPS</h3>
+            <h3>Next steps</h3>
             <ul>
-                {items.map((raw, index) => {
+                {items.map((raw, itemIndex) => {
                     const item = taskValue(raw);
                     return (
-                        <li key={item.id || index} className="ks-bullet">
+                        <li key={item.id || itemIndex} className="ks-bullet">
                             <div className="ks-bullet-row">
                                 <span>
                                     <strong>{item.task}</strong>
@@ -206,10 +206,10 @@ function Tasks({ meeting, onUpdate }) {
 }
 
 const MEETING_TABS = [
+    ['summary', 'Summary'],
     ['transcript', 'Transcript'],
     ['tasks', 'Tasks'],
-    ['summary', 'Summary'],
-    ['replay', 'Screen'],
+    ['replay', 'Recording'],
     ['notes', 'Notes'],
 ];
 
@@ -249,6 +249,7 @@ function LevelMeter({ subscribe, paused }) {
 }
 
 export function MeetingDetail({
+    onUpgrade,
     meeting,
     turns = [],
     interimTurns = [],
@@ -272,6 +273,7 @@ export function MeetingDetail({
     const [editing, setEditing] = useState(false);
     const [title, setTitle] = useState('');
     const [advanced, setAdvanced] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(false);
     useEffect(() => {
         setTab(initialTab || 'transcript');
     }, [initialTab, meeting?.id]);
@@ -335,8 +337,213 @@ export function MeetingDetail({
         );
 
     return (
-        <div className="ks-meeting">
+        <div className={`ks-meeting${recording ? ' ks-meeting-live' : ' ks-meeting-review'}`}>
             <div className="ks-meeting-main">
+                <header className="ks-meeting-header">
+                    <div className="ks-meeting-title">
+                        <button className="ks-meeting-back" aria-label="Back to home" onClick={onBack}>
+                            <ArrowLeft />
+                        </button>
+                        {editing ? (
+                            <form
+                                onSubmit={event => {
+                                    event.preventDefault();
+                                    if (title.trim()) onUpdate({ title: title.trim() });
+                                    setEditing(false);
+                                }}
+                            >
+                                <input aria-label="Meeting title" autoFocus value={title} onChange={event => setTitle(event.target.value)} />
+                                <button className="ks-icon-button" aria-label="Save title">
+                                    <Check />
+                                </button>
+                            </form>
+                        ) : (
+                            <h2>
+                                <button
+                                    title="Rename meeting"
+                                    onClick={() => {
+                                        setTitle(meeting?.title || 'Untitled meeting');
+                                        setEditing(true);
+                                    }}
+                                >
+                                    {meeting?.title || 'Untitled meeting'}
+                                </button>
+                            </h2>
+                        )}
+                        <div className="ks-meeting-meta">
+                            <time>{dateLabel(meeting?.startedAt)}</time>
+                            {!recording && <time>{durationLabel(elapsed)}</time>}
+                            <span>
+                                {participants
+                                    .slice(0, 3)
+                                    .map(name => name.split(' ')[0])
+                                    .join(', ')}
+                                {participants.length > 3 ? ` +${participants.length - 3}` : ''}
+                            </span>
+                            {session.isProcessing && <span className="ks-accent">Generating summary…</span>}
+                        </div>
+                    </div>
+                    <div className="ks-meeting-actions">
+                        {!recording && (
+                            <>
+                                <button className="ks-button" onClick={onExport} disabled={!meeting}>
+                                    <Download />
+                                    Export
+                                </button>
+                            </>
+                        )}
+                        <button
+                            className={`ks-button ${chatOpen ? 'ks-primary' : ''}`}
+                            onClick={() => setChatOpen(!chatOpen)}
+                            aria-expanded={chatOpen}
+                            disabled={!meeting?.id || !isConnected}
+                        >
+                            <Sparkles />
+                            Ask AI
+                        </button>
+                    </div>
+                </header>
+                <div className="ks-meeting-tabs" role="tablist" aria-label="Meeting content">
+                    {tabs.map(([value, label]) => (
+                        <button
+                            key={value}
+                            id={`tab-${value}`}
+                            role="tab"
+                            aria-selected={tab === value}
+                            aria-controls="meeting-panel"
+                            onClick={() => setTab(value)}
+                        >
+                            {label}
+                            {value === 'tasks' && <small>{tasks.filter(item => !taskValue(item).completed).length}</small>}
+                        </button>
+                    ))}
+                </div>
+                <div id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="ks-meeting-panel">
+                    {tab === 'transcript' && (
+                        <TranscriptView
+                            turns={turns}
+                            interimTurns={interimTurns}
+                            isLive={session.isRecording}
+                            isPaused={session.isPaused}
+                            citationFocus={citationFocus}
+                            isConnected={isConnected}
+                            onRenameSpeaker={onRenameSpeaker}
+                            onAsk={askAboutTurn}
+                            onSeek={seekToTurn}
+                            seekable={Boolean(meeting?.recording?.videoPath) && !recording}
+                        />
+                    )}
+                    {tab === 'tasks' && <Tasks meeting={meeting} onUpdate={onUpdate} />}
+                    {tab === 'summary' && (
+                        <div className="ks-detail-scroll">
+                            {advanced ? (
+                                <div className="ks-summary-advanced">
+                                    <button className="ks-text-button" onClick={() => setAdvanced(false)}>
+                                        ← Back to summary
+                                    </button>
+                                    <Suspense fallback={<p className="ks-chat-note">Opening the editor…</p>}>
+                                        <SummaryEditor
+                                            key={meeting?.id}
+                                            meeting={meeting}
+                                            onUpdateMeeting={onUpdate}
+                                            onRegenerateSummary={() => onRegenerateSummary?.(meeting?.id)}
+                                            isGenerating={session.isProcessing || session.isGeneratingSummary}
+                                        />
+                                    </Suspense>
+                                </div>
+                            ) : (
+                                <div className="ks-summary">
+                                    {meeting?.recording?.videoPath && (
+                                        <details className="ks-summary-recording" open={previewOpen} onToggle={event => setPreviewOpen(event.currentTarget.open)}>
+                                            <summary><Play aria-hidden="true" /><span>Meeting recording</span><small>{durationLabel(meeting.durationSeconds)}</small></summary>
+                                            {previewOpen && (
+                                                <>
+                                                    <Suspense fallback={<p className="ks-chat-note">Opening the recording…</p>}>
+                                                        <RecordingPlayer meeting={meeting} compact />
+                                                    </Suspense>
+                                                    <button className="ks-text-button" onClick={() => setTab('replay')}>
+                                                        Open recording & transcript <ArrowLeft className="ks-arrow-forward" />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </details>
+                                    )}
+                                    <div className="ks-summary-card">
+                                        <header>
+                                            <span>
+                                                <Sparkles />
+                                                Overview
+                                            </span>
+                                            <button className="ks-summary-edit" onClick={() => setAdvanced(true)}>
+                                                <Pencil /> Edit summary
+                                            </button>
+                                        </header>
+                                        {meeting?.summarySections?.length > 0 ? (
+                                            <>
+                                                <div className="ks-summary-lead">
+                                                    <MarkdownText markdown={leadParagraph(meeting.summaryMarkdown)} />
+                                                    <SourceCitation
+                                                        label="Representative passages for this summary"
+                                                        turns={turnsForIds(sourceIndex, summarySourceIds)}
+                                                        onJump={jumpToTurn}
+                                                    />
+                                                </div>
+                                                <Sections sections={meeting.summarySections} index={sourceIndex} onJump={jumpToTurn} />
+                                            </>
+                                        ) : (
+                                            <MarkdownText
+                                                markdown={
+                                                    meeting?.summaryMarkdown ||
+                                                    (session.isProcessing
+                                                        ? 'Preparing your meeting summary…'
+                                                        : session.autoSummarize === false
+                                                          ? 'Auto-summarize is off. Turn on “Summarize when a recording ends” in Settings to generate a recap.'
+                                                          : 'No summary is available for this meeting yet.')
+                                                }
+                                            />
+                                        )}
+                                    </div>
+                                    {meeting?.keyDecisions?.length > 0 && (
+                                        <div className="ks-decisions">
+                                            <h3>Key decisions</h3>
+                                            {meeting.keyDecisions.map((decision, index) => (
+                                                <p key={index}><Check aria-hidden="true" /><span>{decision}</span></p>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <NextSteps items={meeting?.actionItems} index={sourceIndex} onJump={jumpToTurn} />
+                                    <button className="ks-text-button" onClick={() => setAdvanced(true)}>
+                                        Edit notes & follow-up email
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {tab === 'replay' && (
+                        <Suspense fallback={<p className="ks-chat-note">Opening the recording…</p>}>
+                            <RecordingPlayer
+                                key={meeting?.id}
+                                meeting={meeting}
+                                citationFocus={replayCitation || citationFocus}
+                                isConnected={isConnected}
+                                onRenameSpeaker={onRenameSpeaker}
+                                nameSuggestions={session.nameSuggestions}
+                            />
+                        </Suspense>
+                    )}
+                    {tab === 'notes' && (
+                        <div className="ks-detail-scroll">
+                            <div className="ks-live-notes">
+                                <LiveNotes
+                                    notes={meeting?.notes || []}
+                                    canWrite={recording}
+                                    onAddNote={onAddNote}
+                                    onDeleteNote={recording ? onDeleteNote : undefined}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
                 {recording && (
                     <section className="ks-recording-hud" aria-label="Recording controls">
                         <span className={`ks-rec ${session.isPaused ? 'is-paused' : ''}`}>
@@ -388,199 +595,6 @@ export function MeetingDetail({
                         </div>
                     </section>
                 )}
-                <header className="ks-meeting-header">
-                    <div className="ks-meeting-title">
-                        <button className="ks-meeting-back" aria-label="Back to home" onClick={onBack}>
-                            <ArrowLeft />
-                        </button>
-                        {editing ? (
-                            <form
-                                onSubmit={event => {
-                                    event.preventDefault();
-                                    if (title.trim()) onUpdate({ title: title.trim() });
-                                    setEditing(false);
-                                }}
-                            >
-                                <input aria-label="Meeting title" autoFocus value={title} onChange={event => setTitle(event.target.value)} />
-                                <button className="ks-icon-button" aria-label="Save title">
-                                    <Check />
-                                </button>
-                            </form>
-                        ) : (
-                            <h2>
-                                <button
-                                    title="Rename meeting"
-                                    onClick={() => {
-                                        setTitle(meeting?.title || 'Untitled meeting');
-                                        setEditing(true);
-                                    }}
-                                >
-                                    {meeting?.title || 'Untitled meeting'}
-                                </button>
-                            </h2>
-                        )}
-                        <div className="ks-meeting-meta">
-                            <time>{dateLabel(meeting?.startedAt)}</time>
-                            <time>{durationLabel(elapsed)}</time>
-                            <span>
-                                {participants
-                                    .slice(0, 3)
-                                    .map(name => name.split(' ')[0])
-                                    .join(', ')}
-                                {participants.length > 3 ? ` +${participants.length - 3}` : ''}
-                            </span>
-                            {session.isProcessing && <span className="ks-accent">Generating summary…</span>}
-                        </div>
-                    </div>
-                    <div className="ks-meeting-actions">
-                        {!recording && (
-                            <>
-                                <button className="ks-button" onClick={onExport} disabled={!meeting}>
-                                    <Download />
-                                    Export
-                                </button>
-                                <button className="ks-button" onClick={() => setTab('replay')}>
-                                    <Monitor />
-                                    Screen
-                                </button>
-                            </>
-                        )}
-                        <button
-                            className={`ks-button ${chatOpen ? 'ks-primary' : ''}`}
-                            onClick={() => setChatOpen(!chatOpen)}
-                            disabled={!meeting?.id || !isConnected}
-                        >
-                            <Sparkles />
-                            Ask AI
-                        </button>
-                    </div>
-                </header>
-                <div className="ks-meeting-tabs" role="tablist" aria-label="Meeting content">
-                    {tabs.map(([value, label]) => (
-                        <button
-                            key={value}
-                            id={`tab-${value}`}
-                            role="tab"
-                            aria-selected={tab === value}
-                            aria-controls="meeting-panel"
-                            onClick={() => setTab(value)}
-                        >
-                            {label}
-                            {value === 'tasks' && <small>{tasks.filter(item => !taskValue(item).completed).length}</small>}
-                            {value === 'replay' && meeting?.recording?.mode !== 'audio' && <em>HD</em>}
-                        </button>
-                    ))}
-                </div>
-                <div id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="ks-meeting-panel">
-                    {tab === 'transcript' && (
-                        <TranscriptView
-                            turns={turns}
-                            interimTurns={interimTurns}
-                            isLive={session.isRecording}
-                            citationFocus={citationFocus}
-                            isConnected={isConnected}
-                            onRenameSpeaker={onRenameSpeaker}
-                            onAsk={askAboutTurn}
-                            onSeek={seekToTurn}
-                            seekable={Boolean(meeting?.recording?.videoPath) && !recording}
-                        />
-                    )}
-                    {tab === 'tasks' && <Tasks meeting={meeting} onUpdate={onUpdate} />}
-                    {tab === 'summary' && (
-                        <div className="ks-detail-scroll">
-                            {advanced ? (
-                                <div className="ks-summary-advanced">
-                                    <button className="ks-text-button" onClick={() => setAdvanced(false)}>
-                                        ← Back to summary
-                                    </button>
-                                    <Suspense fallback={<p className="ks-chat-note">Opening the editor…</p>}>
-                                        <SummaryEditor
-                                            key={meeting?.id}
-                                            meeting={meeting}
-                                            onUpdateMeeting={onUpdate}
-                                            onRegenerateSummary={() => onRegenerateSummary?.(meeting?.id)}
-                                            isGenerating={session.isProcessing || session.isGeneratingSummary}
-                                        />
-                                    </Suspense>
-                                </div>
-                            ) : (
-                                <div className="ks-summary">
-                                    <div className="ks-summary-card">
-                                        <header>
-                                            <span>
-                                                <i />
-                                                TRANSCRIPT SUMMARY
-                                            </span>
-                                            <button className="ks-icon-button" aria-label="Edit summary" onClick={() => setAdvanced(true)}>
-                                                <Pencil />
-                                            </button>
-                                        </header>
-                                        {meeting?.summarySections?.length > 0 ? (
-                                            <>
-                                                <div className="ks-summary-lead">
-                                                    <MarkdownText markdown={leadParagraph(meeting.summaryMarkdown)} />
-                                                    <SourceCitation
-                                                        label="Representative passages for this summary"
-                                                        turns={turnsForIds(sourceIndex, summarySourceIds)}
-                                                        onJump={jumpToTurn}
-                                                    />
-                                                </div>
-                                                <Sections sections={meeting.summarySections} index={sourceIndex} onJump={jumpToTurn} />
-                                            </>
-                                        ) : (
-                                            <MarkdownText
-                                                markdown={
-                                                    meeting?.summaryMarkdown ||
-                                                    (session.isProcessing
-                                                        ? 'Preparing your meeting summary…'
-                                                        : session.autoSummarize === false
-                                                          ? 'Auto-summarize is off. Turn on “Summarize when a recording ends” in Settings to generate a recap.'
-                                                          : 'No summary is available for this meeting yet.')
-                                                }
-                                            />
-                                        )}
-                                    </div>
-                                    {meeting?.keyDecisions?.length > 0 && (
-                                        <div className="ks-decisions">
-                                            <h3>KEY DECISIONS</h3>
-                                            {meeting.keyDecisions.map((decision, index) => (
-                                                <p key={index}>• {decision}</p>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <NextSteps items={meeting?.actionItems} index={sourceIndex} onJump={jumpToTurn} />
-                                    <button className="ks-text-button" onClick={() => setAdvanced(true)}>
-                                        Edit notes & follow-up email
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {tab === 'replay' && (
-                        <Suspense fallback={<p className="ks-chat-note">Opening the recording…</p>}>
-                            <RecordingPlayer
-                                key={meeting?.id}
-                                meeting={meeting}
-                                citationFocus={replayCitation || citationFocus}
-                                isConnected={isConnected}
-                                onRenameSpeaker={onRenameSpeaker}
-                                nameSuggestions={session.nameSuggestions}
-                            />
-                        </Suspense>
-                    )}
-                    {tab === 'notes' && (
-                        <div className="ks-detail-scroll">
-                            <div className="ks-live-notes">
-                                <LiveNotes
-                                    notes={meeting?.notes || []}
-                                    canWrite={recording}
-                                    onAddNote={onAddNote}
-                                    onDeleteNote={recording ? onDeleteNote : undefined}
-                                />
-                            </div>
-                        </div>
-                    )}
-                </div>
             </div>
             <ResizableChatPanel open={chatOpen} onClose={() => setChatOpen(false)}>
                     {meeting && <MeetingChatPanel
@@ -591,6 +605,7 @@ export function MeetingDetail({
                         onSelectMeeting={onSelectMeeting}
                         draft={chatDraft}
                         onClose={() => setChatOpen(false)}
+                        onUpgrade={onUpgrade}
                     />}
             </ResizableChatPanel>
         </div>

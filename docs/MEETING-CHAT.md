@@ -1,4 +1,4 @@
-# Ask Alpha
+# Ask Kesami
 
 Open **Library** to chat with selected meetings, an entire folder, or all completed meetings. Use **Ask meeting** in the toolbar for the currently open meeting. Conversations are saved locally and restored when returning to that scope. Choosing another scope preserves the previous conversation. Use the conversation menu to reopen older threads.
 
@@ -37,15 +37,15 @@ Model: `intfloat/multilingual-e5-small`, MIT license, pinned revision `614241f62
 Under the resolved meeting library:
 
 ```text
-.alpha-chat/
+.kesami-chat/
   search.sqlite       # Derived passages and vectors; can be rebuilt
   threads.sqlite      # User conversations; preserve this file
   models/<revision>/  # Verified public model cache
 ```
 
-SQLite may create adjacent journal files. The containing directory is owner-only on Unix, as are the databases. No meeting-storage migration is performed. Do not delete `.alpha-chat` as a way to rebuild search: it also contains conversations. Search reconciliation repairs changed/deleted records automatically, including after restart. A failed model download can be retried by restarting the backend when online; partial assets are never used.
+SQLite may create adjacent journal files. The containing directory is owner-only on Unix, as are the databases. No meeting-storage migration is performed. Do not delete `.kesami-chat` as a way to rebuild search: it also contains conversations. Search reconciliation repairs changed/deleted records automatically, including after restart. A failed model download can be retried by restarting the backend when online; partial assets are never used.
 
-Set `ALPHA_CHAT_EMBEDDINGS=off` when intentionally running keyword-only search. The UI reports the active search mode and remaining embedding count. No cloud embedding fallback is used.
+Set `KESAMI_CHAT_EMBEDDINGS=off` when intentionally running keyword-only search. The UI reports the active search mode and remaining embedding count. No cloud embedding fallback is used.
 
 ## Verification
 

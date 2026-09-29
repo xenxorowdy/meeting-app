@@ -22,12 +22,17 @@ function pickMimeType(mode = 'screen') {
 }
 
 export function isRecordingSupported(mode = 'screen') {
-    return Boolean(globalThis.alphaRecorder && typeof MediaRecorder !== 'undefined' && pickMimeType(mode));
+    return Boolean(globalThis.kesamiRecorder && typeof MediaRecorder !== 'undefined' && pickMimeType(mode));
 }
 
 export function listSources() {
-    if (!globalThis.alphaRecorder) return Promise.resolve([]);
-    return globalThis.alphaRecorder.listSources();
+    if (!globalThis.kesamiRecorder) return Promise.resolve([]);
+    return globalThis.kesamiRecorder.listSources();
+}
+
+export function screenPermission() {
+    if (!globalThis.kesamiRecorder?.screenPermission) return Promise.resolve('granted');
+    return globalThis.kesamiRecorder.screenPermission();
 }
 
 /**
@@ -55,7 +60,7 @@ export async function startScreenRecording({
     bitsPerSecond = DEFAULT_BITS_PER_SECOND,
     signal,
 } = {}) {
-    const bridge = globalThis.alphaRecorder;
+    const bridge = globalThis.kesamiRecorder;
     if (!bridge) throw new Error('Saving a recording needs the desktop app.');
 
     const mimeType = pickMimeType(mode);
@@ -74,19 +79,12 @@ export async function startScreenRecording({
     try {
     checkAborted();
     if (mode === 'screen') {
-    const permission = await bridge.screenPermission();
-    checkAborted();
-    if (permission === 'denied' || permission === 'restricted') {
-        throw new Error(
-            'Screen Recording permission is denied. Grant it in System Settings › Privacy & Security › Screen Recording, then restart Alpha.'
-        );
-    }
-
     // Tell the main process which source its display-media handler should hand
     // back; the renderer cannot choose one itself.
     await bridge.selectSource(sourceId || null);
     checkAborted();
 
+    try {
     stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
             // getDisplayMedia rejects `min`/`exact` constraints during source
@@ -97,6 +95,12 @@ export async function startScreenRecording({
         },
         audio: true,
     });
+    } catch (cause) {
+        if (cause?.name === 'NotAllowedError' || cause?.name === 'PermissionDeniedError') {
+            throw new Error('macOS blocked screen capture. Allow Kesami in System Settings › Privacy & Security › Screen & System Audio Recording, then restart Kesami.');
+        }
+        throw cause;
+    }
     checkAborted();
 
     } else if (!hasLiveAudio(micStream) && !hasLiveAudio(systemStream)) {

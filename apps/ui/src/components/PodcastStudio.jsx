@@ -73,7 +73,7 @@ function EmptyDesktop() {
             <Podcast className="size-10 text-primary" aria-hidden="true" />
             <h2 className="mt-4 text-title2 font-semibold">Podcast Studio needs the desktop app</h2>
             <p className="mt-2 max-w-lg text-callout text-muted-foreground">
-                Capture, local media processing, secure YouTube sign-in, and high-quality rendering use Alpha’s Electron media services.
+                Capture, local media processing, secure YouTube sign-in, and high-quality rendering use Kesami’s Electron media services.
             </p>
         </section>
     );
@@ -324,7 +324,7 @@ function ExportOptions({ project, studio }) {
     ];
     return (
         <section className="rounded-xl border bg-card p-4">
-            <div><h3 className="text-headline font-semibold">Export episode</h3><p className="text-footnote text-muted-foreground">Choose a destination when Alpha finishes the local render.</p></div>
+            <div><h3 className="text-headline font-semibold">Export episode</h3><p className="text-footnote text-muted-foreground">Choose a destination when Kesami finishes the local render.</p></div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 {options.map(option => <Button key={option.format} variant={option.format === 'mp4' ? 'default' : 'outline'} className="h-auto justify-start px-3 py-3 text-left" onClick={() => studio.callBridge('render', project.id, option.format)} disabled={studio.isBusy}><option.icon className="size-4" /><span><span className="block text-callout font-medium">{option.title}</span><span className="block text-footnote font-normal opacity-70">{option.detail}</span></span></Button>)}
             </div>
@@ -337,7 +337,7 @@ function TimelinePanel({ project, studio, updateProject }) {
     const [selectedAsset, setSelectedAsset] = useState(null);
     const [history, setHistory] = useState({ undo: [], redo: [] });
     const media = project.assets.find(item => item.id === selectedAsset);
-    const mediaUrl = media ? globalThis.alphaPodcast.mediaUrl(project.id, media.relativePath) : null;
+    const mediaUrl = media ? globalThis.kesamiPodcast.mediaUrl(project.id, media.relativePath) : null;
 
     useEffect(() => setHistory({ undo: [], redo: [] }), [project.id]);
 

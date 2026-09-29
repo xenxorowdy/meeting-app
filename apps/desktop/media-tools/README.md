@@ -2,7 +2,7 @@
 
 Podcast Studio discovers each tool in this order:
 
-1. `ALPHA_FFMPEG_PATH`, `ALPHA_FFPROBE_PATH`, or `ALPHA_DEEP_FILTER_PATH`.
+1. `KESAMI_FFMPEG_PATH`, `KESAMI_FFPROBE_PATH`, or `KESAMI_DEEP_FILTER_PATH`.
 2. A packaged executable at `resources/media-tools/<platform>/<arch>/<name>` (`.exe` on Windows).
 3. The executable on `PATH`, for development.
 
@@ -18,8 +18,8 @@ Before a release, legal and engineering must verify:
 Development example:
 
 ```bash
-ALPHA_FFMPEG_PATH=/absolute/path/to/ffmpeg \
-ALPHA_FFPROBE_PATH=/absolute/path/to/ffprobe \
-ALPHA_DEEP_FILTER_PATH=/absolute/path/to/deep-filter \
+KESAMI_FFMPEG_PATH=/absolute/path/to/ffmpeg \
+KESAMI_FFPROBE_PATH=/absolute/path/to/ffprobe \
+KESAMI_DEEP_FILTER_PATH=/absolute/path/to/deep-filter \
 npm run dev
 ```

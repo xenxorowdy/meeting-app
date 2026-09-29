@@ -47,6 +47,7 @@ const DEFAULT_SETTINGS = {
     recordingSource: 'ask',
     recordingBitsPerSecond: DEFAULT_BITS_PER_SECOND,
     meetingReminders: true,
+    autoRecordMeetings: true,
     floatingWidget: true,
     autoStopOnMeetingEnd: true,
     promptForUnscheduledCalls: true,
@@ -123,6 +124,7 @@ export function useMeetingSession() {
     settingsRef.current = settings;
 
     const onCalendarConnectionRef = useRef(null);
+    const onConnectorConnectionRef = useRef(null);
 
     const setOnLiveTurn = useCallback(fn => {
         callbacksRef.current.onLiveTurn = fn;
@@ -134,6 +136,10 @@ export function useMeetingSession() {
 
     const setOnCalendarConnection = useCallback(fn => {
         onCalendarConnectionRef.current = fn;
+    }, []);
+
+    const setOnConnectorConnection = useCallback(fn => {
+        onConnectorConnectionRef.current = fn;
     }, []);
 
     const setOnMeetingCompleted = useCallback(fn => {
@@ -192,6 +198,18 @@ export function useMeetingSession() {
         });
     }, []);
 
+    const mergeDelivery = useCallback((meetingId, delivery) => {
+        if (!delivery?.provider) return;
+        setActiveMeeting(prev => {
+            if (!prev || prev.id !== meetingId) return prev;
+            const metadata = prev.metadata || {};
+            return {
+                ...prev,
+                metadata: { ...metadata, connectorDeliveries: { ...(metadata.connectorDeliveries || {}), [delivery.provider]: delivery } },
+            };
+        });
+    }, []);
+
     const handleEvent = useCallback(
         message => {
             const { type, data } = message;
@@ -203,6 +221,19 @@ export function useMeetingSession() {
 
             if (type === 'calendar_connection') {
                 onCalendarConnectionRef.current?.(data);
+                return;
+            }
+
+            if (type === 'connector_connection') {
+                onConnectorConnectionRef.current?.(data);
+                return;
+            }
+
+            if (type === 'connector_delivery') {
+                mergeDelivery(data?.meetingId, data?.delivery);
+                if (data?.automatic && data.delivery && !data.delivery.ok) {
+                    setError(`Automatic send failed. ${data.delivery.error || 'The connector did not accept the meeting.'}`);
+                }
                 return;
             }
 
@@ -293,7 +324,7 @@ export function useMeetingSession() {
                     break;
             }
         },
-        [adoptMeeting, applyInterim, applyStatus, levels]
+        [adoptMeeting, applyInterim, applyStatus, levels, mergeNote, mergeDelivery]
     );
 
     // Backend socket: one connection for the lifetime of the window.
@@ -519,7 +550,7 @@ export function useMeetingSession() {
                 return null;
             }
             if (settingsRef.current.transcriptionProvider === 'sarvam' && !isRecordingSupported(mode)) {
-                setError('Sarvam batch transcription needs the Alpha desktop app so it can capture the complete meeting audio.');
+                setError('Sarvam batch transcription needs the Kesami desktop app so it can capture the complete meeting audio.');
                 return null;
             }
             startingRef.current = true;
@@ -809,6 +840,7 @@ export function useMeetingSession() {
 
     return {
         setOnCalendarConnection,
+        setOnConnectorConnection,
         addNote,
         deleteNote,
         backendUrl: getBackendUrl(),

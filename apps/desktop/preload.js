@@ -1,7 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('alphaGoogleSignIn', {
+contextBridge.exposeInMainWorld('kesamiGoogleSignIn', {
     start: options => ipcRenderer.invoke('google-sign-in:start', options),
+});
+
+let connection = ipcRenderer.sendSync('connection:get');
+contextBridge.exposeInMainWorld('kesamiConnection', {
+    get: () => connection,
+    save: async value => {
+        connection = await ipcRenderer.invoke('connection:save', value);
+    },
 });
 
 // The renderer talks to the core backend over HTTP and WebSocket, so it needs
@@ -9,7 +17,7 @@ contextBridge.exposeInMainWorld('alphaGoogleSignIn', {
 // capture sources and writing a video file are main-process jobs, so this bridge
 // exposes exactly those calls and nothing else. Everything here is a named,
 // argument-checked channel — no `ipcRenderer` and no module loader reach the page.
-contextBridge.exposeInMainWorld('alphaRecorder', {
+contextBridge.exposeInMainWorld('kesamiRecorder', {
     /** Displays and windows that can be captured, each with a preview thumbnail. */
     listSources: () => ipcRenderer.invoke('recorder:list-sources'),
 
@@ -36,7 +44,7 @@ contextBridge.exposeInMainWorld('alphaRecorder', {
 
     /** A URL the player can load. Recordings are served over a dedicated scheme.
         The path arrives already `/`-separated from the main process. */
-    mediaUrl: relativePath => `alpha-media://recordings/${String(relativePath).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`,
+    mediaUrl: relativePath => `kesami-media://recordings/${String(relativePath).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`,
 });
 
 // Podcast is disabled; no project, publishing or capture bridge is exposed.
@@ -69,7 +77,7 @@ const subscribe = (listeners, listener) => {
     return () => listeners.delete(listener);
 };
 
-contextBridge.exposeInMainWorld('alphaSystemAudio', {
+contextBridge.exposeInMainWorld('kesamiSystemAudio', {
     available: () => ipcRenderer.invoke('system-audio:available'),
     start: () => ipcRenderer.invoke('system-audio:start'),
     stop: () => ipcRenderer.invoke('system-audio:stop'),
@@ -84,10 +92,10 @@ ipcRenderer.on('mic-usage:event', (_event, usage) => {
     fanOut(micUsageListeners, Object.freeze({ active: usage.active, at: usage.at ?? null }));
 });
 
-// Lets the app notice a call that Alpha is not part of: any process opening
+// Lets the app notice a call that Kesami is not part of: any process opening
 // the microphone. The watcher keeps running across reloads; subscribing again
 // is what pulls the current state into the fresh page.
-contextBridge.exposeInMainWorld('alphaMicUsage', {
+contextBridge.exposeInMainWorld('kesamiMicUsage', {
     available: () => ipcRenderer.invoke('mic-usage:available'),
     start: () => ipcRenderer.invoke('mic-usage:start'),
     stop: () => ipcRenderer.invoke('mic-usage:stop'),
@@ -98,7 +106,9 @@ const MENUBAR_COMMANDS = new Set(['record', 'new-note', 'new-meeting', 'settings
 const menuBarListeners = new Set();
 
 const normalizeCommand = command =>
-    command && MENUBAR_COMMANDS.has(command.type) ? Object.freeze({ type: command.type, event: command.event ?? null }) : null;
+    command && MENUBAR_COMMANDS.has(command.type)
+        ? Object.freeze({ type: command.type, event: command.event ?? null, auto: command.auto === true })
+        : null;
 
 ipcRenderer.on('menubar:command', (_event, command) => {
     const normalized = normalizeCommand(command);
@@ -113,7 +123,7 @@ ipcRenderer.on('menubar:command', (_event, command) => {
 });
 
 // The main window owns the floating-widget preference; the shell owns the window.
-contextBridge.exposeInMainWorld('alphaShell', {
+contextBridge.exposeInMainWorld('kesamiShell', {
     setWidgetVisible: visible => ipcRenderer.invoke('widget:set-visible', Boolean(visible)),
 
     setWidgetLive: live => ipcRenderer.invoke('widget:set-live', Boolean(live)),
@@ -128,6 +138,12 @@ contextBridge.exposeInMainWorld('alphaShell', {
     },
 
     setRecordingIndicator: active => ipcRenderer.invoke('menubar:set-recording', Boolean(active)),
+
+    refreshMenuBar: () => ipcRenderer.invoke('menubar:refresh'),
+
+    testNotification: () => ipcRenderer.invoke('menubar:test-notification'),
+
+    openNotificationSettings: () => ipcRenderer.invoke('menubar:open-notification-settings'),
 
     ownsMeetingReminders: true,
 

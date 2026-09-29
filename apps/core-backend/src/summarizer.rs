@@ -258,7 +258,7 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
 }
 
 fn find_claude_binary() -> Option<PathBuf> {
-    if let Some(configured) = env::var_os("ALPHA_CLAUDE_BIN") {
+    if let Some(configured) = kesami_core_backend::env_compat::var_os("KESAMI_CLAUDE_BIN") {
         let path = PathBuf::from(configured);
         return path.is_file().then_some(path);
     }
@@ -287,7 +287,7 @@ fn find_claude_binary() -> Option<PathBuf> {
 }
 
 fn env_flag(name: &str, default: bool) -> bool {
-    match env::var(name) {
+    match kesami_core_backend::env_compat::var(name) {
         Ok(value) => !matches!(
             value.trim().to_ascii_lowercase().as_str(),
             "0" | "false" | "no" | "off"
@@ -305,7 +305,7 @@ impl SummaryService {
     pub fn detect() -> Self {
         // `None` means "decide from what is actually available"; an explicit value
         // pins the provider even if that means falling back to the heuristic.
-        let preference = match env::var("ALPHA_SUMMARY_PROVIDER")
+        let preference = match kesami_core_backend::env_compat::var("KESAMI_SUMMARY_PROVIDER")
             .unwrap_or_else(|_| "auto".into())
             .trim()
             .to_ascii_lowercase()
@@ -317,7 +317,7 @@ impl SummaryService {
             _ => None,
         };
 
-        let gemini_key = env::var("ALPHA_GEMINI_API_KEY")
+        let gemini_key = kesami_core_backend::env_compat::var("KESAMI_GEMINI_API_KEY")
             .ok()
             .map(|key| key.trim().to_string())
             .filter(|key| !key.is_empty());
@@ -345,25 +345,25 @@ impl SummaryService {
             },
             preference: RwLock::new(preference),
             gemini_key: RwLock::new(gemini_key),
-            thinking_budget: env::var("ALPHA_SUMMARY_THINKING_BUDGET")
+            thinking_budget: kesami_core_backend::env_compat::var("KESAMI_SUMMARY_THINKING_BUDGET")
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
             http: reqwest::Client::new(),
             model: RwLock::new(
-                env::var("ALPHA_SUMMARY_MODEL")
+                kesami_core_backend::env_compat::var("KESAMI_SUMMARY_MODEL")
                     .ok()
                     .map(|m| m.trim().to_string())
                     .filter(|m| !m.is_empty())
                     .unwrap_or_else(|| default_model.into()),
             ),
-            request_timeout: env::var("ALPHA_SUMMARY_TIMEOUT_SECS")
+            request_timeout: kesami_core_backend::env_compat::var("KESAMI_SUMMARY_TIMEOUT_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .map(Duration::from_secs)
                 .unwrap_or(DEFAULT_TIMEOUT),
-            safe_mode: env_flag("ALPHA_SUMMARY_SAFE_MODE", true),
-            max_budget_usd: env::var("ALPHA_SUMMARY_MAX_BUDGET_USD")
+            safe_mode: env_flag("KESAMI_SUMMARY_SAFE_MODE", true),
+            max_budget_usd: kesami_core_backend::env_compat::var("KESAMI_SUMMARY_MAX_BUDGET_USD")
                 .ok()
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty()),
@@ -471,7 +471,7 @@ impl SummaryService {
             Provider::Gemini => match self.run_gemini(request).await {
                 Ok(structured) => from_structured(&structured, request, Provider::Gemini),
                 Err(cause) => {
-                    eprintln!("[Alpha Core Backend] Gemini summary failed: {cause}");
+                    eprintln!("[Kesami Core Backend] Gemini summary failed: {cause}");
                     // A configured Claude CLI is a better answer than the keyword
                     // heuristic, so try it before giving up on a real summary.
                     if self.binary.is_some() {
@@ -480,7 +480,7 @@ impl SummaryService {
                                 return from_structured(&structured, request, Provider::ClaudeCli)
                             }
                             Err(second) => eprintln!(
-                                "[Alpha Core Backend] Claude CLI fallback also failed: {second}"
+                                "[Kesami Core Backend] Claude CLI fallback also failed: {second}"
                             ),
                         }
                     }
@@ -490,7 +490,7 @@ impl SummaryService {
             Provider::ClaudeCli => match self.run_cli(request).await {
                 Ok(structured) => from_structured(&structured, request, Provider::ClaudeCli),
                 Err(cause) => {
-                    eprintln!("[Alpha Core Backend] Claude CLI summary failed: {cause}");
+                    eprintln!("[Kesami Core Backend] Claude CLI summary failed: {cause}");
                     heuristic_summary(request, Some(cause))
                 }
             },

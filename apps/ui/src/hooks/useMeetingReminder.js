@@ -28,7 +28,7 @@ export function useMeetingReminder({ events, enabled, canRecord, onStart }) {
 
                 const invited = event.attendees.length;
                 const notification = new Notification(event.title || 'Meeting starting', {
-                    body: `Starts in under a minute · ${invited} invited. Open Alpha to record it.`,
+                    body: `Starts in under a minute · ${invited} invited. Open Kesami to record it.`,
                     tag: key,
                 });
                 notification.onclick = () => {

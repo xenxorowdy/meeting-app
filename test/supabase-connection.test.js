@@ -7,7 +7,7 @@ const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-const BINARY = path.resolve(__dirname, '../apps/core-backend/target/debug/alpha-core-backend');
+const BINARY = path.resolve(__dirname, '../apps/core-backend/target/debug/kesami-core-backend');
 const DEPLOYMENT_TOKEN = 'test-only-token-with-at-least-32-characters';
 const UNREACHABLE_PASSWORD = 'sup3r-secret-pw';
 const UNREACHABLE_URL = `postgres://postgres:${UNREACHABLE_PASSWORD}@127.0.0.1:1/postgres`;
@@ -22,28 +22,28 @@ async function freePort() {
 }
 
 async function spawnBackend({ supabase = {}, local = true } = {}) {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-supabase-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-supabase-'));
     const port = await freePort();
     const backend = spawn(BINARY, [], {
         cwd: root,
         stdio: ['ignore', 'ignore', 'ignore'],
         env: {
             ...process.env,
-            ALPHA_DATA_DIR: root,
+            KESAMI_DATA_DIR: root,
             CORE_BACKEND_DATA_FILE: path.join(root, 'absent-settings.json'),
             CORE_BACKEND_PORT: String(port),
             CORE_BACKEND_HOST: '127.0.0.1',
-            ALPHA_BACKEND_TOKEN: local ? '' : DEPLOYMENT_TOKEN,
-            ALPHA_PBKDF2_ITERATIONS: '1000',
-            ALPHA_SUMMARY_PROVIDER: 'claude',
-            ALPHA_GEMINI_API_KEY: '',
-            ALPHA_SARVAM_API_KEY: '',
-            ALPHA_CHAT_EMBEDDINGS: 'off',
-            ALPHA_SUPABASE_DB_URL: '',
-            ALPHA_SUPABASE_URL: '',
-            ALPHA_SUPABASE_PROJECT_REF: '',
-            ALPHA_SUPABASE_DB_PASSWORD: '',
-            ALPHA_SUPABASE_CONNECT_TIMEOUT_SECS: '5',
+            KESAMI_BACKEND_TOKEN: local ? '' : DEPLOYMENT_TOKEN,
+            KESAMI_PBKDF2_ITERATIONS: '1000',
+            KESAMI_SUMMARY_PROVIDER: 'claude',
+            KESAMI_GEMINI_API_KEY: '',
+            KESAMI_SARVAM_API_KEY: '',
+            KESAMI_CHAT_EMBEDDINGS: 'off',
+            KESAMI_SUPABASE_DB_URL: '',
+            KESAMI_SUPABASE_URL: '',
+            KESAMI_SUPABASE_PROJECT_REF: '',
+            KESAMI_SUPABASE_DB_PASSWORD: '',
+            KESAMI_SUPABASE_CONNECT_TIMEOUT_SECS: '5',
             ...supabase,
         },
     });
@@ -91,7 +91,7 @@ test('an unconfigured backend reports Supabase as absent and still serves every 
         assert.equal(status.status, 200);
         assert.equal(status.data.configured, false);
         assert.equal(status.data.status, 'unconfigured');
-        assert.match(status.data.hint, /ALPHA_SUPABASE_DB_URL/);
+        assert.match(status.data.hint, /KESAMI_SUPABASE_DB_URL/);
 
         const check = await api('/api/supabase/check', { method: 'POST' });
         assert.equal(check.status, 503);
@@ -107,7 +107,7 @@ test('an unconfigured backend reports Supabase as absent and still serves every 
 
 test('a project ref and password are assembled into the Supabase Postgres endpoint', async () => {
     const { api, stop } = await spawnBackend({
-        supabase: { ALPHA_SUPABASE_URL: 'https://abcdefgh.supabase.co', ALPHA_SUPABASE_DB_PASSWORD: 'p@ss:word/1' },
+        supabase: { KESAMI_SUPABASE_URL: 'https://abcdefgh.supabase.co', KESAMI_SUPABASE_DB_PASSWORD: 'p@ss:word/1' },
     });
     try {
         const status = await api('/api/supabase/status');
@@ -117,7 +117,7 @@ test('a project ref and password are assembled into the Supabase Postgres endpoi
         assert.equal(status.data.database, 'postgres');
         assert.equal(status.data.user, 'postgres');
         assert.equal(status.data.transactionPooler, false);
-        assert.equal(status.data.source, 'ALPHA_SUPABASE_URL');
+        assert.equal(status.data.source, 'KESAMI_SUPABASE_URL');
     } finally {
         await stop();
     }
@@ -125,7 +125,7 @@ test('a project ref and password are assembled into the Supabase Postgres endpoi
 
 test('the transaction pooler port is recognised so prepared statements stay off', async () => {
     const { api, stop } = await spawnBackend({
-        supabase: { ALPHA_SUPABASE_DB_URL: 'postgres://postgres.abcdefgh:pw@aws-0-ap-south-1.pooler.supabase.com:6543/postgres' },
+        supabase: { KESAMI_SUPABASE_DB_URL: 'postgres://postgres.abcdefgh:pw@aws-0-ap-south-1.pooler.supabase.com:6543/postgres' },
     });
     try {
         const status = await api('/api/supabase/status');
@@ -139,7 +139,7 @@ test('the transaction pooler port is recognised so prepared statements stay off'
 });
 
 test('an unreachable database fails the check without taking the backend down or leaking the password', async () => {
-    const { api, stop } = await spawnBackend({ supabase: { ALPHA_SUPABASE_DB_URL: UNREACHABLE_URL } });
+    const { api, stop } = await spawnBackend({ supabase: { KESAMI_SUPABASE_DB_URL: UNREACHABLE_URL } });
     try {
         const check = await api('/api/supabase/check', { method: 'POST' });
         assert.equal(check.status, 503);
@@ -158,7 +158,7 @@ test('an unreachable database fails the check without taking the backend down or
 });
 
 test('Supabase routes need the workspace token on a hosted backend', async () => {
-    const { api, stop } = await spawnBackend({ local: false, supabase: { ALPHA_SUPABASE_DB_URL: UNREACHABLE_URL } });
+    const { api, stop } = await spawnBackend({ local: false, supabase: { KESAMI_SUPABASE_DB_URL: UNREACHABLE_URL } });
     try {
         assert.equal((await api('/api/supabase/status')).status, 401);
         assert.equal((await api('/api/supabase/check', { method: 'POST' })).status, 401);
@@ -170,9 +170,9 @@ test('Supabase routes need the workspace token on a hosted backend', async () =>
 
 test(
     'a real Supabase project answers select version()',
-    { skip: process.env.ALPHA_SUPABASE_DB_URL ? false : 'set ALPHA_SUPABASE_DB_URL to run the live check' },
+    { skip: process.env.KESAMI_SUPABASE_DB_URL ? false : 'set KESAMI_SUPABASE_DB_URL to run the live check' },
     async () => {
-        const { api, stop } = await spawnBackend({ supabase: { ALPHA_SUPABASE_DB_URL: process.env.ALPHA_SUPABASE_DB_URL } });
+        const { api, stop } = await spawnBackend({ supabase: { KESAMI_SUPABASE_DB_URL: process.env.KESAMI_SUPABASE_DB_URL } });
         try {
             const check = await api('/api/supabase/check', { method: 'POST' });
             assert.equal(check.status, 200, `live check failed: ${check.data.error}`);

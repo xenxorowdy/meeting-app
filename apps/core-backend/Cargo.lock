@@ -32,30 +32,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "alpha-core-backend"
-version = "2.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "dotenvy",
- "fastembed",
- "futures-util",
- "hmac",
- "jsonwebtoken",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "subtle",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "uuid",
-]
-
-[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1021,6 +997,30 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
+]
+
+[[package]]
+name = "kesami-core-backend"
+version = "2.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "dotenvy",
+ "fastembed",
+ "futures-util",
+ "hmac",
+ "jsonwebtoken",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]

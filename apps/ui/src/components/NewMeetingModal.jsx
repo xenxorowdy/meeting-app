@@ -98,7 +98,7 @@ export function NewMeetingModal({ isOpen, onClose, providers, onCreated }) {
                     <DialogDescription className="text-callout text-muted-foreground">
                         {canCreate
                             ? 'Adds the event to your Google Calendar and invites your guests.'
-                            : 'Connect Google Calendar in Settings to schedule from Alpha.'}
+                            : 'Connect Google Calendar in Settings to schedule from Kesami.'}
                     </DialogDescription>
                 </DialogHeader>
 

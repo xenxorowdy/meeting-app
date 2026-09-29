@@ -2,12 +2,15 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 const { ipcMain, shell } = require('electron');
 
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
 let signingIn = false;
 
 async function start(options) {
     if (signingIn) throw new Error('Google sign-in is already in progress.');
     const supabase = options?.provider === 'supabase';
-    const clientId = options;
+    const clientId = typeof options === 'string' ? options : options?.clientId;
+    const calendar = !supabase && options?.calendar === true;
     let project;
     if (supabase) {
         try { project = new URL(options.url); } catch { throw new Error('Supabase sign-in is not configured.'); }
@@ -58,7 +61,17 @@ async function start(options) {
         const auth = supabase ? new URL('/auth/v1/authorize', project) : new URL('https://accounts.google.com/o/oauth2/v2/auth');
         auth.search = new URLSearchParams(supabase
             ? { provider: 'google', redirect_to: redirectUri, scopes: 'openid email profile', code_challenge: challenge, code_challenge_method: 's256' }
-            : { client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email profile', code_challenge: challenge, code_challenge_method: 'S256', state, nonce }).toString();
+            : {
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                scope: calendar ? `openid email profile ${CALENDAR_SCOPE}` : 'openid email profile',
+                code_challenge: challenge,
+                code_challenge_method: 'S256',
+                state,
+                nonce,
+                ...(calendar ? { access_type: 'offline', include_granted_scopes: 'true', prompt: 'consent' } : {}),
+            }).toString();
         await shell.openExternal(auth.toString());
         const code = await callback;
         return supabase ? { code, verifier } : { code, verifier, redirectUri, nonce };

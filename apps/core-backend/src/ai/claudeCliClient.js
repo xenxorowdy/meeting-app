@@ -35,7 +35,7 @@ function findClaudeBinary(explicitPath) {
         return fs.existsSync(explicitPath) ? explicitPath : null;
     }
 
-    const envPath = process.env.ALPHA_CLAUDE_BIN;
+    const envPath = process.env.KESAMI_CLAUDE_BIN;
     if (envPath) {
         return fs.existsSync(envPath) ? envPath : null;
     }
@@ -54,10 +54,10 @@ class ClaudeCliClient {
     constructor(options = {}) {
         this.options = {
             binaryPath: options.binaryPath || null,
-            model: options.model || process.env.ALPHA_SUMMARY_MODEL || DEFAULT_MODEL,
-            timeoutMs: options.timeoutMs || Number(process.env.ALPHA_SUMMARY_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
+            model: options.model || process.env.KESAMI_SUMMARY_MODEL || DEFAULT_MODEL,
+            timeoutMs: options.timeoutMs || Number(process.env.KESAMI_SUMMARY_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
             safeMode: options.safeMode !== false,
-            maxBudgetUsd: options.maxBudgetUsd || process.env.ALPHA_SUMMARY_MAX_BUDGET_USD || null,
+            maxBudgetUsd: options.maxBudgetUsd || process.env.KESAMI_SUMMARY_MAX_BUDGET_USD || null,
             cwd: options.cwd || os.tmpdir(),
             spawnFn: options.spawnFn || spawn,
         };
@@ -108,7 +108,7 @@ class ClaudeCliClient {
     run({ instruction, systemPrompt = null, input = '', jsonSchema = null, model = null, timeoutMs = null } = {}) {
         const binary = this.binary;
         if (!binary) {
-            return Promise.reject(new Error('Claude Code CLI not found. Install Claude Code or set ALPHA_CLAUDE_BIN.'));
+            return Promise.reject(new Error('Claude Code CLI not found. Install Claude Code or set KESAMI_CLAUDE_BIN.'));
         }
 
         const args = this.buildArgs({ instruction, systemPrompt, jsonSchema, model });

@@ -14,7 +14,7 @@ function describe(call) {
  * detected: a browser meeting reported by the extension (the backend's
  * `unscheduled_call` event, forwarded by App) or any app opening the
  * microphone (the desktop shell's mic watcher, subscribed here). A prompt
- * fires only while Alpha is idle, nothing on the calendar covers right now,
+ * fires only while Kesami is idle, nothing on the calendar covers right now,
  * and the same source has not been prompted recently. Clicking the
  * notification starts the recording immediately.
  */
@@ -46,7 +46,7 @@ export function useUnscheduledCallPrompt({ enabled, canRecord, events, onStart }
         const copy = describe(call);
         const notification = new Notification(copy.title, {
             body: copy.body,
-            tag: `alpha-unscheduled-${key}`,
+            tag: `kesami-unscheduled-${key}`,
         });
         notification.onclick = () => {
             window.focus();
@@ -58,10 +58,10 @@ export function useUnscheduledCallPrompt({ enabled, canRecord, events, onStart }
     // meetings come in through notify() from the backend socket. Starting the
     // watcher also delivers the current mic state to this fresh page.
     useEffect(() => {
-        const unsubscribe = globalThis.alphaMicUsage?.onEvent?.(event => {
+        const unsubscribe = globalThis.kesamiMicUsage?.onEvent?.(event => {
             if (event?.active) notify({ source: '' });
         });
-        globalThis.alphaMicUsage?.start?.().catch(() => {});
+        globalThis.kesamiMicUsage?.start?.().catch(() => {});
         return () => unsubscribe?.();
     }, [notify]);
 

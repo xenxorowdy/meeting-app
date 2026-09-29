@@ -1,14 +1,94 @@
 {
-    "name": "@alpha/meeting-desktop",
+    "name": "@kesami/meeting-desktop",
+    "productName": "Kesami",
     "version": "1.0.0",
     "private": true,
-    "description": "Electron shell for the Alpha meeting assistant",
+    "description": "Electron shell for the Kesami meeting assistant",
     "main": "main.js",
     "scripts": {
         "start": "electron .",
-        "dev": "electron . --dev"
+        "dev": "electron . --dev",
+        "dist:mac": "node prepareAuthConfig.js && electron-builder --mac"
     },
     "devDependencies": {
-        "electron": "^30.5.1"
+        "electron": "^30.5.1",
+        "electron-builder": "^26.15.3"
+    },
+    "build": {
+        "electronVersion": "30.5.1",
+        "appId": "com.kesami.meetings",
+        "productName": "Kesami",
+        "directories": {
+            "output": "release",
+            "buildResources": "packaging"
+        },
+        "files": [
+            "*.js",
+            "assets/**/*",
+            "!assets/SystemAudioDump",
+            "!assets/mic-watch",
+            "!mic-watch/**",
+            "!media-tools/**",
+            "!packaging/**",
+            "!release/**"
+        ],
+        "extraResources": [
+            {
+                "from": "../ui/dist",
+                "to": "ui"
+            },
+            {
+                "from": "../ui/src/lib/calendarEvents.js",
+                "to": "calendar/calendarEvents.mjs"
+            },
+            {
+                "from": "../core-backend/target/release/kesami-core-backend",
+                "to": "kesami-core-backend"
+            },
+            {
+                "from": "packaging/generated/auth-config.json",
+                "to": "auth-config.json"
+            },
+            {
+                "from": "assets/SystemAudioDump",
+                "to": "SystemAudioDump"
+            },
+            {
+                "from": "assets/mic-watch",
+                "to": "mic-watch"
+            }
+        ],
+        "mac": {
+            "target": [
+                {
+                    "target": "dmg",
+                    "arch": [
+                        "arm64"
+                    ]
+                },
+                {
+                    "target": "zip",
+                    "arch": [
+                        "arm64"
+                    ]
+                }
+            ],
+            "icon": "packaging/icon.icns",
+            "category": "public.app-category.productivity",
+            "identity": "-",
+            "hardenedRuntime": false,
+            "entitlements": "packaging/entitlements.mac.plist",
+            "entitlementsInherit": "packaging/entitlements.mac.plist",
+            "extendInfo": {
+                "NSMicrophoneUsageDescription": "Kesami records your side of the meeting to transcribe it.",
+                "NSAudioCaptureUsageDescription": "Kesami records meeting audio playing on this Mac when you choose Screen + sound.",
+                "NSCameraUsageDescription": "Kesami can capture video when you record a meeting.",
+                "NSScreenCaptureUsageDescription": "Kesami captures system audio so it can hear the other participants.",
+                "NSCalendarsUsageDescription": "Kesami shows your upcoming meetings."
+            }
+        },
+        "dmg": {
+            "title": "Kesami"
+        }
     }
 }

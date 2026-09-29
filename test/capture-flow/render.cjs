@@ -10,7 +10,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 async function run() {
-    const output = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-capture-flow-'));
+    const output = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-capture-flow-'));
     app.setPath('userData', path.join(output, 'profile'));
     const mocks = path.join(__dirname, 'mocks.js');
     await build({

@@ -56,7 +56,7 @@ async function sendReport(payload, sender) {
     } catch (cause) {
         await remember({
             ...payload,
-            error: `the Alpha backend is not answering on port ${port}`,
+            error: `the Kesami backend is not answering on port ${port}`,
             detail: String(cause?.message || cause),
             tabId: sender?.tab?.id ?? null,
             at: Date.now(),
@@ -101,15 +101,15 @@ async function probe() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type === 'alpha:observation') {
+    if (message?.type === 'kesami:observation') {
         report(message.payload, sender).then(sendResponse);
         return true;
     }
-    if (message?.type === 'alpha:status') {
+    if (message?.type === 'kesami:status') {
         status().then(sendResponse);
         return true;
     }
-    if (message?.type === 'alpha:probe') {
+    if (message?.type === 'kesami:probe') {
         probe().then(sendResponse);
         return true;
     }

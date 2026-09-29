@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpRight, Check, Copy, FileCheck2, ListChecks, Plus, Search, Sparkles, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpRight, Check, Copy, FileCheck2, ListChecks, Lock, Plus, Search, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { JumpingBalls } from '@/components/JumpingBalls';
 import { MarkdownText } from '@/components/MarkdownText';
@@ -69,7 +69,7 @@ function CitationCard({ citation, onOpen }) {
     );
 }
 
-export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, draft = null, onClose = null }) {
+export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, draft = null, onClose = null, onUpgrade = null }) {
     const chat = useMeetingChat(scope, isConnected);
     const [sourceError, setSourceError] = useState(null);
     const log = useRef(null);
@@ -89,7 +89,8 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
         chat.setQuestion(question);
         composer.current?.focus();
     };
-    const actionsDisabled = !isConnected || chat.busy || chat.loading;
+    const locked = chat.requiresPro;
+    const actionsDisabled = !isConnected || chat.busy || chat.loading || locked;
     useEffect(() => {
         const element = log.current;
         if (!element) return;
@@ -176,19 +177,27 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                     </button>
                 )}
                 {chat.loading && <p className="ks-chat-note">Loading conversation…</p>}
-                {!chat.messages.length && !chat.loading && (
+                {!chat.messages.length && !chat.loading && locked && (
+                    <div className="ks-chat-upgrade">
+                        <Lock aria-hidden="true" />
+                        <h3>Free AI allowance used</h3>
+                        <p>Your three shared AI summaries or chat replies for this month are used. Upgrade to keep asking questions.</p>
+                        {onUpgrade && <button type="button" className="ks-button ks-primary" onClick={onUpgrade}>See plans</button>}
+                    </div>
+                )}
+                {!chat.messages.length && !chat.loading && !locked && (
                     <div className="ks-chat-empty">
-                        <div className="ks-chat-empty-icon"><Sparkles aria-hidden="true" /></div>
-                        <span className="ks-eyebrow">A LITTLE MORE CLARITY</span>
-                        <h3>{isLive ? 'Stay with the conversation.' : singleMeeting ? 'Good questions. Clear next steps.' : 'Your meetings have answers.'}</h3>
-                        <p>{isLive ? 'Catch up on what was said, find a decision, or check the next steps while the meeting continues.' : 'Find the decision, the next step, or the detail you missed. Ask a question and follow the answer back to its source.'}</p>
-                        <div className="ks-chat-starters">
+                        <h3>{isLive ? 'Stay with the conversation' : singleMeeting ? 'How can I help?' : 'Ask across your meetings'}</h3>
+                        <p>{isLive ? 'Catch up, find a decision, or check next steps while the meeting continues.' : 'Ask about decisions, follow-ups, or anything that was said. Answers link back to their source.'}</p>
+                        <ul className="ks-chat-starters" aria-label="Suggested questions">
                             {starters.map(([label, prompt, Icon]) => (
-                                <button key={prompt} type="button" disabled={actionsDisabled} aria-label={prompt} onClick={() => chat.send(prompt)}>
-                                    <Icon aria-hidden="true" /><span><strong>{label}</strong><small>{prompt}</small></span><ArrowUpRight aria-hidden="true" />
-                                </button>
+                                <li key={prompt}>
+                                    <button type="button" disabled={actionsDisabled} onClick={() => chat.send(prompt)}>
+                                        <Icon aria-hidden="true" /><span><strong>{label}</strong><small>{prompt}</small></span><ArrowUpRight aria-hidden="true" />
+                                    </button>
+                                </li>
                             ))}
-                        </div>
+                        </ul>
                     </div>
                 )}
                 {chat.messages.map((message, i) => (
@@ -266,7 +275,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                 )}
             </div>
             {hasNewResponse && <button type="button" className="ks-chat-latest" onClick={jumpToLatest}><ArrowDown aria-hidden="true" />Latest response</button>}
-            {(chat.error || sourceError) && (
+            {((chat.error && !locked) || sourceError) && (
                 <p className="ks-chat-error" role="alert">
                     {sourceError || chat.error}
                     {sourceError ? <button type="button" aria-label="Dismiss source error" onClick={() => setSourceError(null)}><X /></button> : chat.question.trim() ? (
@@ -284,6 +293,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                     chat.send();
                 }}
             >
+                <p className="ks-chat-disclaimer">AI can miss details. Check the linked sources.</p>
                 <div className="ks-chat-input-wrap">
                 <textarea
                     ref={composer}
@@ -299,9 +309,9 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                             chat.send();
                         }
                     }}
-                    placeholder={!isConnected ? 'Waiting for your meeting service…' : isLive ? 'Ask about the meeting so far…' : 'Ask anything about your meetings…'}
+                    placeholder={!isConnected ? 'Waiting for your meeting service…' : locked ? 'Monthly free AI allowance used' : isLive ? 'Ask about the meeting so far…' : 'Ask about this meeting…'}
                     aria-label="Meeting question"
-                    disabled={!isConnected || chat.busy || chat.loading}
+                    disabled={!isConnected || chat.busy || chat.loading || locked}
                 />
                 {chat.busy ? (
                     <button type="button" className="ks-chat-send" onClick={chat.cancel} aria-label="Cancel question">
@@ -311,7 +321,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                     <button
                         type="submit"
                         className="ks-chat-send"
-                        disabled={!chat.question.trim() || !isConnected || chat.loading}
+                        disabled={!chat.question.trim() || !isConnected || chat.loading || locked}
                         aria-label="Send question"
                     >
                         <ArrowUp />
@@ -323,7 +333,6 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                     {chat.question.length > 3200 && <span className="ks-chat-count">{chat.question.length.toLocaleString()} / 4,000</span>}
                 </div>
             </form>
-            <p className="ks-chat-disclaimer">AI can miss details. Check the linked sources.</p>
             <details className="ks-chat-history">
                 <summary>Conversation history</summary>
                 <label>

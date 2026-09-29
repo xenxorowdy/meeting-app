@@ -15,12 +15,14 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
     const [registrationAllowed, setRegistrationAllowed] = useState(null);
     const [googleClientId, setGoogleClientId] = useState(null);
     const [googleAuth, setGoogleAuth] = useState(null);
+    const [googleCalendar, setGoogleCalendar] = useState(false);
     useEffect(() => {
         const controller = new AbortController();
         apiRequest('/api/auth/config', { signal: controller.signal }).then(config => {
             setRegistrationAllowed(config.registrationAllowed !== false);
             setGoogleClientId(config.googleClientId || '');
             setGoogleAuth(config.googleAuth || null);
+            setGoogleCalendar(config.googleCalendar === true);
         }).catch(() => {});
         return () => controller.abort();
     }, []);
@@ -69,7 +71,7 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
         setBusy(true);
         setError('');
         try {
-            const account = await signInWithGoogle(googleAuth || googleClientId);
+            const account = await signInWithGoogle(googleAuth || { clientId: googleClientId, calendar: googleCalendar });
             onAuthenticated?.(account);
         } catch (cause) {
             setError(cause.message || 'Google sign-in failed. Try again.');
@@ -165,14 +167,22 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
                         {busy ? (creating ? 'Creating account…' : 'Signing in…') : creating ? 'Create account' : 'Continue to workspace'}
                     </button>
                 </form>
-                {globalThis.alphaGoogleSignIn?.start && (
+                {globalThis.kesamiGoogleSignIn?.start && (
                     <div className="ks-oauth">
                         <span>OR</span>
                         <button type="button" disabled={busy || (googleAuth ? !googleAuth.configured : !googleClientId)} onClick={submitGoogle}>
                             {busy ? 'Waiting for Google…' : creating ? 'Create account with Google' : 'Sign in with Google'}
                         </button>
                         {googleAuth && !googleAuth.configured && <p className="ks-welcome-note">Google sign-in is unavailable. You can continue locally.</p>}
-                        {!googleAuth && googleClientId === '' && <p className="ks-welcome-note">Add a Google Desktop app client ID in Connection &amp; preferences first.</p>}
+                        {!googleAuth && googleClientId === '' && (
+                            <p className="ks-welcome-note">
+                                Google sign-in needs a Desktop app client ID. Open{' '}
+                                <button type="button" className="ks-welcome-inline-link" disabled={busy} onClick={() => continueLocal('settings')}>
+                                    Connection &amp; preferences
+                                </button>{' '}
+                                to add it, then return here.
+                            </p>
+                        )}
                     </div>
                 )}
                 {(error || notice) && (
@@ -189,13 +199,13 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
                         Connection &amp; preferences
                     </button>
                 </div>
-                <button type="button" className="ks-welcome-local" disabled={busy} onClick={() => continueLocal()}>
+                {/* <button type="button" className="ks-welcome-local" disabled={busy} onClick={() => continueLocal()}>
                     <ArrowRight aria-hidden="true" />
                     Use it locally, no account
                 </button>
                 <p className="ks-welcome-note">
                     Local use is free. AI providers may charge for usage. Signing in does not sync your meetings.
-                </p>
+                </p>*/}
             </section>
         </main>
     );

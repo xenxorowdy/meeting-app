@@ -2,6 +2,7 @@ const { ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { env } = require('./legacy');
 
 const HELPER_NAME = 'mic-watch';
 const EVENT_CHANNEL = 'mic-usage:event';
@@ -53,7 +54,7 @@ function createDebounce({ onEmit, activeAfterMs, inactiveAfterMs, setTimeoutFn =
 }
 
 function helperPath() {
-    if (process.env.ALPHA_MIC_WATCH_PATH) return process.env.ALPHA_MIC_WATCH_PATH;
+    if (env('MIC_WATCH_PATH')) return env('MIC_WATCH_PATH');
     const packaged = process.resourcesPath ? path.join(process.resourcesPath, HELPER_NAME) : null;
     if (packaged && fs.existsSync(packaged)) return packaged;
     return path.join(__dirname, 'assets', HELPER_NAME);
@@ -134,12 +135,12 @@ function start(sender, { spawnFn = spawn } = {}) {
 
     started.stderr.on('data', data => {
         const text = String(data).trim();
-        if (text) console.error(`[Alpha] ${HELPER_NAME}: ${text}`);
+        if (text) console.error(`[Kesami] ${HELPER_NAME}: ${text}`);
     });
 
     started.on('error', cause => {
         if (child === started) child = null;
-        console.error(`[Alpha] the microphone watcher failed: ${cause.message}`);
+        console.error(`[Kesami] the microphone watcher failed: ${cause.message}`);
     });
 
     started.on('close', () => {

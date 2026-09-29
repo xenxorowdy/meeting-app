@@ -400,7 +400,7 @@ class WhisperEngine extends EventEmitter {
      * @private
      */
     _writeTempWav(pcmBuffer, sampleRate = 16000) {
-        const tempPath = path.join(os.tmpdir(), `alpha_stt_${Date.now()}_${Math.random().toString(36).substring(7)}.wav`);
+        const tempPath = path.join(os.tmpdir(), `kesami_stt_${Date.now()}_${Math.random().toString(36).substring(7)}.wav`);
         const header = Buffer.alloc(44);
         const dataSize = pcmBuffer.length;
 

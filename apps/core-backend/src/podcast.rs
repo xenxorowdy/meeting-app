@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
-    env,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -104,24 +103,24 @@ pub struct PodcastService {
 impl PodcastService {
     pub fn detect() -> Self {
         Self {
-            root: env::var_os("ALPHA_PODCASTS_DIR").map(PathBuf::from),
+            root: kesami_core_backend::env_compat::var_os("KESAMI_PODCASTS_DIR").map(PathBuf::from),
             gemini_key: RwLock::new(
-                env::var("ALPHA_GEMINI_API_KEY")
+                kesami_core_backend::env_compat::var("KESAMI_GEMINI_API_KEY")
                     .ok()
                     .map(|v| v.trim().to_string())
                     .filter(|v| !v.is_empty()),
             ),
-            script_model: env::var("ALPHA_PODCAST_SCRIPT_MODEL")
+            script_model: kesami_core_backend::env_compat::var("KESAMI_PODCAST_SCRIPT_MODEL")
                 .ok()
                 .filter(|v| !v.trim().is_empty())
                 .unwrap_or_else(|| DEFAULT_SCRIPT_MODEL.into()),
-            tts_model: env::var("ALPHA_PODCAST_TTS_MODEL")
+            tts_model: kesami_core_backend::env_compat::var("KESAMI_PODCAST_TTS_MODEL")
                 .ok()
                 .filter(|v| !v.trim().is_empty())
                 .unwrap_or_else(|| DEFAULT_TTS_MODEL.into()),
             http: reqwest::Client::new(),
             timeout: Duration::from_secs(
-                env::var("ALPHA_PODCAST_TIMEOUT_SECS")
+                kesami_core_backend::env_compat::var("KESAMI_PODCAST_TIMEOUT_SECS")
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(300),
@@ -154,7 +153,7 @@ impl PodcastService {
         let root = self
             .root
             .as_ref()
-            .ok_or("Podcast generation requires the Alpha desktop app")?;
+            .ok_or("Podcast generation requires the Kesami desktop app")?;
         let dir = root.join(project_id);
         if !dir.is_dir() {
             return Err("Podcast project not found".into());
@@ -289,7 +288,7 @@ impl PodcastService {
         };
         let prompt = format!("Create section {} of {} of a natural, useful two-host podcast based only on this source. Hosts are {}. {} Preserve facts and uncertainty. Do not invent quotes, events, people, numbers, or conclusions. Every dialogue turn must cite one or more source ids from square brackets. Avoid repetitive introductions between sections. Let semantic density determine length; do not pad or arbitrarily shorten.\n\nSOURCE TITLE: {}\n\n{}", index + 1, total, host_names, language, request.title, transcript);
         let body = json!({
-            "systemInstruction": { "parts": [{ "text": "You are Alpha Podcast Studio. Produce engaging but strictly source-grounded spoken dialogue. Return only the requested JSON object." }] },
+            "systemInstruction": { "parts": [{ "text": "You are Kesami Podcast Studio. Produce engaging but strictly source-grounded spoken dialogue. Return only the requested JSON object." }] },
             "contents": [{ "role": "user", "parts": [{ "text": prompt }] }],
             "generationConfig": { "responseMimeType": "application/json", "responseSchema": schema, "temperature": 0.45 }
         });

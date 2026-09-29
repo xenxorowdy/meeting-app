@@ -64,6 +64,26 @@ test('legacy direct Google sign-in still checks state and returns its original p
     assert.equal(result.redirectUri, auth.searchParams.get('redirect_uri'));
 });
 
+test('direct Google sign-in asks for calendar access with offline consent only when requested', async () => {
+    const opened = [];
+    const start = desktop(async url => {
+        const auth = new URL(url);
+        opened.push(auth.searchParams);
+        await fetch(`${auth.searchParams.get('redirect_uri')}?code=c&state=${auth.searchParams.get('state')}`);
+    });
+    await start({ clientId: 'client.apps.googleusercontent.com', calendar: true });
+    await start({ clientId: 'client.apps.googleusercontent.com', calendar: false });
+    const [withCalendar, without] = opened;
+    assert.equal(withCalendar.get('client_id'), 'client.apps.googleusercontent.com');
+    assert.deepEqual(withCalendar.get('scope').split(' '), ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/calendar.events']);
+    assert.equal(withCalendar.get('access_type'), 'offline');
+    assert.equal(withCalendar.get('prompt'), 'consent');
+    assert.equal(withCalendar.get('include_granted_scopes'), 'true');
+    assert.equal(without.get('scope'), 'openid email profile');
+    assert.equal(without.has('access_type'), false);
+    assert.equal(without.has('prompt'), false);
+});
+
 test('denied, missing-code, and timed-out attempts release the listener', async () => {
     for (const [query, message] of [['error=access_denied', /cancelled or denied/], ['', /authorization code/]]) {
         let redirect;

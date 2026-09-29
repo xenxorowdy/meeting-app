@@ -7,7 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const MARKER: &str = ".alpha-library.json";
+const MARKER: &str = ".kesami-library.json";
+const LEGACY_MARKER: &str = ".alpha-library.json";
+pub const DEFAULT_ROOT_NAME: &str = "Kesami Meetings";
+const LEGACY_ROOT_NAME: &str = "Alpha Meetings";
 const RECORDING_STEM: &str = "recording";
 const MAX_TITLE_CHARS: usize = 60;
 const RESERVED: [&str; 22] = [
@@ -16,26 +19,35 @@ const RESERVED: [&str; 22] = [
 ];
 
 pub fn root_from_env() -> PathBuf {
-    if let Some(root) = env::var_os("ALPHA_LIBRARY_DIR") {
+    if let Some(root) = kesami_core_backend::env_compat::var_os("KESAMI_LIBRARY_DIR") {
         return PathBuf::from(root);
     }
-    if let Some(root) = env::var_os("ALPHA_RECORDINGS_DIR") {
+    if let Some(root) = kesami_core_backend::env_compat::var_os("KESAMI_RECORDINGS_DIR") {
         return PathBuf::from(root);
     }
-    let base = env::var_os("ALPHA_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    base.join("Alpha Meetings")
+    crate::settings::data_base().join(DEFAULT_ROOT_NAME)
+}
+
+pub fn adopt_legacy_root() {
+    let explicit = ["KESAMI_LIBRARY_DIR", "KESAMI_RECORDINGS_DIR"]
+        .iter()
+        .any(|name| kesami_core_backend::env_compat::var_os(name).is_some());
+    if explicit {
+        return;
+    }
+    let base = crate::settings::data_base();
+    match crate::settings::adopt_legacy_dir(&base, LEGACY_ROOT_NAME, DEFAULT_ROOT_NAME) {
+        Ok(true) => println!("[Kesami Core Backend] moved “{LEGACY_ROOT_NAME}” to “{DEFAULT_ROOT_NAME}” in {}", base.display()),
+        Ok(false) => {}
+        Err(cause) => eprintln!("[Kesami Core Backend] could not move “{LEGACY_ROOT_NAME}” to “{DEFAULT_ROOT_NAME}”: {cause}"),
+    }
 }
 
 pub fn legacy_file() -> PathBuf {
     if let Some(path) = env::var_os("CORE_BACKEND_DATA_FILE") {
         return PathBuf::from(path);
     }
-    let base = env::var_os("ALPHA_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    base.join(".alpha-meeting-assistant").join("meetings.json")
+    crate::settings::data_dir().join("meetings.json")
 }
 
 pub fn sanitize_title(title: &str) -> String {
@@ -79,7 +91,7 @@ pub fn folder_name(meeting: &Meeting, taken: &HashSet<String>) -> String {
     format!("{base} ({})", meeting.id)
 }
 
-fn timecode(ms: i64) -> String {
+pub(crate) fn timecode(ms: i64) -> String {
     let total = (ms.max(0)) / 1000;
     let (hours, minutes, seconds) = (total / 3600, (total % 3600) / 60, total % 60);
     if hours > 0 {
@@ -189,10 +201,15 @@ impl Library {
     pub async fn load(&mut self) -> Vec<Meeting> {
         if let Err(cause) = tokio::fs::create_dir_all(&self.root).await {
             eprintln!(
-                "[Alpha Core Backend] could not open the meeting library at {}: {cause}",
+                "[Kesami Core Backend] could not open the meeting library at {}: {cause}",
                 self.root.display()
             );
             return Vec::new();
+        }
+        let marker = self.root.join(MARKER);
+        let legacy_marker = self.root.join(LEGACY_MARKER);
+        if !marker.exists() && legacy_marker.exists() {
+            let _ = tokio::fs::rename(&legacy_marker, &marker).await;
         }
 
         let mut meetings = Vec::new();
@@ -215,7 +232,7 @@ impl Library {
                         meetings.push(meeting);
                     }
                     Err(cause) => eprintln!(
-                        "[Alpha Core Backend] {} does not hold a readable meeting: {cause}",
+                        "[Kesami Core Backend] {} does not hold a readable meeting: {cause}",
                         entry.path().display()
                     ),
                 }
@@ -231,7 +248,7 @@ impl Library {
         };
         let Ok(stored) = serde_json::from_slice::<Vec<Meeting>>(&bytes) else {
             eprintln!(
-                "[Alpha Core Backend] {} could not be read for import",
+                "[Kesami Core Backend] {} could not be read for import",
                 legacy.display()
             );
             return Vec::new();
@@ -265,7 +282,7 @@ impl Library {
                     adopted.push(meeting);
                 }
                 Err(cause) => eprintln!(
-                    "[Alpha Core Backend] could not import meeting {}: {cause}",
+                    "[Kesami Core Backend] could not import meeting {}: {cause}",
                     meeting.id
                 ),
             }
@@ -287,7 +304,7 @@ impl Library {
         }
         if !adopted.is_empty() {
             println!(
-                "[Alpha Core Backend] imported {} meeting(s) from {} into {}",
+                "[Kesami Core Backend] imported {} meeting(s) from {} into {}",
                 adopted.len(),
                 legacy.display(),
                 self.root.display()
@@ -463,7 +480,7 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let root = env::temp_dir().join(format!("alpha-library-{name}-{}", uuid::Uuid::new_v4()));
+        let root = env::temp_dir().join(format!("kesami-library-{name}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         root
     }

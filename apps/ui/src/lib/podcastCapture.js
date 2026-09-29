@@ -6,7 +6,7 @@ function supportedType(kind) {
 }
 
 export function isPodcastCaptureSupported() {
-    return Boolean(globalThis.alphaPodcast && typeof MediaRecorder !== 'undefined' && navigator.mediaDevices);
+    return Boolean(globalThis.kesamiPodcast && typeof MediaRecorder !== 'undefined' && navigator.mediaDevices);
 }
 
 export async function requestPodcastPermissions() {
@@ -26,8 +26,8 @@ export async function listPodcastDevices() {
 
 async function openRecorder(projectId, stream, kind, sourceKind, captureGroupId, timelineStartMs) {
     const mimeType = supportedType(kind);
-    if (!mimeType) throw new Error(`No ${kind} encoder is available in this Alpha build.`);
-    const sink = await globalThis.alphaPodcast.startCapture(projectId, { mimeType, sourceKind, captureGroupId, timelineStartMs });
+    if (!mimeType) throw new Error(`No ${kind} encoder is available in this Kesami build.`);
+    const sink = await globalThis.kesamiPodcast.startCapture(projectId, { mimeType, sourceKind, captureGroupId, timelineStartMs });
     const recorder = new MediaRecorder(stream, kind === 'video' ? { mimeType, videoBitsPerSecond: 8_000_000 } : { mimeType, audioBitsPerSecond: 256_000 });
     let chain = Promise.resolve();
     let failure = null;
@@ -36,7 +36,7 @@ async function openRecorder(projectId, stream, kind, sourceKind, captureGroupId,
         const blob = event.data;
         chain = chain.then(async () => {
             const buffer = await blob.arrayBuffer();
-            await globalThis.alphaPodcast.writeCapture(sink.id, buffer);
+            await globalThis.kesamiPodcast.writeCapture(sink.id, buffer);
         }).catch(cause => {
             failure = cause;
         });
@@ -56,7 +56,7 @@ async function openRecorder(projectId, stream, kind, sourceKind, captureGroupId,
             }
             await chain;
             stream.getTracks().forEach(track => track.stop());
-            const result = await globalThis.alphaPodcast.stopCapture(sink.id);
+            const result = await globalThis.kesamiPodcast.stopCapture(sink.id);
             if (failure) throw failure;
             return result;
         },
@@ -68,7 +68,7 @@ async function openRecorder(projectId, stream, kind, sourceKind, captureGroupId,
  * independently trimmed and cleaned on the timeline.
  */
 export async function startPodcastCapture({ projectId, microphoneId, cameraId, screenSourceId, includeMic = true, includeCamera = true, includeScreen = false, timelineStartMs = 0, onEnded = null }) {
-    if (!isPodcastCaptureSupported()) throw new Error('Podcast recording requires the Alpha desktop app.');
+    if (!isPodcastCaptureSupported()) throw new Error('Podcast recording requires the Kesami desktop app.');
     const opened = [];
     const captureGroupId = globalThis.crypto?.randomUUID?.() || `capture-${Date.now()}`;
     try {
@@ -81,7 +81,7 @@ export async function startPodcastCapture({ projectId, microphoneId, cameraId, s
             opened.push(await openRecorder(projectId, camera, 'video', 'camera', captureGroupId, timelineStartMs));
         }
         if (includeScreen) {
-            await globalThis.alphaRecorder?.selectSource(screenSourceId || null);
+            await globalThis.kesamiRecorder?.selectSource(screenSourceId || null);
             const screen = await navigator.mediaDevices.getDisplayMedia({ video: { width: { max: 1920 }, height: { max: 1080 }, frameRate: { ideal: 30, max: 30 } }, audio: true });
             opened.push(await openRecorder(projectId, screen, 'video', 'screen', captureGroupId, timelineStartMs));
         }

@@ -6,6 +6,10 @@ export class AppErrorBoundary extends React.Component {
 
     static getDerivedStateFromError() { return { failed: true }; }
 
+    componentDidCatch(error, info) {
+        console.error('[AppErrorBoundary]', error, info?.componentStack);
+    }
+
     render() {
         if (!this.state.failed) return this.props.children;
         return (

@@ -1,10 +1,104 @@
 import React, { useState } from 'react';
-import { Download, Copy, Check, FileText, MessageSquare, Printer, Type } from 'lucide-react';
+import { Download, Copy, Check, ExternalLink, FileText, MessageSquare, Printer, Send, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { SegmentedControl, SegmentedItem } from '@/components/ui/segmented-control';
+import { useConnectors } from '@/hooks/useConnectors';
+
+function deliveryText(delivery) {
+    if (!delivery) return null;
+    if (!delivery.ok) return delivery.error || 'Sending failed.';
+    const when = new Date(delivery.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    const count = delivery.items?.length;
+    return count > 1 ? `Created ${count} tasks · ${when}` : `Sent · ${when}`;
+}
+
+function SendToSection({ meeting, isOpen }) {
+    const connectors = useConnectors({ enabled: isOpen });
+    const [local, setLocal] = useState({});
+    const [busy, setBusy] = useState(null);
+    const connected = connectors.providers.filter(connector => connector.connected);
+    const deliveries = { ...(meeting.metadata?.connectorDeliveries || {}), ...local };
+
+    const send = async provider => {
+        setBusy(provider);
+        const previous = deliveries[provider];
+        try {
+            const delivery = await connectors.send(provider, meeting.id, { force: Boolean(previous?.ok || previous?.alreadySent) });
+            setLocal(current => ({ ...current, [provider]: delivery }));
+        } catch (cause) {
+            const alreadySent = cause.status === 409;
+            setLocal(current => ({ ...current, [provider]: { ok: false, alreadySent, error: cause.message, at: Date.now() } }));
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            <Label className="text-body font-medium">Send to</Label>
+            {connected.length === 0 ? (
+                <p className="rounded-lg border bg-muted px-4 py-2 text-footnote text-muted-foreground">
+                    {connectors.loading ? 'Loading connectors…' : 'Connect Slack, Notion, Google Docs, Linear, Jira, Asana or ClickUp in Settings → Connectors to send notes and tasks in one click.'}
+                </p>
+            ) : (
+                <div className="divide-y divide-border overflow-hidden rounded-lg border bg-muted">
+                    {connected.map(connector => {
+                        const delivery = deliveries[connector.provider];
+                        const links = (delivery?.items || []).filter(item => item.url);
+                        return (
+                            <div key={connector.provider} className="flex items-center justify-between gap-4 px-4 py-2">
+                                <div className="min-w-0">
+                                    <p className="text-body">{connector.label}</p>
+                                    {delivery && (
+                                        <p
+                                            className={
+                                                delivery.ok || delivery.alreadySent
+                                                    ? 'text-footnote text-muted-foreground'
+                                                    : 'text-footnote text-destructive'
+                                            }
+                                        >
+                                            {deliveryText(delivery)}
+                                            {links.slice(0, 3).map(item => (
+                                                <a
+                                                    key={item.url}
+                                                    href={item.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="ml-2 inline-flex items-center gap-1 text-primary hover:underline"
+                                                >
+                                                    {item.key || 'Open'}
+                                                    <ExternalLink className="size-3" aria-hidden="true" />
+                                                </a>
+                                            ))}
+                                        </p>
+                                    )}
+                                </div>
+                                <Button
+                                    size="sm"
+                                    variant={delivery?.ok || delivery?.alreadySent ? 'secondary' : 'default'}
+                                    disabled={busy !== null}
+                                    onClick={() => send(connector.provider)}
+                                >
+                                    <Send aria-hidden="true" />
+                                    {busy === connector.provider
+                                        ? 'Sending…'
+                                        : delivery?.ok || delivery?.alreadySent
+                                          ? 'Send again'
+                                          : connector.kind === 'tasks'
+                                            ? 'Create tasks'
+                                            : 'Send'}
+                                </Button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
 
 /**
  * Format timestamp in ms to MM:SS
@@ -224,7 +318,7 @@ export function ExportModal({ isOpen, onClose, meeting }) {
                 <DialogHeader className="space-y-1 p-4 pb-4 pr-12 text-left hairline-bottom">
                     <DialogTitle className="text-title2 font-semibold">Export notes</DialogTitle>
                     <DialogDescription className="text-callout text-muted-foreground">
-                        Copy the notes for “{meeting.title}” or save them as a file.
+                        Copy the notes for “{meeting.title}”, save them as a file, or send them to your tools.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -258,6 +352,8 @@ export function ExportModal({ isOpen, onClose, meeting }) {
                             </Label>
                         </div>
                     </div>
+
+                    <SendToSection meeting={meeting} isOpen={isOpen} />
 
                     <div className="space-y-2">
                         <Label className="text-body font-medium">Preview</Label>

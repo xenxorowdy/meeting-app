@@ -1,8 +1,8 @@
 [package]
-name = "alpha-core-backend"
+name = "kesami-core-backend"
 version = "2.0.0"
 edition = "2021"
-description = "Rust core engine for the Alpha meeting assistant"
+description = "Rust core engine for the Kesami meeting assistant"
 license = "Commercial"
 
 [dependencies]

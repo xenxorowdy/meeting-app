@@ -8,7 +8,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     collections::VecDeque,
-    env, io,
+    io,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -79,7 +79,7 @@ impl AccountStore {
         .map_err(io::Error::other)?
     }
 
-    fn open(path: PathBuf, iterations: u32) -> io::Result<Self> {
+    pub(crate) fn open(path: PathBuf, iterations: u32) -> io::Result<Self> {
         std::fs::create_dir_all(
             path.parent()
                 .ok_or_else(|| io::Error::other("Missing database directory"))?,
@@ -393,6 +393,16 @@ impl AccountStore {
         self.query(move |db| db.query_row("SELECT a.id,a.name,a.email,a.created_at,a.password_hash FROM accounts a JOIN sessions s ON s.account_id=a.id WHERE s.token_hash=?1 AND s.expires_at>?2", params![hash, now_ms()], public_row).optional().map_err(db_error)).await.ok().flatten()
     }
 
+    pub async fn google_sub(&self, account_id: &str) -> AuthResult<Option<String>> {
+        let account_id = account_id.to_string();
+        self.query(move |db| {
+            db.query_row("SELECT google_sub FROM google_identities WHERE account_id=?1", [account_id], |row| row.get(0))
+                .optional()
+                .map_err(db_error)
+        })
+        .await
+    }
+
     pub async fn logout(&self, token: &str) -> AuthResult<bool> {
         let hash = token_hash(token);
         self.query(move |db| {
@@ -621,8 +631,8 @@ fn dummy_password_hash() -> &'static String {
     static DUMMY: OnceLock<String> = OnceLock::new();
     DUMMY.get_or_init(|| {
         encode_password_hash(
-            b"alpha-timing-equalizer",
-            b"alpha-dummy-salt-16b",
+            b"kesami-timing-equalizer",
+            b"kesami-dummy-salt-16b",
             configured_iterations(),
         )
     })
@@ -635,7 +645,7 @@ fn configured_iterations() -> u32 {
     if !cfg!(debug_assertions) {
         return PBKDF2_ITERATIONS;
     }
-    env::var("ALPHA_PBKDF2_ITERATIONS")
+    kesami_core_backend::env_compat::var("KESAMI_PBKDF2_ITERATIONS")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .filter(|count| (1_000..=2_000_000).contains(count))
@@ -665,7 +675,7 @@ mod tests {
         }
     }
     fn scratch() -> Scratch {
-        let dir = env::temp_dir().join(format!("alpha-account-db-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("kesami-account-db-{}", Uuid::new_v4()));
         let store = AccountStore::open(dir.join("accounts.sqlite3"), 1_000).unwrap();
         Scratch { store, dir }
     }
@@ -727,6 +737,15 @@ mod tests {
         scratch.store.register("Password User", "password@work.com", "correct horse battery").await.unwrap();
         let collision = scratch.store.google_sign_in("google-sub-3", "password@work.com", "Password User", true).await.unwrap_err();
         assert_eq!(collision.0, 409);
+    }
+    #[tokio::test]
+    async fn only_google_accounts_resolve_to_a_google_subject() {
+        let scratch = scratch();
+        let google = scratch.store.google_sign_in("google-sub-billing", "payer@work.com", "Payer", true).await.unwrap();
+        let password = scratch.store.register("Password User", "password@work.com", "correct horse battery").await.unwrap();
+        assert_eq!(scratch.store.google_sub(&google.account.id).await.unwrap().as_deref(), Some("google-sub-billing"));
+        assert_eq!(scratch.store.google_sub(&password.account.id).await.unwrap(), None);
+        assert_eq!(scratch.store.google_sub("missing-account").await.unwrap(), None);
     }
     #[tokio::test]
     async fn register_login_logout_restart_and_no_plaintext() {
@@ -821,7 +840,7 @@ mod tests {
     }
     #[tokio::test]
     async fn migration_is_atomic_preserves_original_and_does_not_resurrect_logout() {
-        let dir = env::temp_dir().join(format!("alpha-account-migrate-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("kesami-account-migrate-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let legacy = json!({"accounts":[{"id":"a1","name":"Asha","email":"asha@work.com","passwordHash":encode_password_hash(b"first password", b"test-salt-1234567", 1_000),"createdAt":now_ms()}],"sessions":[{"tokenHash":token_hash("legacy-session"),"accountId":"a1","expiresAt":now_ms()+100_000}]});
         let bytes = serde_json::to_vec(&legacy).unwrap();

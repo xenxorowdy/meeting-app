@@ -35,7 +35,7 @@ function render(status) {
 
     if (!settings.enabled) {
         setState('paused');
-        elements.summary.textContent = 'Nothing is being sent to Alpha.';
+        elements.summary.textContent = 'Nothing is being sent to Kesami.';
         elements.speaking.textContent = '';
         renderRoster([], []);
         elements.problem.hidden = true;
@@ -68,12 +68,12 @@ function render(status) {
 
     if (!report.error && !report.accepted) {
         elements.problem.hidden = false;
-        elements.problem.textContent = 'Alpha is not recording, so names are held until you start a meeting.';
+        elements.problem.textContent = 'Kesami is not recording, so names are held until you start a meeting.';
     }
 }
 
 async function refresh() {
-    const status = await chrome.runtime.sendMessage({ type: 'alpha:status' });
+    const status = await chrome.runtime.sendMessage({ type: 'kesami:status' });
     if (status) render(status);
 }
 
@@ -95,14 +95,14 @@ elements.port.addEventListener('change', async () => {
 
 elements.test.addEventListener('click', async () => {
     setState('testing…');
-    const result = await chrome.runtime.sendMessage({ type: 'alpha:probe' });
+    const result = await chrome.runtime.sendMessage({ type: 'kesami:probe' });
     if (result?.ok) {
         setState(`backend ${String(result.state || 'idle').toLowerCase()}`, 'on');
         elements.problem.hidden = true;
     } else {
         setState('no backend', 'bad');
         elements.problem.hidden = false;
-        elements.problem.textContent = result?.error || 'The Alpha backend did not answer.';
+        elements.problem.textContent = result?.error || 'The Kesami backend did not answer.';
     }
 });
 

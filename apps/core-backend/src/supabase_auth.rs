@@ -3,7 +3,7 @@
 use crate::google_auth::GoogleIdentity;
 use reqwest::Url;
 use serde_json::{json, Value};
-use std::{env, time::Duration};
+use std::time::Duration;
 
 pub struct SupabaseAuth {
     enabled: bool,
@@ -18,11 +18,11 @@ struct Config {
 
 impl SupabaseAuth {
     pub fn from_env() -> Self {
-        let enabled = env::var("ALPHA_AUTH_PROVIDER").is_ok_and(|value| value.trim() == "supabase");
-        let config = env::var("ALPHA_SUPABASE_URL").ok().and_then(|url| {
-            let key = env::var("ALPHA_SUPABASE_PUBLISHABLE_KEY").ok()?;
+        let enabled = kesami_core_backend::env_compat::var("KESAMI_AUTH_PROVIDER").is_ok_and(|value| value.trim() == "supabase");
+        let config = kesami_core_backend::env_compat::var("KESAMI_SUPABASE_URL").ok().and_then(|url| {
+            let key = kesami_core_backend::env_compat::var("KESAMI_SUPABASE_PUBLISHABLE_KEY").ok()?;
             let mut config = Config::parse(&url, &key)?;
-            config.sync_users = env::var("ALPHA_SUPABASE_SYNC_USERS").is_ok_and(|value| matches!(value.trim(), "true" | "1"));
+            config.sync_users = kesami_core_backend::env_compat::var("KESAMI_SUPABASE_SYNC_USERS").is_ok_and(|value| matches!(value.trim(), "true" | "1"));
             Some(config)
         });
         Self { enabled, config }
@@ -39,7 +39,7 @@ impl SupabaseAuth {
 
     pub async fn exchange_google_code(&self, code: &str, verifier: &str) -> Result<GoogleIdentity, (u16, String)> {
         let config = self.config.as_ref().filter(|_| self.enabled).ok_or((503,
-            "Supabase Google sign-in needs ALPHA_AUTH_PROVIDER=supabase, ALPHA_SUPABASE_URL, and ALPHA_SUPABASE_PUBLISHABLE_KEY in the backend configuration.".into()))?;
+            "Supabase Google sign-in needs KESAMI_AUTH_PROVIDER=supabase, KESAMI_SUPABASE_URL, and KESAMI_SUPABASE_PUBLISHABLE_KEY in the backend configuration.".into()))?;
         if code.is_empty() || code.len() > 2_048 || !(43..=128).contains(&verifier.len())
             || !verifier.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"-._~".contains(&byte)) {
             return Err((400, "Google sign-in authorization is invalid. Please start sign-in again.".into()));
@@ -100,16 +100,16 @@ impl Config {
     }
 }
 
-/// Confirms ALPHA_SUPABASE_SECRET_KEY is a live secret key by calling an
-/// admin-only Auth endpoint. Independent of ALPHA_AUTH_PROVIDER/`SupabaseAuth`
+/// Confirms KESAMI_SUPABASE_SECRET_KEY is a live secret key by calling an
+/// admin-only Auth endpoint. Independent of KESAMI_AUTH_PROVIDER/`SupabaseAuth`
 /// (Google sign-in) — this only needs the project URL and the secret key.
 pub async fn check_secret_key() -> Result<Value, (u16, String)> {
-    let url = env::var("ALPHA_SUPABASE_URL").ok().filter(|value| !value.trim().is_empty())
-        .ok_or((503, "ALPHA_SUPABASE_URL is not configured.".into()))?;
-    let secret = env::var("ALPHA_SUPABASE_SECRET_KEY").ok().filter(|value| !value.trim().is_empty())
-        .ok_or((503, "ALPHA_SUPABASE_SECRET_KEY is not configured.".into()))?;
+    let url = kesami_core_backend::env_compat::var("KESAMI_SUPABASE_URL").ok().filter(|value| !value.trim().is_empty())
+        .ok_or((503, "KESAMI_SUPABASE_URL is not configured.".into()))?;
+    let secret = kesami_core_backend::env_compat::var("KESAMI_SUPABASE_SECRET_KEY").ok().filter(|value| !value.trim().is_empty())
+        .ok_or((503, "KESAMI_SUPABASE_SECRET_KEY is not configured.".into()))?;
     let config = Config::parse(&url, &secret)
-        .ok_or((503, "ALPHA_SUPABASE_URL must be a bare https origin, e.g. https://<ref>.supabase.co".into()))?;
+        .ok_or((503, "KESAMI_SUPABASE_URL must be a bare https origin, e.g. https://<ref>.supabase.co".into()))?;
     let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().map_err(|_| unavailable())?;
     let response = http
         .get(config.url.join("auth/v1/admin/users?page=1&per_page=1").map_err(|_| unavailable())?)
@@ -120,7 +120,7 @@ pub async fn check_secret_key() -> Result<Value, (u16, String)> {
         return Ok(json!({ "ok": true, "status": status.as_u16() }));
     }
     Err(if status == 401 || status == 403 {
-        (status.as_u16(), "Supabase rejected ALPHA_SUPABASE_SECRET_KEY. Check it is a current project secret key, not a publishable/anon key.".into())
+        (status.as_u16(), "Supabase rejected KESAMI_SUPABASE_SECRET_KEY. Check it is a current project secret key, not a publishable/anon key.".into())
     } else if status.is_server_error() {
         unavailable()
     } else {

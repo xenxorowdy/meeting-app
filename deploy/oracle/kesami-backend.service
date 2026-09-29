@@ -1,0 +1,20 @@
+[Unit]
+Description=Kesami Meeting Assistant Rust backend
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=kesami
+Group=kesami
+WorkingDirectory=/srv/kesami/data
+EnvironmentFile=/etc/kesami/backend.env
+ExecStart=/usr/local/bin/kesami-core-backend
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

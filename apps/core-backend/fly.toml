@@ -1,4 +1,4 @@
-# Fly.io deployment for the Alpha core backend. The app name below is a
+# Fly.io deployment for the Kesami core backend. The app name below is a
 # placeholder — `fly launch` rewrites it for your fly account.
 app = "alpha-meeting-backend"
 primary_region = "bom"
@@ -8,13 +8,13 @@ primary_region = "bom"
 
 [env]
   # Meeting data, credentials, and the chat embedding model persist in the volume.
-  ALPHA_DATA_DIR = "/data"
+  KESAMI_DATA_DIR = "/data"
   # The Electron desktop app loads its UI from file://, so Chromium sends
   # `Origin: null` on every request. Hosted mode rejects null origins by
   # default, which would lock the desktop client out; bearer-token auth still
   # protects every route. For a browser-only deployment, override with:
-  #   fly secrets set ALPHA_ALLOW_NULL_ORIGIN=false
-  ALPHA_ALLOW_NULL_ORIGIN = "true"
+  #   fly secrets set KESAMI_ALLOW_NULL_ORIGIN=false
+  KESAMI_ALLOW_NULL_ORIGIN = "true"
 
 [http_service]
   internal_port = 48900

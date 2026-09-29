@@ -8,7 +8,7 @@ const crypto = require('crypto');
  */
 class SqliteStore {
     constructor(options = {}) {
-        const defaultDbDir = path.join(os.homedir(), '.alpha-meeting-assistant');
+        const defaultDbDir = path.join(os.homedir(), '.kesami');
         this.options = {
             dbPath: options.dbPath || path.join(defaultDbDir, 'meetings.sqlite'),
             driver: options.driver || 'auto', // 'auto' | 'better-sqlite3' | 'sqlite3' | 'fallback'

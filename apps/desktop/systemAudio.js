@@ -2,6 +2,7 @@ const { ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { env } = require('./legacy');
 
 const HELPER_NAME = 'SystemAudioDump';
 const SOURCE_SAMPLE_RATE = 24000;
@@ -16,13 +17,13 @@ const STATUS_CHANNEL = 'system-audio:status';
 
 const PERMISSION_PATTERN = /permission|screen recording|not authorized|tcc/i;
 const PERMISSION_MESSAGE =
-    'Screen Recording permission is required to hear the other participants. Grant it in System Settings › Privacy & Security › Screen Recording, then restart Alpha.';
+    'Screen Recording permission is required to hear the other participants. Grant it in System Settings › Privacy & Security › Screen Recording, then restart Kesami.';
 
 let child = null;
 let target = null;
 
 function helperPath() {
-    if (process.env.ALPHA_SYSTEM_AUDIO_PATH) return process.env.ALPHA_SYSTEM_AUDIO_PATH;
+    if (env('SYSTEM_AUDIO_PATH')) return env('SYSTEM_AUDIO_PATH');
     const packaged = process.resourcesPath ? path.join(process.resourcesPath, HELPER_NAME) : null;
     if (packaged && fs.existsSync(packaged)) return packaged;
     return path.join(__dirname, 'assets', HELPER_NAME);
@@ -163,7 +164,7 @@ async function start(sender, { spawnFn = spawn } = {}) {
         const text = String(data).trim();
         if (!text) return;
         if (PERMISSION_PATTERN.test(text)) post(sender, { state: 'error', message: PERMISSION_MESSAGE });
-        else console.error(`[Alpha] ${HELPER_NAME}: ${text}`);
+        else console.error(`[Kesami] ${HELPER_NAME}: ${text}`);
     });
 
     started.on('error', cause => {

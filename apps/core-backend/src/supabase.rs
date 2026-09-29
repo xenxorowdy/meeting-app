@@ -1,8 +1,9 @@
+use crate::accounts::AccountStore;
+use crate::billing::{BillingStore, Subscription};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
 use sqlx::Row;
 use std::{
-    env,
     str::FromStr,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -12,7 +13,7 @@ const DEFAULT_MAX_CONNECTIONS: u32 = 5;
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 10;
 const TRANSACTION_POOLER_PORT: u16 = 6543;
 const UNCONFIGURED: &str =
-    "Supabase is not configured. Set ALPHA_SUPABASE_DB_URL, or ALPHA_SUPABASE_URL plus ALPHA_SUPABASE_DB_PASSWORD.";
+    "Supabase is not configured. Set KESAMI_SUPABASE_DB_URL, or KESAMI_SUPABASE_URL plus KESAMI_SUPABASE_DB_PASSWORD.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
@@ -54,8 +55,17 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+const MIGRATIONS_SCHEMA_SQL: &str = "DO $$ BEGIN \
+    IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'alpha_migrations') \
+       AND NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'kesami_migrations') THEN \
+        ALTER SCHEMA alpha_migrations RENAME TO kesami_migrations; \
+    END IF; \
+END $$; \
+CREATE SCHEMA IF NOT EXISTS kesami_migrations; \
+CREATE TABLE IF NOT EXISTS kesami_migrations.applied (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())";
+
 fn env_value(key: &str) -> Option<String> {
-    env::var(key)
+    kesami_core_backend::env_compat::var(key)
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -127,26 +137,26 @@ pub(crate) fn redact(message: &str, secret: Option<&str>) -> String {
 }
 
 fn configured_url() -> Option<(String, &'static str)> {
-    if let Some(url) = env_value("ALPHA_SUPABASE_DB_URL") {
-        return Some((url, "ALPHA_SUPABASE_DB_URL"));
+    if let Some(url) = env_value("KESAMI_SUPABASE_DB_URL") {
+        return Some((url, "KESAMI_SUPABASE_DB_URL"));
     }
-    let (reference, source) = match env_value("ALPHA_SUPABASE_PROJECT_REF") {
-        Some(reference) => (reference, "ALPHA_SUPABASE_PROJECT_REF"),
+    let (reference, source) = match env_value("KESAMI_SUPABASE_PROJECT_REF") {
+        Some(reference) => (reference, "KESAMI_SUPABASE_PROJECT_REF"),
         None => (
-            env_value("ALPHA_SUPABASE_URL")
+            env_value("KESAMI_SUPABASE_URL")
                 .as_deref()
                 .and_then(project_ref_from_url)?,
-            "ALPHA_SUPABASE_URL",
+            "KESAMI_SUPABASE_URL",
         ),
     };
-    let Some(password) = env_value("ALPHA_SUPABASE_DB_PASSWORD") else {
-        eprintln!("[Alpha Core Backend] Supabase: {source} is set but ALPHA_SUPABASE_DB_PASSWORD is empty");
+    let Some(password) = env_value("KESAMI_SUPABASE_DB_PASSWORD") else {
+        eprintln!("[Kesami Core Backend] Supabase: {source} is set but KESAMI_SUPABASE_DB_PASSWORD is empty");
         return None;
     };
     let url = supabase_url(
         &reference,
         &password,
-        env_value("ALPHA_SUPABASE_POOLER_REGION").as_deref(),
+        env_value("KESAMI_SUPABASE_POOLER_REGION").as_deref(),
     );
     Some((url, source))
 }
@@ -174,7 +184,7 @@ fn direct_host_hint(endpoint: &Endpoint) -> Option<String> {
         return None;
     }
     Some(format!(
-        "{} is the direct database host, which resolves to IPv6 only on current Supabase projects, so a machine without IPv6 egress can never open a connection to it. Set ALPHA_SUPABASE_POOLER_REGION to the project's region (Project Settings > Database > Connection pooling, e.g. ap-south-1) to route through the pooler instead, or set ALPHA_SUPABASE_DB_URL to the full pooler URI.",
+        "{} is the direct database host, which resolves to IPv6 only on current Supabase projects, so a machine without IPv6 egress can never open a connection to it. Set KESAMI_SUPABASE_POOLER_REGION to the project's region (Project Settings > Database > Connection pooling, e.g. ap-south-1) to route through the pooler instead, or set KESAMI_SUPABASE_DB_URL to the full pooler URI.",
         endpoint.host
     ))
 }
@@ -217,7 +227,7 @@ impl SupabaseDb {
             Ok(options) => options,
             Err(cause) => {
                 eprintln!(
-                    "[Alpha Core Backend] Supabase connection string ignored: {}",
+                    "[Kesami Core Backend] Supabase connection string ignored: {}",
                     redact(&cause.to_string(), secret.as_deref())
                 );
                 return Self::unconfigured(secret);
@@ -252,13 +262,13 @@ impl SupabaseDb {
                 options,
                 endpoint,
                 max_connections: env_number(
-                    "ALPHA_SUPABASE_MAX_CONNECTIONS",
+                    "KESAMI_SUPABASE_MAX_CONNECTIONS",
                     DEFAULT_MAX_CONNECTIONS,
                 )
                 .max(1),
                 connect_timeout: Duration::from_secs(
                     env_number(
-                        "ALPHA_SUPABASE_CONNECT_TIMEOUT_SECS",
+                        "KESAMI_SUPABASE_CONNECT_TIMEOUT_SECS",
                         DEFAULT_CONNECT_TIMEOUT_SECS,
                     )
                     .max(1),
@@ -357,9 +367,9 @@ impl SupabaseDb {
             .execute(&mut *tx)
             .await
             .map_err(|cause| self.step_failure("Could not lock users migration.", cause))?;
-        sqlx::raw_sql("CREATE SCHEMA IF NOT EXISTS alpha_migrations; CREATE TABLE IF NOT EXISTS alpha_migrations.applied (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())")
+        sqlx::raw_sql(MIGRATIONS_SCHEMA_SQL)
             .execute(&mut *tx).await.map_err(|cause| self.step_failure("Could not prepare migration tracking.", cause))?;
-        let applied: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alpha_migrations.applied WHERE name = '001_supabase_users')")
+        let applied: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM kesami_migrations.applied WHERE name = '001_supabase_users')")
             .persistent(false)
             .fetch_one(&mut *tx).await.map_err(|cause| self.step_failure("Could not read migration tracking.", cause))?;
         let exists: bool = sqlx::query_scalar("SELECT to_regclass('public.users') IS NOT NULL")
@@ -375,7 +385,7 @@ impl SupabaseDb {
                 .map_err(|cause| self.step_failure("Could not create public.users. Use an owner connection to the Supabase database; no changes were committed.", cause))?;
             if !applied {
                 sqlx::query(
-                    "INSERT INTO alpha_migrations.applied (name) VALUES ('001_supabase_users')",
+                    "INSERT INTO kesami_migrations.applied (name) VALUES ('001_supabase_users')",
                 )
                 .persistent(false)
                 .execute(&mut *tx)
@@ -418,9 +428,9 @@ impl SupabaseDb {
             .execute(&mut *tx)
             .await
             .map_err(|cause| self.step_failure("Could not lock billing migration.", cause))?;
-        sqlx::raw_sql("CREATE SCHEMA IF NOT EXISTS alpha_migrations; CREATE TABLE IF NOT EXISTS alpha_migrations.applied (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())")
+        sqlx::raw_sql(MIGRATIONS_SCHEMA_SQL)
             .execute(&mut *tx).await.map_err(|cause| self.step_failure("Could not prepare migration tracking.", cause))?;
-        let applied: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alpha_migrations.applied WHERE name = '002_supabase_billing')")
+        let applied: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM kesami_migrations.applied WHERE name = '002_supabase_billing')")
             .persistent(false)
             .fetch_one(&mut *tx).await.map_err(|cause| self.step_failure("Could not read migration tracking.", cause))?;
         let tables: (bool, bool) = sqlx::query_as("SELECT to_regclass('public.billing') IS NOT NULL, to_regclass('public.billing_events') IS NOT NULL")
@@ -436,7 +446,7 @@ impl SupabaseDb {
             }
             sqlx::raw_sql(include_str!("../migrations/002_supabase_billing.sql"))
                 .execute(&mut *tx).await.map_err(|cause| self.step_failure("Could not create billing tables. Use an owner connection to the Supabase database; no changes were committed.", cause))?;
-            sqlx::query("INSERT INTO alpha_migrations.applied (name) VALUES ('002_supabase_billing')")
+            sqlx::query("INSERT INTO kesami_migrations.applied (name) VALUES ('002_supabase_billing')")
                 .persistent(false)
                 .execute(&mut *tx).await
                 .map_err(|cause| self.step_failure("Could not record billing migration.", cause))?;
@@ -458,6 +468,93 @@ impl SupabaseDb {
         tx.commit()
             .await
             .map_err(|cause| self.step_failure("Could not commit billing migration.", cause))
+    }
+
+    async fn save_subscription(&self, google_sub: &str, subscription: &Subscription) -> Result<bool, String> {
+        let pool = self.pool().await?;
+        let users: Vec<String> = sqlx::query_scalar(
+            "SELECT DISTINCT user_id::text FROM auth.identities \
+             WHERE provider = 'google' AND (provider_id = $1 OR identity_data->>'sub' = $1) LIMIT 2",
+        )
+        .bind(google_sub)
+        .persistent(false)
+        .fetch_all(pool)
+        .await
+        .map_err(|cause| self.step_failure("Could not find the Supabase user for a subscription.", cause))?;
+        let [user_id] = users.as_slice() else {
+            return Ok(false);
+        };
+        sqlx::query(
+            "INSERT INTO public.billing AS existing \
+                (provider, provider_subscription_id, user_id, plan, customer_id, status, currency, amount_minor, current_period_end) \
+             VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, to_timestamp($9)) \
+             ON CONFLICT (provider, provider_subscription_id) DO UPDATE SET \
+                user_id = EXCLUDED.user_id, \
+                plan = EXCLUDED.plan, \
+                customer_id = COALESCE(EXCLUDED.customer_id, existing.customer_id), \
+                status = EXCLUDED.status, \
+                currency = EXCLUDED.currency, \
+                amount_minor = EXCLUDED.amount_minor, \
+                current_period_end = COALESCE(EXCLUDED.current_period_end, existing.current_period_end), \
+                updated_at = now() \
+             WHERE existing.status <> 'canceled' AND EXCLUDED.status <> 'incomplete'",
+        )
+        .bind(&subscription.provider)
+        .bind(&subscription.provider_subscription_id)
+        .bind(user_id)
+        .bind(&subscription.plan)
+        .bind(&subscription.customer_id)
+        .bind(&subscription.status)
+        .bind(&subscription.currency)
+        .bind(subscription.amount_minor)
+        .bind(subscription.current_period_end.map(|ms| ms as f64 / 1000.0))
+        .persistent(false)
+        .execute(pool)
+        .await
+        .map_err(|cause| self.step_failure("Could not save a subscription to Supabase.", cause))?;
+        Ok(true)
+    }
+
+    pub async fn mirror_billing(&self, billing: &BillingStore, accounts: &AccountStore) -> Result<(), String> {
+        for (provider, event_id, received_at) in billing.unmirrored_events().await.map_err(|(_, message)| message)? {
+            let pool = self.pool().await?;
+            sqlx::query(
+                "INSERT INTO public.billing_events (provider, event_id, received_at) \
+                 VALUES ($1, $2, to_timestamp($3)) ON CONFLICT DO NOTHING",
+            )
+            .bind(&provider)
+            .bind(&event_id)
+            .bind(received_at as f64 / 1000.0)
+            .persistent(false)
+            .execute(pool)
+            .await
+            .map_err(|cause| self.step_failure("Could not save a billing event to Supabase.", cause))?;
+            billing
+                .mark_event_mirrored(&provider, &event_id)
+                .await
+                .map_err(|(_, message)| message)?;
+        }
+        for (subscription, updated_at) in billing.unmirrored_subscriptions().await.map_err(|(_, message)| message)? {
+            let saved = match accounts
+                .google_sub(&subscription.account_id)
+                .await
+                .map_err(|(_, message)| message)?
+            {
+                Some(google_sub) => self.save_subscription(&google_sub, &subscription).await?,
+                None => false,
+            };
+            if !saved {
+                eprintln!(
+                    "[Kesami Core Backend] Supabase billing: account {} has no Supabase Google user, so subscription {} stays local only.",
+                    subscription.account_id, subscription.provider_subscription_id
+                );
+            }
+            billing
+                .mark_subscription_mirrored(&subscription.provider_subscription_id, updated_at)
+                .await
+                .map_err(|(_, message)| message)?;
+        }
+        Ok(())
     }
 
     pub async fn status_value(&self) -> Value {
@@ -573,8 +670,8 @@ mod tests {
             transaction_pooler: false,
         };
         let hint = direct_host_hint(&direct).expect("direct host should hint");
-        assert!(hint.contains("ALPHA_SUPABASE_POOLER_REGION"));
-        assert!(hint.contains("ALPHA_SUPABASE_DB_URL"));
+        assert!(hint.contains("KESAMI_SUPABASE_POOLER_REGION"));
+        assert!(hint.contains("KESAMI_SUPABASE_DB_URL"));
 
         let pooler = Endpoint {
             host: "aws-0-ap-south-1.pooler.supabase.com".into(),
@@ -658,6 +755,154 @@ mod tests {
             redact("see https://supabase.com/docs", None),
             "see https://supabase.com/docs"
         );
+    }
+
+    fn disposable_db() -> SupabaseDb {
+        let url = std::env::var("KESAMI_DISPOSABLE_POSTGRES_URL")
+            .expect("set KESAMI_DISPOSABLE_POSTGRES_URL to a throwaway Postgres database");
+        let options = PgConnectOptions::from_str(&url).expect("a valid Postgres URL");
+        let host = options.get_host().to_string();
+        assert!(
+            !pooler_host(&host) && !host.ends_with(".supabase.co") && !host.ends_with(".supabase.in"),
+            "refusing to reset billing tables on a Supabase host"
+        );
+        SupabaseDb {
+            config: Some(Config {
+                endpoint: Endpoint {
+                    host,
+                    port: options.get_port(),
+                    database: options.get_database().unwrap_or("postgres").to_string(),
+                    username: options.get_username().to_string(),
+                    transaction_pooler: false,
+                },
+                options,
+                max_connections: 2,
+                connect_timeout: Duration::from_secs(5),
+                source: "test",
+            }),
+            secret: None,
+            pool: OnceCell::new(),
+            last: RwLock::new(None),
+        }
+    }
+
+    const PAYER: &str = "5f0c7d8e-1c2b-4a3d-9e8f-0a1b2c3d4e5f";
+
+    async fn billing_rows(pool: &PgPool) -> Vec<(String, String, String, String, i64, Option<String>, f64)> {
+        sqlx::query_as(
+            "SELECT provider_subscription_id, user_id::text, plan, status, amount_minor, customer_id, \
+                    extract(epoch FROM current_period_end)::float8 \
+             FROM public.billing ORDER BY provider_subscription_id",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn billing_events(pool: &PgPool) -> Vec<String> {
+        sqlx::query_scalar("SELECT event_id FROM public.billing_events ORDER BY event_id")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "needs KESAMI_DISPOSABLE_POSTGRES_URL"]
+    async fn paid_subscriptions_reach_supabase_for_the_paying_google_user() {
+        use crate::billing::apply_webhook;
+
+        let db = disposable_db();
+        let pool = db.pool().await.unwrap().clone();
+        sqlx::raw_sql(&format!(
+            "DROP TABLE IF EXISTS public.billing, public.billing_events, public.billing_events_offline; \
+             DROP SCHEMA IF EXISTS kesami_migrations CASCADE; \
+             DROP SCHEMA IF EXISTS auth CASCADE; \
+             DO $$ BEGIN \
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF; \
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; \
+             END $$; \
+             CREATE SCHEMA auth; \
+             CREATE TABLE auth.users (id uuid PRIMARY KEY, email text); \
+             CREATE TABLE auth.identities ( \
+                provider_id text NOT NULL, \
+                user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, \
+                identity_data jsonb NOT NULL, \
+                provider text NOT NULL, \
+                UNIQUE (provider_id, provider)); \
+             CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid'; \
+             INSERT INTO auth.users VALUES ('{PAYER}', 'payer@example.com'); \
+             INSERT INTO auth.identities VALUES ('google-sub-payer', '{PAYER}', \
+                '{{\"sub\": \"google-sub-payer\", \"email\": \"payer@example.com\"}}', 'google');"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        db.migrate_billing().await.unwrap();
+
+        let dir = std::env::temp_dir().join(format!("kesami-mirror-{}", uuid::Uuid::new_v4()));
+        let accounts = AccountStore::open(dir.join("accounts.sqlite3"), 1_000).unwrap();
+        let billing = BillingStore::open(dir.join("billing.sqlite3")).unwrap();
+        let payer = accounts.google_sign_in("google-sub-payer", "payer@example.com", "Payer", true).await.unwrap().account.id;
+        let local = accounts.register("Local User", "local@example.com", "correct horse battery").await.unwrap().account.id;
+        let entity = |id: &str, account: &str, status: &str| {
+            json!({"id": id, "status": status, "customer_id": "cust_Payer", "current_end": 1_800_000_000i64, "notes": {"accountId": account}})
+        };
+
+        apply_webhook(&billing, "razorpay", "evt_authenticated", &entity("sub_Payer1", &payer, "authenticated")).await.unwrap();
+        apply_webhook(&billing, "razorpay", "evt_activated", &entity("sub_Payer1", &payer, "active")).await.unwrap();
+        apply_webhook(&billing, "razorpay", "evt_local", &entity("sub_Local1", &local, "active")).await.unwrap();
+        let received_at = billing
+            .unmirrored_events()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|(_, id, _)| id == "evt_activated")
+            .unwrap()
+            .2;
+        db.mirror_billing(&billing, &accounts).await.unwrap();
+
+        assert_eq!(
+            billing_rows(&pool).await,
+            [(
+                "sub_Payer1".into(),
+                PAYER.into(),
+                "pro".into(),
+                "active".into(),
+                crate::plans::PRO_MONTHLY_MINOR_INR as i64,
+                Some("cust_Payer".into()),
+                1_800_000_000.0
+            )]
+        );
+        assert_eq!(billing_events(&pool).await, ["evt_activated", "evt_authenticated", "evt_local"]);
+        let mirrored_at: i64 = sqlx::query_scalar(
+            "SELECT (extract(epoch FROM received_at) * 1000)::bigint FROM public.billing_events WHERE event_id = 'evt_activated'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(mirrored_at, received_at);
+        assert!(billing.unmirrored_events().await.unwrap().is_empty());
+        assert!(billing.unmirrored_subscriptions().await.unwrap().is_empty());
+
+        db.mirror_billing(&billing, &accounts).await.unwrap();
+        apply_webhook(&billing, "razorpay", "evt_cancelled", &entity("sub_Payer1", &payer, "cancelled")).await.unwrap();
+        db.mirror_billing(&billing, &accounts).await.unwrap();
+        assert_eq!(billing_rows(&pool).await[0].3, "canceled");
+
+        sqlx::raw_sql("ALTER TABLE public.billing_events RENAME TO billing_events_offline").execute(&pool).await.unwrap();
+        apply_webhook(&billing, "razorpay", "evt_while_offline", &entity("sub_Payer2", &payer, "active")).await.unwrap();
+        assert!(db.mirror_billing(&billing, &accounts).await.is_err());
+        assert_eq!(billing.unmirrored_events().await.unwrap().len(), 1);
+        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(), 1);
+        sqlx::raw_sql("ALTER TABLE public.billing_events_offline RENAME TO billing_events").execute(&pool).await.unwrap();
+        db.mirror_billing(&billing, &accounts).await.unwrap();
+        assert!(billing.unmirrored_events().await.unwrap().is_empty());
+        assert!(billing.unmirrored_subscriptions().await.unwrap().is_empty());
+        let rows = billing_rows(&pool).await;
+        assert_eq!(rows.iter().map(|row| (row.0.as_str(), row.3.as_str())).collect::<Vec<_>>(), [("sub_Payer1", "canceled"), ("sub_Payer2", "active")]);
+        assert!(billing_events(&pool).await.contains(&"evt_while_offline".to_string()));
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

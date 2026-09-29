@@ -9,7 +9,7 @@ const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-const BINARY = path.resolve(__dirname, '../apps/core-backend/target/debug/alpha-core-backend');
+const BINARY = path.resolve(__dirname, '../apps/core-backend/target/debug/kesami-core-backend');
 // A deployment token must be present so sessions are the *only* way in besides
 // the token itself; without one a local backend answers every route.
 const DEPLOYMENT_TOKEN = 'test-only-token-with-at-least-32-characters';
@@ -30,23 +30,23 @@ async function spawnBackend(root, { local = false, supabase = false } = {}) {
         stdio: ['ignore', 'ignore', 'ignore'],
         env: {
             ...process.env,
-            ALPHA_DATA_DIR: root,
+            KESAMI_DATA_DIR: root,
             CORE_BACKEND_DATA_FILE: path.join(root, 'absent-settings.json'),
             CORE_BACKEND_PORT: String(port),
-            ALPHA_BACKEND_TOKEN: local ? '' : DEPLOYMENT_TOKEN,
+            KESAMI_BACKEND_TOKEN: local ? '' : DEPLOYMENT_TOKEN,
             CORE_BACKEND_HOST: '127.0.0.1',
             // Unoptimized test builds make 600k PBKDF2 iterations crawl.
-            ALPHA_PBKDF2_ITERATIONS: '1000',
-            ALPHA_SUMMARY_PROVIDER: 'claude',
-            ALPHA_GEMINI_API_KEY: '',
-            ALPHA_SARVAM_API_KEY: '',
-            ALPHA_GOOGLE_OAUTH_CLIENT_ID: 'test-only.apps.googleusercontent.com',
-            ALPHA_AUTH_PROVIDER: supabase ? 'supabase' : 'google',
-            ALPHA_SUPABASE_URL: supabase ? 'https://test-project.supabase.co' : '',
-            ALPHA_SUPABASE_PUBLISHABLE_KEY: supabase ? 'test-publishable-key' : '',
-            ALPHA_SUPABASE_DB_URL: '',
-            ALPHA_SUPABASE_DB_PASSWORD: '',
-            ALPHA_CHAT_EMBEDDINGS: 'off',
+            KESAMI_PBKDF2_ITERATIONS: '1000',
+            KESAMI_SUMMARY_PROVIDER: 'claude',
+            KESAMI_GEMINI_API_KEY: '',
+            KESAMI_SARVAM_API_KEY: '',
+            KESAMI_GOOGLE_OAUTH_CLIENT_ID: 'test-only.apps.googleusercontent.com',
+            KESAMI_AUTH_PROVIDER: supabase ? 'supabase' : 'google',
+            KESAMI_SUPABASE_URL: supabase ? 'https://test-project.supabase.co' : '',
+            KESAMI_SUPABASE_PUBLISHABLE_KEY: supabase ? 'test-publishable-key' : '',
+            KESAMI_SUPABASE_DB_URL: '',
+            KESAMI_SUPABASE_DB_PASSWORD: '',
+            KESAMI_CHAT_EMBEDDINGS: 'off',
         },
     });
     let spawnError;
@@ -75,7 +75,7 @@ async function spawnBackend(root, { local = false, supabase = false } = {}) {
 }
 
 test('accounts register, sign in, authorize the API, and die at logout', { timeout: 60000 }, async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-auth-flow-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-auth-flow-'));
     t.after(async () => {
         await fs.rm(root, { recursive: true, force: true });
     });
@@ -88,6 +88,7 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
     assert.equal((await api('/api/auth/config')).data.registrationAllowed, false);
     assert.equal((await api('/api/auth/config')).data.googleClientId, 'test-only.apps.googleusercontent.com');
     assert.equal((await api('/api/auth/config')).data.googleAuth, null);
+    assert.equal((await api('/api/auth/config')).data.googleCalendar, false);
     assert.equal((await api('/api/auth/supabase/google', { code: 'code', verifier: 'v'.repeat(64) })).status, 503);
     assert.equal((await api('/api/auth/google', { code: '', verifier: '', redirectUri: '', nonce: 'test-nonce' })).status, 401);
     assert.equal((await api('/api/auth/register', {name: 'Intruder', email: 'intruder@work.com', password: 'first password'})).status, 403);
@@ -145,7 +146,7 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
 });
 
 test('Supabase configuration enables desktop sign-in without exposing keys, and malformed proofs fail', { timeout: 60000 }, async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-supabase-auth-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-supabase-auth-'));
     const { backend, api } = await spawnBackend(root, { local: true, supabase: true });
     t.after(async () => {
         if (backend.exitCode === null) { backend.kill('SIGTERM'); await once(backend, 'exit'); }
@@ -159,7 +160,7 @@ test('Supabase configuration enables desktop sign-in without exposing keys, and 
 });
 
 test('accounts and sessions survive a backend restart', { timeout: 60000 }, async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-auth-restart-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-auth-restart-'));
     t.after(async () => {
         await fs.rm(root, { recursive: true, force: true });
     });
@@ -185,7 +186,7 @@ test('accounts and sessions survive a backend restart', { timeout: 60000 }, asyn
 
 
 test('local use needs no account and paid checkout cannot pretend to succeed', { timeout: 60000 }, async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-local-mode-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-local-mode-'));
     const { backend, api } = await spawnBackend(root, { local: true });
     t.after(async () => {
         if (backend.exitCode === null) { backend.kill('SIGTERM'); await once(backend, 'exit'); }

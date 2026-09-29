@@ -1,10 +1,13 @@
 //! Subscription billing. Stripe Checkout serves the global/USD price and
 //! Razorpay Subscriptions the India/INR price. Publishing a price never
 //! grants an entitlement: a paid tier is granted only when a
-//! signature-verified provider webhook reports an active subscription, and
-//! every webhook event is applied at most once.
+//! signature-verified provider webhook, or the provider's own API read with
+//! this backend's secret, reports an active subscription, and every webhook
+//! event is applied at most once.
+use crate::now_ms;
 use crate::plans;
 use crate::settings::data_dir;
+use chrono::Datelike;
 use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -39,19 +42,19 @@ pub struct ProviderConfig {
 impl ProviderConfig {
     pub fn from_env() -> Self {
         let var = |name: &str| {
-            std::env::var(name)
+            kesami_core_backend::env_compat::var(name)
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         };
         Self {
-            stripe_secret_key: var("ALPHA_STRIPE_SECRET_KEY"),
-            stripe_price_usd: var("ALPHA_STRIPE_PRICE_USD"),
-            stripe_webhook_secret: var("ALPHA_STRIPE_WEBHOOK_SECRET"),
-            razorpay_key_id: var("ALPHA_RAZORPAY_KEY_ID"),
-            razorpay_key_secret: var("ALPHA_RAZORPAY_KEY_SECRET"),
-            razorpay_plan_inr: var("ALPHA_RAZORPAY_PLAN_INR"),
-            razorpay_webhook_secret: var("ALPHA_RAZORPAY_WEBHOOK_SECRET"),
+            stripe_secret_key: var("KESAMI_STRIPE_SECRET_KEY"),
+            stripe_price_usd: var("KESAMI_STRIPE_PRICE_USD"),
+            stripe_webhook_secret: var("KESAMI_STRIPE_WEBHOOK_SECRET"),
+            razorpay_key_id: var("KESAMI_RAZORPAY_KEY_ID"),
+            razorpay_key_secret: var("KESAMI_RAZORPAY_KEY_SECRET"),
+            razorpay_plan_inr: var("KESAMI_RAZORPAY_PLAN_INR"),
+            razorpay_webhook_secret: var("KESAMI_RAZORPAY_WEBHOOK_SECRET"),
         }
     }
 
@@ -65,6 +68,7 @@ impl ProviderConfig {
         self.razorpay_key_id.is_some()
             && self.razorpay_key_secret.is_some()
             && self.razorpay_plan_inr.is_some()
+            && self.razorpay_webhook_secret.is_some()
     }
 
     pub fn billing_enabled(&self) -> bool {
@@ -96,13 +100,6 @@ pub struct Subscription {
 
 pub struct BillingStore {
     db: Arc<Mutex<Connection>>,
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }
 
 fn store_error(_: impl std::fmt::Display) -> (u16, String) {
@@ -162,9 +159,27 @@ impl BillingStore {
                 event_id TEXT NOT NULL,
                 received_at INTEGER NOT NULL,
                 PRIMARY KEY (provider, event_id)
+            );
+            CREATE TABLE IF NOT EXISTS free_ai_uses (
+                month TEXT NOT NULL,
+                request_key TEXT NOT NULL,
+                PRIMARY KEY (month, request_key)
             );",
         )
         .map_err(io::Error::other)?;
+        for table in ["subscriptions", "billing_events"] {
+            let mirrored: bool = db
+                .query_row(
+                    &format!("SELECT EXISTS(SELECT 1 FROM pragma_table_info('{table}') WHERE name='mirrored_at')"),
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(io::Error::other)?;
+            if !mirrored {
+                db.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN mirrored_at INTEGER"))
+                    .map_err(io::Error::other)?;
+            }
+        }
         Ok(Self {
             db: Arc::new(Mutex::new(db)),
         })
@@ -181,6 +196,43 @@ impl BillingStore {
         })
         .await
         .map_err(store_error)?
+    }
+
+    fn ai_month() -> String {
+        let now = chrono::Local::now();
+        format!("{:04}-{:02}", now.year(), now.month())
+    }
+
+    /// Reserve before generating so concurrent requests cannot exceed the cap.
+    /// Call release_free_ai_use if generation or persistence fails.
+    pub async fn reserve_free_ai_use(&self, request_key: String) -> Result<bool, (u16, String)> {
+        let month = Self::ai_month();
+        self.query(move |db| {
+            let exists: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM free_ai_uses WHERE month=?1 AND request_key=?2)",
+                params![month, request_key], |row| row.get(0),
+            ).map_err(store_error)?;
+            if exists { return Ok(true); }
+            let inserted = db.execute(
+                "INSERT INTO free_ai_uses(month, request_key) SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM free_ai_uses WHERE month=?1) < ?3",
+                params![month, request_key, plans::FREE_MONTHLY_AI_USES],
+            ).map_err(store_error)?;
+            Ok(inserted == 1)
+        }).await
+    }
+
+    pub async fn release_free_ai_use(&self, request_key: String) {
+        let _ = self.query(move |db| {
+            db.execute("DELETE FROM free_ai_uses WHERE request_key=?1", [request_key]).map_err(store_error)?;
+            Ok(())
+        }).await;
+    }
+
+    pub async fn free_ai_uses(&self) -> Result<i64, (u16, String)> {
+        let month = Self::ai_month();
+        self.query(move |db| db.query_row(
+            "SELECT COUNT(*) FROM free_ai_uses WHERE month=?1", [month], |row| row.get(0),
+        ).map_err(store_error)).await
     }
 
     fn row_subscription(row: &rusqlite::Row<'_>) -> rusqlite::Result<Subscription> {
@@ -259,7 +311,9 @@ impl BillingStore {
                     customer_id=COALESCE(excluded.customer_id, subscriptions.customer_id),
                     status=excluded.status,
                     current_period_end=COALESCE(excluded.current_period_end, subscriptions.current_period_end),
-                    updated_at=excluded.updated_at",
+                    updated_at=excluded.updated_at,
+                    mirrored_at=NULL
+                WHERE subscriptions.status <> 'canceled' AND excluded.status <> 'incomplete'",
                 params![
                     subscription.account_id,
                     subscription.plan,
@@ -296,6 +350,84 @@ impl BillingStore {
         })
         .await
         .unwrap_or(false)
+    }
+
+    async fn forget_event(&self, provider: &str, event_id: &str) {
+        let provider = provider.to_string();
+        let event_id = event_id.to_string();
+        let _ = self
+            .query(move |db| {
+                db.execute(
+                    "DELETE FROM billing_events WHERE provider=?1 AND event_id=?2",
+                    params![provider, event_id],
+                )
+                .map(|_| ())
+                .map_err(store_error)
+            })
+            .await;
+    }
+
+    pub async fn unmirrored_events(&self) -> Result<Vec<(String, String, i64)>, (u16, String)> {
+        self.query(|db| {
+            let mut statement = db
+                .prepare(
+                    "SELECT provider, event_id, received_at FROM billing_events
+                     WHERE mirrored_at IS NULL ORDER BY received_at LIMIT 200",
+                )
+                .map_err(store_error)?;
+            let rows = statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .map_err(store_error)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(store_error)
+        })
+        .await
+    }
+
+    pub async fn mark_event_mirrored(&self, provider: &str, event_id: &str) -> Result<(), (u16, String)> {
+        let (provider, event_id, mirrored_at) = (provider.to_string(), event_id.to_string(), now_ms());
+        self.query(move |db| {
+            db.execute(
+                "UPDATE billing_events SET mirrored_at=?1 WHERE provider=?2 AND event_id=?3",
+                params![mirrored_at, provider, event_id],
+            )
+            .map(|_| ())
+            .map_err(store_error)
+        })
+        .await
+    }
+
+    pub async fn unmirrored_subscriptions(&self) -> Result<Vec<(Subscription, i64)>, (u16, String)> {
+        self.query(|db| {
+            let mut statement = db
+                .prepare(&format!(
+                    "SELECT {}, updated_at FROM subscriptions
+                     WHERE mirrored_at IS NULL ORDER BY updated_at LIMIT 200",
+                    Self::SUBSCRIPTION_COLUMNS
+                ))
+                .map_err(store_error)?;
+            let rows = statement
+                .query_map([], |row| Ok((Self::row_subscription(row)?, row.get(9)?)))
+                .map_err(store_error)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(store_error)
+        })
+        .await
+    }
+
+    pub async fn mark_subscription_mirrored(
+        &self,
+        provider_subscription_id: &str,
+        updated_at: i64,
+    ) -> Result<(), (u16, String)> {
+        let (provider_subscription_id, mirrored_at) = (provider_subscription_id.to_string(), now_ms());
+        self.query(move |db| {
+            db.execute(
+                "UPDATE subscriptions SET mirrored_at=?1 WHERE provider_subscription_id=?2 AND updated_at=?3",
+                params![mirrored_at, provider_subscription_id, updated_at],
+            )
+            .map(|_| ())
+            .map_err(store_error)
+        })
+        .await
     }
 
     pub fn subscription_value(subscription: &Subscription) -> Value {
@@ -341,16 +473,23 @@ pub async fn create_checkout(
     }
 }
 
+fn provider_client() -> Result<&'static reqwest::Client, (u16, String)> {
+    static CLIENT: std::sync::OnceLock<Option<reqwest::Client>> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| reqwest::Client::builder().timeout(Duration::from_secs(20)).build().ok())
+        .as_ref()
+        .ok_or_else(|| (503, "Could not reach the payment provider.".into()))
+}
+
 async fn stripe_checkout(
     config: &ProviderConfig,
     account_id: &str,
     account_email: &str,
     origin: &str,
 ) -> Result<Value, (u16, String)> {
-    let (Some(secret_key), Some(price_id), _) = (
+    let (Some(secret_key), Some(price_id)) = (
         config.stripe_secret_key.as_deref(),
         config.stripe_price_usd.as_deref(),
-        config.stripe_webhook_secret.as_deref(),
     ) else {
         return Err((503, "Stripe billing is not configured on this backend.".into()));
     };
@@ -365,11 +504,7 @@ async fn stripe_checkout(
         ("success_url", &format!("{base}/?billing=success")),
         ("cancel_url", &format!("{base}/?billing=cancelled")),
     ];
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|_| (503, "Could not reach the payment provider.".into()))?;
-    let response = client
+    let response = provider_client()?
         .post(format!("{STRIPE_API}/checkout/sessions"))
         .bearer_auth(secret_key)
         .form(&form)
@@ -391,10 +526,11 @@ async fn razorpay_checkout(
     account_id: &str,
     account_email: &str,
 ) -> Result<Value, (u16, String)> {
-    let (Some(key_id), Some(key_secret), Some(plan_id)) = (
+    let (Some(key_id), Some(key_secret), Some(plan_id), Some(_webhook_secret)) = (
         config.razorpay_key_id.as_deref(),
         config.razorpay_key_secret.as_deref(),
         config.razorpay_plan_inr.as_deref(),
+        config.razorpay_webhook_secret.as_deref(),
     ) else {
         return Err((503, "Razorpay billing is not configured on this backend.".into()));
     };
@@ -405,11 +541,7 @@ async fn razorpay_checkout(
         "customer_notify": 1,
         "notes": {"accountId": account_id, "email": account_email},
     });
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|_| (503, "Could not reach the payment provider.".into()))?;
-    let response = client
+    let response = provider_client()?
         .post(format!("{RAZORPAY_API}/subscriptions"))
         .basic_auth(key_id, Some(key_secret))
         .json(&body)
@@ -527,10 +659,11 @@ fn hex_decode(value: &str) -> Result<Vec<u8>, String> {
 /// understands. Only `active` grants the paid tier.
 fn map_razorpay_status(status: &str) -> &'static str {
     match status {
-        "activated" | "charged" | "resumed" => "active",
-        "cancelled" | "completed" => "canceled",
+        "active" => "active",
+        "cancelled" | "completed" | "expired" => "canceled",
         "halted" => "halted",
-        "pending" | "authenticated" | "created" => "pending",
+        "pending" => "pending",
+        "authenticated" | "created" => "incomplete",
         _ => "pending",
     }
 }
@@ -585,13 +718,19 @@ pub fn parse_stripe_event(event: &Value) -> Result<(String, String, Value), Stri
     Ok((event_type, event_id, payload))
 }
 
+pub fn razorpay_subscription_entity(event: &Value) -> Value {
+    event
+        .pointer("/payload/subscription/entity")
+        .cloned()
+        .unwrap_or_else(|| json!({}))
+}
+
 /// Applies one verified webhook event. Returns the JSON acknowledgement.
 /// Unrecognized event types are acknowledged without effect so the provider
 /// does not retry them forever.
 pub async fn apply_webhook(
     store: &BillingStore,
     provider: &str,
-    event_type: &str,
     event_id: &str,
     payload: &Value,
 ) -> Result<Value, (u16, String)> {
@@ -604,11 +743,6 @@ pub async fn apply_webhook(
     ) else {
         return Ok(json!({"received": true}));
     };
-    let status = if provider == "razorpay" {
-        map_razorpay_status(raw_status).to_string()
-    } else {
-        raw_status.to_string()
-    };
     let account_id = payload
         .get("notes")
         .and_then(|notes| notes.get("accountId"))
@@ -619,13 +753,10 @@ pub async fn apply_webhook(
                 .and_then(|metadata| metadata.get("accountId"))
                 .and_then(Value::as_str)
         })
-        .map(str::to_string)
-        .or_else(|| {
-            // Without an account reference (or before checkout completes for
-            // it), an existing row is the only other way to find the account.
-            // Futures that reference neither are dropped until one arrives.
-            None
-        });
+        .map(str::to_string);
+    // Without an account reference (or before checkout completes for
+    // it), an existing row is the only other way to find the account.
+    // Futures that reference neither are dropped until one arrives.
     let account_id = match account_id {
         Some(account_id) => account_id,
         None => match store.account_for_subscription(provider, subscription_id).await {
@@ -633,33 +764,113 @@ pub async fn apply_webhook(
             None => return Ok(json!({"received": true, "unmatched": true})),
         },
     };
+    let subscription = subscription_from_payload(provider, account_id, subscription_id, raw_status, payload);
+    if let Err(error) = store.apply_subscription(subscription).await {
+        store.forget_event(provider, event_id).await;
+        return Err(error);
+    }
+    Ok(json!({"received": true}))
+}
+
+fn subscription_from_payload(
+    provider: &str,
+    account_id: String,
+    subscription_id: &str,
+    raw_status: &str,
+    payload: &Value,
+) -> Subscription {
+    let status = if provider == "razorpay" {
+        map_razorpay_status(raw_status).to_string()
+    } else {
+        raw_status.to_string()
+    };
     let current_period_end = payload
         .get("current_period_end")
         .and_then(Value::as_i64)
         .or_else(|| payload.get("current_end").and_then(Value::as_i64))
         .map(|seconds| seconds * 1000);
+    Subscription {
+        account_id,
+        plan: "pro".into(),
+        provider: provider.to_string(),
+        provider_subscription_id: subscription_id.to_string(),
+        customer_id: payload
+            .get("customer_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        status,
+        currency: if provider == "razorpay" { "INR" } else { "USD" }.into(),
+        amount_minor: if provider == "razorpay" {
+            plans::PRO_MONTHLY_MINOR_INR as i64
+        } else {
+            plans::PRO_MONTHLY_MINOR_USD as i64
+        },
+        current_period_end,
+    }
+}
+
+fn is_razorpay_subscription_id(value: &str) -> bool {
+    value
+        .strip_prefix("sub_")
+        .is_some_and(|rest| (1..=32).contains(&rest.len()) && rest.bytes().all(|b| b.is_ascii_alphanumeric()))
+}
+
+pub async fn sync_razorpay_subscription(
+    config: &ProviderConfig,
+    store: &BillingStore,
+    account_id: &str,
+    subscription_id: &str,
+) -> Result<(), (u16, String)> {
+    let (Some(key_id), Some(key_secret)) = (
+        config.razorpay_key_id.as_deref(),
+        config.razorpay_key_secret.as_deref(),
+    ) else {
+        return Err((503, "Razorpay billing is not configured on this backend.".into()));
+    };
+    if !is_razorpay_subscription_id(subscription_id) {
+        return Err((400, "That is not a Razorpay subscription id.".into()));
+    }
+    let response = provider_client()?
+        .get(format!("{RAZORPAY_API}/subscriptions/{subscription_id}"))
+        .basic_auth(key_id, Some(key_secret))
+        .send()
+        .await
+        .map_err(|_| (502, "Could not reach Razorpay. Please try again.".into()))?;
+    if !response.status().is_success() {
+        return Err((502, "Razorpay could not confirm the subscription. Please try again.".into()));
+    }
+    let payload: Value = response
+        .json()
+        .await
+        .map_err(|_| (502, "Razorpay returned an unreadable response.".into()))?;
+    apply_razorpay_snapshot(store, account_id, subscription_id, &payload).await
+}
+
+async fn apply_razorpay_snapshot(
+    store: &BillingStore,
+    account_id: &str,
+    subscription_id: &str,
+    payload: &Value,
+) -> Result<(), (u16, String)> {
+    let Some(raw_status) = payload
+        .get("status")
+        .and_then(Value::as_str)
+        .filter(|_| payload.get("id").and_then(Value::as_str) == Some(subscription_id))
+    else {
+        return Err((502, "Razorpay returned an unexpected subscription.".into()));
+    };
+    if payload.pointer("/notes/accountId").and_then(Value::as_str) != Some(account_id) {
+        return Err((404, "That subscription does not belong to this account.".into()));
+    }
     store
-        .apply_subscription(Subscription {
-            account_id,
-            plan: "pro".into(),
-            provider: provider.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            customer_id: payload
-                .get("customer_id")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            status,
-            currency: if provider == "razorpay" { "INR" } else { "USD" }.into(),
-            amount_minor: if provider == "razorpay" {
-                plans::PRO_MONTHLY_MINOR_INR as i64
-            } else {
-                plans::PRO_MONTHLY_MINOR_USD as i64
-            },
-            current_period_end,
-        })
-        .await?;
-    let _ = event_type;
-    Ok(json!({"received": true}))
+        .apply_subscription(subscription_from_payload(
+            "razorpay",
+            account_id.to_string(),
+            subscription_id,
+            raw_status,
+            payload,
+        ))
+        .await
 }
 
 #[cfg(test)]
@@ -668,7 +879,7 @@ mod tests {
     use uuid::Uuid;
 
     fn scratch() -> BillingStore {
-        let path = std::env::temp_dir().join(format!("alpha-billing-test-{}", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("kesami-billing-test-{}", Uuid::new_v4()));
         BillingStore::open(path).expect("temporary billing store")
     }
 
@@ -689,6 +900,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn free_ai_allowance_is_shared_idempotent_and_releasable() {
+        let store = scratch();
+        assert_eq!(store.free_ai_uses().await.unwrap(), 0);
+        for key in ["summary:auto:one", "chat:thread:one", "summary:manual:two"] {
+            assert!(store.reserve_free_ai_use(key.into()).await.unwrap());
+        }
+        assert_eq!(store.free_ai_uses().await.unwrap(), plans::FREE_MONTHLY_AI_USES);
+        assert!(!store.reserve_free_ai_use("chat:thread:extra".into()).await.unwrap());
+        assert!(store.reserve_free_ai_use("chat:thread:one".into()).await.unwrap());
+        store.release_free_ai_use("chat:thread:one".into()).await;
+        assert_eq!(store.free_ai_uses().await.unwrap(), 2);
+        assert!(store.reserve_free_ai_use("chat:thread:extra".into()).await.unwrap());
+    }
+
+    #[tokio::test]
     async fn only_an_active_pro_subscription_grants_the_paid_tier() {
         let store = scratch();
         assert_eq!(tier_for(store.active_subscription("acc-1").await.as_ref()), "free");
@@ -703,14 +929,14 @@ mod tests {
         let store = scratch();
         let payload = json!({
             "id": "sub_razorpay1",
-            "status": "activated",
+            "status": "active",
             "notes": {"accountId": "acc-2"},
             "current_end": 1_800_000_000i64,
         });
-        apply_webhook(&store, "razorpay", "subscription.activated", "evt_1", &payload).await.unwrap();
+        apply_webhook(&store, "razorpay", "evt_1", &payload).await.unwrap();
         // The provider retries the same event id: acknowledged, not re-applied.
-        apply_webhook(&store, "razorpay", "subscription.activated", "evt_1", &payload).await.unwrap();
-        let sub = store.active_subscription("acc-2").await.expect("activated");
+        apply_webhook(&store, "razorpay", "evt_1", &payload).await.unwrap();
+        let sub = store.active_subscription("acc-2").await.expect("active");
         assert_eq!(sub.status, "active");
         assert_eq!(sub.currency, "INR");
         assert_eq!(sub.current_period_end, Some(1_800_000_000_000));
@@ -718,11 +944,157 @@ mod tests {
 
     #[tokio::test]
     async fn razorpay_statuses_map_onto_entitlement_statuses() {
-        assert_eq!(map_razorpay_status("activated"), "active");
-        assert_eq!(map_razorpay_status("charged"), "active");
+        assert_eq!(map_razorpay_status("active"), "active");
+        assert_eq!(map_razorpay_status("activated"), "pending");
+        assert_eq!(map_razorpay_status("expired"), "canceled");
         assert_eq!(map_razorpay_status("cancelled"), "canceled");
         assert_eq!(map_razorpay_status("halted"), "halted");
         assert_eq!(map_razorpay_status("pending"), "pending");
+        assert_eq!(map_razorpay_status("authenticated"), "incomplete");
+        assert_eq!(map_razorpay_status("created"), "incomplete");
+    }
+
+    fn razorpay_entity(status: &str) -> Value {
+        json!({"id": "sub_Order1", "status": status, "notes": {"accountId": "acc-order"}})
+    }
+
+    #[tokio::test]
+    async fn a_real_razorpay_activation_webhook_grants_pro() {
+        let store = scratch();
+        let event = json!({
+            "entity": "event",
+            "event": "subscription.activated",
+            "contains": ["subscription"],
+            "payload": {"subscription": {"entity": {
+                "id": "sub_E2eTest0001",
+                "entity": "subscription",
+                "plan_id": "plan_fake",
+                "customer_id": "cust_E2e",
+                "status": "active",
+                "current_end": 1_800_000_000i64,
+                "notes": {"accountId": "acc-real", "email": "e2e@example.com"},
+            }}},
+            "created_at": 1_790_000_000i64,
+        });
+        let payload = razorpay_subscription_entity(&event);
+        apply_webhook(&store, "razorpay", "evt_real", &payload).await.unwrap();
+        let sub = store.active_subscription("acc-real").await.expect("active");
+        assert_eq!(tier_for(Some(&sub)), "pro");
+        assert_eq!(sub.customer_id.as_deref(), Some("cust_E2e"));
+        assert_eq!(razorpay_subscription_entity(&json!({"event": "payment.captured"})), json!({}));
+    }
+
+    #[tokio::test]
+    async fn a_late_authentication_event_never_revokes_an_active_subscription() {
+        let store = scratch();
+        apply_webhook(&store, "razorpay", "evt_act", &razorpay_entity("active")).await.unwrap();
+        apply_webhook(&store, "razorpay", "evt_auth", &razorpay_entity("authenticated")).await.unwrap();
+        assert_eq!(tier_for(store.active_subscription("acc-order").await.as_ref()), "pro");
+    }
+
+    #[tokio::test]
+    async fn a_stale_charge_never_revives_a_cancelled_subscription() {
+        let store = scratch();
+        apply_webhook(&store, "razorpay", "evt_act", &razorpay_entity("active")).await.unwrap();
+        apply_webhook(&store, "razorpay", "evt_cancel", &razorpay_entity("cancelled")).await.unwrap();
+        apply_webhook(&store, "razorpay", "evt_charge", &razorpay_entity("active")).await.unwrap();
+        assert_eq!(tier_for(store.active_subscription("acc-order").await.as_ref()), "free");
+    }
+
+    #[tokio::test]
+    async fn a_failed_charge_after_activation_still_suspends_the_paid_tier() {
+        let store = scratch();
+        apply_webhook(&store, "razorpay", "evt_act", &razorpay_entity("active")).await.unwrap();
+        apply_webhook(&store, "razorpay", "evt_pending", &razorpay_entity("pending")).await.unwrap();
+        assert_eq!(tier_for(store.active_subscription("acc-order").await.as_ref()), "free");
+        apply_webhook(&store, "razorpay", "evt_charged", &razorpay_entity("active")).await.unwrap();
+        assert_eq!(tier_for(store.active_subscription("acc-order").await.as_ref()), "pro");
+    }
+
+    #[tokio::test]
+    async fn an_event_that_fails_to_apply_is_left_for_the_provider_retry() {
+        let store = scratch();
+        store.db.lock().unwrap().execute_batch("DROP TABLE subscriptions").unwrap();
+        assert!(apply_webhook(&store, "razorpay", "evt_retry", &razorpay_entity("active")).await.is_err());
+        assert!(store.record_event("razorpay", "evt_retry").await);
+    }
+
+    #[tokio::test]
+    async fn a_razorpay_snapshot_grants_pro_only_to_the_subscribing_account() {
+        let store = scratch();
+        let entity = json!({"id": "sub_Snap1", "status": "active", "notes": {"accountId": "acc-owner"}, "current_end": 1_800_000_000i64});
+        let (status, _) = apply_razorpay_snapshot(&store, "acc-other", "sub_Snap1", &entity).await.unwrap_err();
+        assert_eq!(status, 404);
+        assert_eq!(tier_for(store.active_subscription("acc-other").await.as_ref()), "free");
+        assert!(apply_razorpay_snapshot(&store, "acc-owner", "sub_Other", &entity).await.is_err());
+        apply_razorpay_snapshot(&store, "acc-owner", "sub_Snap1", &entity).await.unwrap();
+        let sub = store.active_subscription("acc-owner").await.expect("synced");
+        assert_eq!(sub.currency, "INR");
+        assert_eq!(sub.current_period_end, Some(1_800_000_000_000));
+    }
+
+    #[tokio::test]
+    async fn every_new_event_and_subscription_change_waits_to_be_mirrored() {
+        let store = scratch();
+        apply_webhook(&store, "razorpay", "evt_act", &razorpay_entity("active")).await.unwrap();
+        let events = store.unmirrored_events().await.unwrap();
+        assert_eq!(events.iter().map(|(_, id, _)| id.as_str()).collect::<Vec<_>>(), ["evt_act"]);
+        let pending = store.unmirrored_subscriptions().await.unwrap();
+        assert_eq!(pending.len(), 1);
+        let (subscription, updated_at) = &pending[0];
+        assert_eq!(subscription.status, "active");
+
+        store.mark_event_mirrored("razorpay", "evt_act").await.unwrap();
+        store.mark_subscription_mirrored(&subscription.provider_subscription_id, updated_at - 1).await.unwrap();
+        assert_eq!(store.unmirrored_subscriptions().await.unwrap().len(), 1);
+        store.mark_subscription_mirrored(&subscription.provider_subscription_id, *updated_at).await.unwrap();
+        assert!(store.unmirrored_events().await.unwrap().is_empty());
+        assert!(store.unmirrored_subscriptions().await.unwrap().is_empty());
+
+        apply_webhook(&store, "razorpay", "evt_stale", &razorpay_entity("authenticated")).await.unwrap();
+        assert!(store.unmirrored_subscriptions().await.unwrap().is_empty());
+        assert_eq!(store.unmirrored_events().await.unwrap().len(), 1);
+
+        apply_webhook(&store, "razorpay", "evt_cancel", &razorpay_entity("cancelled")).await.unwrap();
+        let pending = store.unmirrored_subscriptions().await.unwrap();
+        assert_eq!(pending.iter().map(|(sub, _)| sub.status.as_str()).collect::<Vec<_>>(), ["canceled"]);
+    }
+
+    #[test]
+    fn a_billing_database_from_before_mirroring_is_upgraded_in_place() {
+        let path = std::env::temp_dir().join(format!("kesami-billing-legacy-{}", Uuid::new_v4()));
+        let legacy = Connection::open(&path).unwrap();
+        legacy
+            .execute_batch(
+                "CREATE TABLE subscriptions (
+                    provider_subscription_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, plan TEXT NOT NULL,
+                    provider TEXT NOT NULL, customer_id TEXT, status TEXT NOT NULL, currency TEXT NOT NULL,
+                    amount_minor INTEGER NOT NULL, current_period_end INTEGER, updated_at INTEGER NOT NULL);
+                CREATE TABLE billing_events (provider TEXT NOT NULL, event_id TEXT NOT NULL,
+                    received_at INTEGER NOT NULL, PRIMARY KEY (provider, event_id));
+                INSERT INTO subscriptions VALUES ('sub_Legacy1','acc-legacy','pro','razorpay',NULL,'active','INR',59900,NULL,1);
+                INSERT INTO billing_events VALUES ('razorpay','evt_legacy',1);",
+            )
+            .unwrap();
+        drop(legacy);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let store = BillingStore::open(path.clone()).unwrap();
+            assert_eq!(store.unmirrored_subscriptions().await.unwrap().len(), 1);
+            assert_eq!(store.unmirrored_events().await.unwrap().len(), 1);
+            assert_eq!(tier_for(store.active_subscription("acc-legacy").await.as_ref()), "pro");
+        });
+        drop(BillingStore::open(path.clone()).unwrap());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn only_well_formed_razorpay_subscription_ids_reach_the_provider_url() {
+        assert!(is_razorpay_subscription_id("sub_NYDbmFzLTAFR4Q"));
+        assert!(!is_razorpay_subscription_id("sub_"));
+        assert!(!is_razorpay_subscription_id("sub_../plans"));
+        assert!(!is_razorpay_subscription_id("plan_NYDbmFzLTAFR4Q"));
+        assert!(!is_razorpay_subscription_id(""));
     }
 
     #[test]
@@ -771,10 +1143,10 @@ mod tests {
     async fn a_stripe_cancellation_event_deactivates_the_subscription() {
         let store = scratch();
         let activated = json!({"id": "sub_stripe_x", "status": "active", "metadata": {"accountId": "acc-3"}});
-        apply_webhook(&store, "stripe", "customer.subscription.created", "evt_a", &activated).await.unwrap();
+        apply_webhook(&store, "stripe", "evt_a", &activated).await.unwrap();
         assert_eq!(tier_for(store.active_subscription("acc-3").await.as_ref()), "pro");
         let cancelled = json!({"id": "sub_stripe_x", "status": "canceled", "metadata": {"accountId": "acc-3"}});
-        apply_webhook(&store, "stripe", "customer.subscription.deleted", "evt_b", &cancelled).await.unwrap();
+        apply_webhook(&store, "stripe", "evt_b", &cancelled).await.unwrap();
         assert_eq!(tier_for(store.active_subscription("acc-3").await.as_ref()), "free");
     }
 
@@ -824,5 +1196,18 @@ mod tests {
         assert!(!config.razorpay_ready());
         assert!(!status.contains("sk_live"));
         assert!(!status.contains("whsec"));
+    }
+
+    #[test]
+    fn razorpay_checkout_requires_a_webhook_for_subscription_activation() {
+        let mut config = ProviderConfig {
+            razorpay_key_id: Some("rzp_test_public".into()),
+            razorpay_key_secret: Some("private_test_secret".into()),
+            razorpay_plan_inr: Some("plan_test".into()),
+            ..Default::default()
+        };
+        assert!(!config.razorpay_ready());
+        config.razorpay_webhook_secret = Some("webhook_test_secret".into());
+        assert!(config.razorpay_ready());
     }
 }

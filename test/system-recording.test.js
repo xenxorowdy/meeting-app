@@ -74,8 +74,8 @@ async function withMedia(run, options = {}) {
     const globals = {
         AudioContext: Context, AudioWorkletNode: Worklet, MediaStream: Stream, MediaRecorder: Recorder,
         navigator: { mediaDevices: { getDisplayMedia: async () => display, ...options.devices } },
-        alphaRecorder: bridge,
-        alphaSystemAudio: options.systemBridge,
+        kesamiRecorder: bridge,
+        kesamiSystemAudio: options.systemBridge,
     };
     for (const [name, value] of Object.entries(globals)) {
         previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));

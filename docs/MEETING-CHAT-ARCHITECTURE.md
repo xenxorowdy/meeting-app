@@ -5,13 +5,13 @@ Date: 2026-09-06.
 
 ## Outcome and boundaries
 
-Ask Alpha should answer questions about one meeting, selected meetings, a folder, or the complete library. Answers must cite the actual passages used, support follow-up questions, and clearly identify missing evidence. Retrieval and indexing run locally; only a bounded evidence packet reaches the configured answer provider.
+Ask Kesami should answer questions about one meeting, selected meetings, a folder, or the complete library. Answers must cite the actual passages used, support follow-up questions, and clearly identify missing evidence. Retrieval and indexing run locally; only a bounded evidence packet reaches the configured answer provider.
 
 The first release targets completed meetings. Live transcript indexing, autonomous actions, web search, and remote vector services are outside this release. Existing recording, summarization, and meeting file formats remain compatible. This proposal changes the chat data path; it does not redesign the existing meeting-summary generation path.
 
 ## Findings in this worktree
 
-- `apps/ui/src/components/WorkspaceView.jsx` already has meeting selection and an Ask Alpha panel. It stores history in component state and uses the first 12 visible meetings when no explicit selection exists. The meeting history hook loads at most 200 meetings, so that list cannot define library-wide search.
+- `apps/ui/src/components/WorkspaceView.jsx` already has meeting selection and an Ask Kesami panel. It stores history in component state and uses the first 12 visible meetings when no explicit selection exists. The meeting history hook loads at most 200 meetings, so that list cannot define library-wide search.
 - `apps/core-backend/src/workspace.rs::chat_prompt` serializes transcripts, summaries, notes, decisions, and actions into a shared 100,000-character allowance. It keeps the beginning and end when content overflows. There is no relevance retrieval, and a relevant passage in the middle can disappear.
 - `POST /api/chat` accepts `{ question, meetingIds, messages }` and returns `{ answer, citations }`. Citations identify meetings, not passages.
 - `summarizer.rs::answer` already supports Gemini and Claude CLI, structured output, and instructions treating sources/history as untrusted. Preserve provider selection and credential handling.
@@ -43,7 +43,7 @@ flowchart TD
     A[Meeting save / edit / deletion] --> B[Revision reconciliation queue]
     B --> C[Chunk and embed locally]
     C --> D[(SQLite passages + FTS5 + vectors)]
-    U[Ask Alpha: question + explicit scope] --> V[Validate and resolve scope]
+    U[Ask Kesami: question + explicit scope] --> V[Validate and resolve scope]
     V --> P[Resolve follow-up and query intent]
     P --> R[Scoped keyword + semantic retrieval]
     D --> R
@@ -57,7 +57,7 @@ flowchart TD
 
 ## Index and lifecycle
 
-Store the new databases in the resolved library's hidden application directory, e.g. `<library>/.alpha-chat/search.sqlite` and `threads.sqlite`. Configure explicit absolute paths and isolate libraries. Use owner-only files/directory permissions where supported, ignore runtime files, and never put data or model caches in the repository. The search database is disposable; thread history is user data. A search rebuild must never delete threads.
+Store the new databases in the resolved library's hidden application directory, e.g. `<library>/.kesami-chat/search.sqlite` and `threads.sqlite`. Configure explicit absolute paths and isolate libraries. Use owner-only files/directory permissions where supported, ignore runtime files, and never put data or model caches in the repository. The search database is disposable; thread history is user data. A search rebuild must never delete threads.
 
 Logical tables:
 

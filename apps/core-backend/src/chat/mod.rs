@@ -51,8 +51,9 @@ fn private_file(path: &std::path::Path) -> Result<()> {
 
 impl ChatService {
     pub fn new(library: PathBuf) -> Arc<Self> {
+        let _ = crate::settings::adopt_legacy_dir(&library, ".alpha-chat", ".kesami-chat");
         Arc::new(Self {
-            root: library.join(".alpha-chat"),
+            root: library.join(".kesami-chat"),
             index: Mutex::new(None),
             model: Mutex::new(None),
             model_status: Mutex::new("loading".into()),
@@ -90,7 +91,7 @@ impl ChatService {
         let this = self.clone();
         // Loading/download is independent of keyword indexing and recording.
         tokio::spawn(async move {
-            let result = if std::env::var("ALPHA_CHAT_EMBEDDINGS").as_deref() == Ok("off") {
+            let result = if kesami_core_backend::env_compat::var("KESAMI_CHAT_EMBEDDINGS").as_deref() == Ok("off") {
                 Err("disabled".to_string())
             } else {
                 embeddings::load(&this.root.join("models")).await
@@ -496,7 +497,7 @@ impl Drop for ActiveRequest {
     }
 }
 
-async fn send(state: &AppState, thread: &str, body: &Value) -> Result<Value> {
+async fn send(state: &AppState, thread: &str, body: &Value, tier: &str) -> Result<Value> {
     let question = validate_question(body)?;
     let request = body["requestId"]
         .as_str()
@@ -545,6 +546,15 @@ async fn send(state: &AppState, thread: &str, body: &Value) -> Result<Value> {
         mark_citations(&state.store, &mut cached).await;
         return Ok(cached);
     }
+    let free_use_key = (tier != "pro").then(|| format!("chat:{thread}:{request}"));
+    if let Some(key) = &free_use_key {
+        match state.billing.reserve_free_ai_use(key.clone()).await {
+            Ok(true) => {},
+            Ok(false) => return Err("FREE_AI_LIMIT".into()),
+            Err(_) => return Err("FREE_AI_STORAGE".into()),
+        }
+    }
+    let result: Result<Value> = async {
     let response = tokio::select! {
         _=cancel.cancelled()=>return Err("Question cancelled".into()),
         result=tokio::time::timeout(Duration::from_secs(60),answer(state,&scope,&question,&history))=>result.map_err(|_|"Question timed out. Try a narrower scope.")??,
@@ -568,6 +578,11 @@ async fn send(state: &AppState, thread: &str, body: &Value) -> Result<Value> {
         })
         .await?;
     Ok(response)
+    }.await;
+    if !result.as_ref().is_ok_and(|response| generated_ai_reply(response)) {
+        if let Some(key) = free_use_key { state.billing.release_free_ai_use(key).await; }
+    }
+    result
 }
 
 async fn mark_citations(store: &Store, message: &mut Value) {
@@ -590,6 +605,11 @@ async fn mark_citations(store: &Store, message: &mut Value) {
     }
 }
 
+fn generated_ai_reply(response: &Value) -> bool {
+    response["retrievalMode"] != "structured"
+        && response["coverage"]["passages"].as_i64().unwrap_or(0) > 0
+}
+
 pub async fn route(
     req: &HttpRequest,
     state: &AppState,
@@ -599,6 +619,12 @@ pub async fn route(
     match result {
         Ok(value) => json_response(200, value),
         Err(error) => {
+            if error == "FREE_AI_LIMIT" {
+                return json_response(402, json!({"error":crate::plans::free_ai_limit_message(),"code":"FREE_AI_LIMIT"}));
+            }
+            if error == "FREE_AI_STORAGE" {
+                return json_response(503, json!({"error":"AI usage storage is unavailable. Please try again.","code":"FREE_AI_STORAGE"}));
+            }
             let code = if error.contains("cancelled") {
                 "cancelled"
             } else if error.contains("timed out") {
@@ -683,7 +709,15 @@ async fn route_inner(req: &HttpRequest, state: &AppState, body: &Value) -> Resul
             .clone()
             .try_acquire_owned()
             .map_err(|_| "Chat is busy")?;
-        return tokio::time::timeout(
+        let free_use_key = (state.session_tier(req).await != "pro").then(|| format!("chat:legacy:{}", uuid::Uuid::new_v4()));
+        if let Some(key) = &free_use_key {
+            match state.billing.reserve_free_ai_use(key.clone()).await {
+                Ok(true) => {},
+                Ok(false) => return Err("FREE_AI_LIMIT".into()),
+                Err(_) => return Err("FREE_AI_STORAGE".into()),
+            }
+        }
+        let result = tokio::time::timeout(
             Duration::from_secs(60),
             answer(
                 state,
@@ -693,7 +727,11 @@ async fn route_inner(req: &HttpRequest, state: &AppState, body: &Value) -> Resul
             ),
         )
         .await
-        .map_err(|_| "Question timed out")?;
+        .map_err(|_| "Question timed out".to_string()).and_then(|answer| answer);
+        if !result.as_ref().is_ok_and(|response| generated_ai_reply(response)) {
+            if let Some(key) = free_use_key { state.billing.release_free_ai_use(key).await; }
+        }
+        return result;
     }
     if req.path == "/api/chat/index/status" && method == "GET" {
         let status = state.chat.model_status.lock().unwrap().clone();
@@ -750,7 +788,8 @@ async fn route_inner(req: &HttpRequest, state: &AppState, body: &Value) -> Resul
         }
         if parts.len() == 5 && parts[4] == "messages" {
             if method == "POST" {
-                return send(state, &id, body).await;
+                let tier = state.session_tier(req).await;
+                return send(state, &id, body, tier).await;
             }
             if method == "GET" {
                 let before = req

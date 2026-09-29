@@ -1,6 +1,6 @@
 # Production readiness checklist
 
-This document is the launch checklist for Alpha Meeting Assistant. It records
+This document is the launch checklist for Kesami Meeting Assistant. It records
 the current product boundary so a configured demo or private workspace is not
 mistaken for a public multi-tenant SaaS release.
 
@@ -56,12 +56,12 @@ Electron, Docker, and Fly secret variables take precedence.
 
 ```env
 # apps/core-backend/.env.local
-ALPHA_GEMINI_API_KEY=
-ALPHA_SARVAM_API_KEY=
-ALPHA_GOOGLE_CALENDAR_CLIENT_ID=
-ALPHA_GOOGLE_CALENDAR_CLIENT_SECRET=
-ALPHA_MICROSOFT_CALENDAR_CLIENT_ID=
-ALPHA_SUPABASE_DB_URL=
+KESAMI_GEMINI_API_KEY=
+KESAMI_SARVAM_API_KEY=
+KESAMI_GOOGLE_CALENDAR_CLIENT_ID=
+KESAMI_GOOGLE_CALENDAR_CLIENT_SECRET=
+KESAMI_MICROSOFT_CALENDAR_CLIENT_ID=
+KESAMI_SUPABASE_DB_URL=
 ```
 
 Use a host secret manager for production values instead of copying this local
@@ -73,10 +73,10 @@ Supabase is optional. Without it the backend runs entirely on local storage, and
 every route except the two below behaves exactly as before.
 
 Copy the connection string from **Supabase Dashboard → Connect → URI** into
-`ALPHA_SUPABASE_DB_URL`. The session pooler (port 5432) is the safe default; the
+`KESAMI_SUPABASE_DB_URL`. The session pooler (port 5432) is the safe default; the
 transaction pooler (port 6543) also works and disables prepared statements
 automatically, because that pooler cannot support them. As an alternative, set
-`ALPHA_SUPABASE_URL` and `ALPHA_SUPABASE_DB_PASSWORD` and the backend assembles
+`KESAMI_SUPABASE_URL` and `KESAMI_SUPABASE_DB_PASSWORD` and the backend assembles
 the direct `db.<project-ref>.supabase.co` connection itself.
 
 TLS is required: a connection string without an explicit `sslmode` is upgraded
@@ -124,7 +124,7 @@ Google Meet links. Event editing and deletion are not implemented.
 
 1. Create an Entra app registration that accepts personal Microsoft accounts.
 2. Add a **Mobile and desktop applications** redirect URI of `http://localhost`.
-3. Put its application client ID in `ALPHA_MICROSOFT_CALENDAR_CLIENT_ID`.
+3. Put its application client ID in `KESAMI_MICROSOFT_CALENDAR_CLIENT_ID`.
 4. Connect from **Settings → Calendar**.
 
 Outlook currently supplies read-only calendar events.
@@ -136,10 +136,10 @@ The included Fly deployment expects a persistent volume and these secrets:
 ```bash
 cd apps/core-backend
 fly launch --no-deploy
-fly secrets set ALPHA_BACKEND_TOKEN="<generated 32+ character token>"
-fly secrets set ALPHA_ALLOWED_ORIGINS="https://your-ui.example.com"
-fly secrets set ALPHA_GEMINI_API_KEY="..." ALPHA_SARVAM_API_KEY="..."
-fly secrets set ALPHA_SUPABASE_DB_URL="postgresql://..."
+fly secrets set KESAMI_BACKEND_TOKEN="<generated 32+ character token>"
+fly secrets set KESAMI_ALLOWED_ORIGINS="https://your-ui.example.com"
+fly secrets set KESAMI_GEMINI_API_KEY="..." KESAMI_SARVAM_API_KEY="..."
+fly secrets set KESAMI_SUPABASE_DB_URL="postgresql://..."
 fly deploy
 ```
 
@@ -150,7 +150,7 @@ cd apps/ui
 VITE_BACKEND_URL="https://your-backend.fly.dev" npm run build
 ```
 
-For browser-only hosting, set `ALPHA_ALLOW_NULL_ORIGIN=false`. Keep it `true`
+For browser-only hosting, set `KESAMI_ALLOW_NULL_ORIGIN=false`. Keep it `true`
 when Electron clients must connect, because Electron uses a null/file origin.
 
 Before a live demo, keep at least one Fly machine running to avoid wake-up
@@ -164,11 +164,11 @@ fly scale count 1 --stay-resident
 
 Passwords are created through the app's sign-up flow; there is no password
 environment variable. The backend stores `accounts.sqlite3` under
-`ALPHA_DATA_DIR`, with PBKDF2-HMAC-SHA256 password hashes and hashed session
+`KESAMI_DATA_DIR`, with PBKDF2-HMAC-SHA256 password hashes and hashed session
 tokens. Sessions last 30 days.
 
 For a hosted backend, account registration needs the owner-provided
-`ALPHA_BACKEND_TOKEN`. Do not distribute that token. Login uses a user's
+`KESAMI_BACKEND_TOKEN`. Do not distribute that token. Login uses a user's
 session token after account creation.
 
 This is appropriate for a private shared workspace. It does not isolate one

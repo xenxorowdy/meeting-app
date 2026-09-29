@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "Alpha Meeting Names",
+    "name": "Kesami Meeting Names",
     "version": "1.0.0",
-    "description": "Reads the participant list and the speaking indicator out of Google Meet and Zoom, and hands them to the Alpha meeting assistant running on this machine.",
+    "description": "Reads the participant list and the speaking indicator out of Google Meet and Zoom, and hands them to the Kesami meeting assistant running on this machine.",
     "minimum_chrome_version": "102",
     "permissions": ["storage"],
     "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
@@ -22,7 +22,7 @@
         }
     ],
     "action": {
-        "default_title": "Alpha Meeting Names",
+        "default_title": "Kesami Meeting Names",
         "default_popup": "src/popup/popup.html",
         "default_icon": {
             "16": "icons/icon16.png",

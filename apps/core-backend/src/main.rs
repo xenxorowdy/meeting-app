@@ -11,11 +11,11 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{broadcast, mpsc, Mutex, RwLock, Semaphore},
+    sync::{broadcast, mpsc, Mutex, Notify, RwLock, Semaphore},
 };
 use uuid::Uuid;
 
-use alpha_core_backend::{
+use kesami_core_backend::{
     audio::{self, AudioPacket, PacketParser, STREAM_MIC, STREAM_SYSTEM},
     denoise::NoiseSuppressor,
     dsp,
@@ -27,34 +27,48 @@ use alpha_core_backend::{
 
 mod calendar;
 use calendar::CalendarService;
+mod connectors;
+mod mcp;
+use connectors::ConnectorService;
 
 mod security;
-use security::{bearer_or_protocol_token, SecurityConfig, MAX_BODY_BYTES, MAX_HEADER_BYTES, MAX_WS_BYTES};
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::{WebSocketStream, tungstenite::{Message, protocol::{Role, WebSocketConfig}}};
+use security::{
+    bearer_or_protocol_token, SecurityConfig, MAX_BODY_BYTES, MAX_HEADER_BYTES, MAX_WS_BYTES,
+};
+use tokio_tungstenite::{
+    tungstenite::{
+        protocol::{Role, WebSocketConfig},
+        Message,
+    },
+    WebSocketStream,
+};
 
 mod accounts;
 mod billing;
 mod google_auth;
-mod supabase_auth;
 mod plans;
 mod supabase;
+mod supabase_auth;
 use accounts::AccountStore;
 use supabase::SupabaseDb;
 
-mod library;
-mod workspace;
 mod chat;
+mod library;
+mod podcast;
 mod sarvam;
 mod sarvam_live;
 mod settings;
 mod speakers;
-mod podcast;
 mod summarizer;
-use podcast::{Host as PodcastHost, PodcastService, ScriptRequest as PodcastScriptRequest, SourceTurn as PodcastSourceTurn};
+mod workspace;
+use library::Library;
+use podcast::{
+    Host as PodcastHost, PodcastService, ScriptRequest as PodcastScriptRequest,
+    SourceTurn as PodcastSourceTurn,
+};
 use sarvam::{identify_mic_speaker, label_speakers, BatchConfig, SarvamService};
 use sarvam_live::{LiveConfig, LiveEvent, LiveTranscriber};
-use library::Library;
 use settings::SettingsStore;
 use speakers::{clean_name, clean_names, DiarizedSpan, NumberedSpeakers, SpeechLog};
 use summarizer::{MeetingSummary, SummaryNote, SummaryRequest, SummaryService, SummaryTurn};
@@ -75,6 +89,7 @@ const CLIENT_DROPOUT: Duration = Duration::from_secs(15);
 /// One unscheduled-call notice per meeting URL per cooldown, no matter how
 /// often the browser re-reports the same call.
 const UNSCHEDULED_COOLDOWN_MS: i64 = 10 * 60 * 1000;
+const BILLING_MIRROR_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Whether an idle observation warrants an unscheduled-call notice: the first
 /// one for a key, a different meeting, or the same one after the cooldown.
@@ -294,7 +309,7 @@ impl Store {
         let mut meetings = library.load().await;
         meetings.extend(library.import_from(&library::legacy_file()).await);
         println!(
-            "[Alpha Core Backend] meeting library: {} ({} meeting folders)",
+            "[Kesami Core Backend] meeting library: {} ({} meeting folders)",
             library.root().display(),
             meetings.len()
         );
@@ -323,7 +338,7 @@ impl Store {
     }
 
     async fn adopt_recording(&self, meeting: &mut Meeting) -> io::Result<bool> {
-        let root = env::var_os("ALPHA_RECORDINGS_DIR").map(PathBuf::from);
+        let root = kesami_core_backend::env_compat::var_os("KESAMI_RECORDINGS_DIR").map(PathBuf::from);
         self.library
             .read()
             .await
@@ -392,7 +407,8 @@ fn posted_transcript(payload: &Value) -> Vec<TranscriptTurn> {
                 speaker: if channel == "mic" {
                     "You".into()
                 } else if (channel == "system" && supplied == Some("You"))
-                    || matches!(supplied, None | Some("") | Some("Others") | Some("Speaker")) {
+                    || matches!(supplied, None | Some("") | Some("Others") | Some("Speaker"))
+                {
                     "Speaker 1".into()
                 } else {
                     supplied.unwrap().to_string()
@@ -434,6 +450,52 @@ fn shift_intervals(intervals: &[(i64, i64)], offset_ms: i64) -> Vec<(i64, i64)> 
         .iter()
         .map(|(start, end)| (start - offset_ms, end - offset_ms))
         .collect()
+}
+
+async fn deliver_to_connector(
+    connectors: &ConnectorService,
+    store: &Store,
+    events: &broadcast::Sender<String>,
+    meeting_id: &str,
+    meeting: &Value,
+    provider: &str,
+) -> Result<Value, String> {
+    let delivery = connectors.send(provider, meeting).await;
+    record_deliveries(store, events, meeting_id, &[(provider, delivery.clone())], false).await?;
+    Ok(delivery)
+}
+
+async fn record_deliveries(
+    store: &Store,
+    events: &broadcast::Sender<String>,
+    meeting_id: &str,
+    deliveries: &[(&str, Value)],
+    automatic: bool,
+) -> Result<(), String> {
+    if let Some(mut latest) = store.get(meeting_id).await {
+        let mut recorded = latest
+            .metadata
+            .get("connectorDeliveries")
+            .filter(|value| value.is_object())
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        for (provider, delivery) in deliveries {
+            recorded[*provider] = delivery.clone();
+        }
+        set_meeting_metadata(&mut latest, "connectorDeliveries", recorded);
+        store.put(latest).await.map_err(|error| error.to_string())?;
+    }
+    for (_, delivery) in deliveries {
+        let _ = events.send(
+            json!({
+                "type": "connector_delivery",
+                "data": {"meetingId": meeting_id, "delivery": delivery, "automatic": automatic},
+                "timestamp": now_ms(),
+            })
+            .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn set_meeting_metadata(meeting: &mut Meeting, key: &str, value: Value) {
@@ -496,24 +558,24 @@ fn batch_recording_path(recording: Option<&Value>) -> Result<PathBuf, String> {
             "Sarvam batch transcription needs a completed meeting recording".to_string()
         })?;
     let relative = Path::new(relative);
-    let root = env::var_os("ALPHA_RECORDINGS_DIR")
+    let root = kesami_core_backend::env_compat::var_os("KESAMI_RECORDINGS_DIR")
         .map(PathBuf::from)
         .ok_or_else(|| {
-            "Sarvam batch transcription is available from the Alpha desktop app".to_string()
+            "Sarvam batch transcription is available from the Kesami desktop app".to_string()
         })?;
     resolve_batch_recording(&root, relative)
 }
 
 fn resolve_batch_recording(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     if relative.is_absolute() {
-        return Err("the recording path must be relative to Alpha's recording directory".into());
+        return Err("the recording path must be relative to Kesami's recording directory".into());
     }
     let canonical_root = std::fs::canonicalize(root)
-        .map_err(|cause| format!("could not open Alpha's recording directory: {cause}"))?;
+        .map_err(|cause| format!("could not open Kesami's recording directory: {cause}"))?;
     let candidate = std::fs::canonicalize(root.join(relative))
         .map_err(|cause| format!("could not open the completed meeting recording: {cause}"))?;
     if !candidate.starts_with(&canonical_root) || !candidate.is_file() {
-        return Err("the meeting recording is outside Alpha's recording directory".into());
+        return Err("the meeting recording is outside Kesami's recording directory".into());
     }
     Ok(candidate)
 }
@@ -529,6 +591,7 @@ struct AppState {
     summarizer: Arc<SummaryService>,
     settings: Arc<SettingsStore>,
     calendar: Arc<CalendarService>,
+    connectors: Arc<ConnectorService>,
     podcast: Arc<PodcastService>,
     chat: Arc<chat::ChatService>,
     accounts: Arc<AccountStore>,
@@ -536,6 +599,7 @@ struct AppState {
     billing_config: billing::ProviderConfig,
     supabase: Arc<SupabaseDb>,
     supabase_auth: Arc<supabase_auth::SupabaseAuth>,
+    billing_mirror: Arc<Notify>,
 }
 
 impl AppState {
@@ -561,7 +625,8 @@ impl AppState {
                 .settings
                 .get_bool("sarvamDiarizeAfterMeeting")
                 .await
-                .unwrap_or(true) && !self.security.hosted;
+                .unwrap_or(true)
+                && !self.security.hosted;
             status["sarvam"]["mode"] = json!("realtime");
             status["sarvam"]["model"] = json!(sarvam_live::model_name());
             status["sarvam"]["diarization"] = json!(diarize);
@@ -612,17 +677,31 @@ impl AppState {
             .send(json!({"type": kind, "data": data, "timestamp": now_ms()}).to_string());
     }
 
+    async fn session_account(&self, req: &HttpRequest) -> Option<accounts::AccountPublic> {
+        let token = bearer_or_protocol_token(&req.headers, false)?;
+        self.accounts.session_account(&token).await
+    }
+
     /// The entitlement tier of the request's account session. Anonymous and
     /// unrecognized callers are the free tier.
     async fn session_tier(&self, req: &HttpRequest) -> &'static str {
-        let Some(token) = bearer_or_protocol_token(&req.headers, false) else {
-            return "free";
-        };
-        let Some(account) = self.accounts.session_account(&token).await else {
+        let Some(account) = self.session_account(req).await else {
             return "free";
         };
         let subscription = self.billing.active_subscription(&account.id).await;
         billing::tier_for(subscription.as_ref())
+    }
+
+    async fn mirror_billing_to_supabase(&self) {
+        loop {
+            if let Err(error) = self.supabase.mirror_billing(&self.billing, &self.accounts).await {
+                eprintln!("[Kesami Core Backend] Supabase billing: {error}");
+            }
+            tokio::select! {
+                _ = self.billing_mirror.notified() => {}
+                _ = tokio::time::sleep(BILLING_MIRROR_INTERVAL) => {}
+            }
+        }
     }
 
     /// Recording minutes already stored in the current calendar month. Every
@@ -630,9 +709,11 @@ impl AppState {
     /// allowance is per backend rather than per account.
     async fn month_minutes_used(&self) -> i64 {
         let month_start = month_start_ms();
-        let meetings = self.store.list("", 10_000, 0).await;
-        meetings
-            .iter()
+        self.store
+            .meetings
+            .read()
+            .await
+            .values()
             .filter(|meeting| meeting.started_at >= month_start)
             .map(|meeting| meeting.duration_seconds.max(0))
             .sum::<i64>()
@@ -654,10 +735,10 @@ impl AppState {
             return Err("Hosted meetings require Sarvam realtime; batch transcription needs a recording on the backend machine.".into());
         }
         if provider.starts_with("sarvam") && !self.sarvam.has_key().await {
-            return Err(if provider == "sarvam-realtime" {
-                "Add a Sarvam API key in Transcription settings before starting realtime transcription."
+            return Err(if self.security.hosted {
+                "Transcription is unavailable because this Kesami service has no Sarvam API key. Contact the workspace administrator."
             } else {
-                "Add a Sarvam API key in Transcription settings before starting batch transcription."
+                "Transcription is unavailable because this Mac's Kesami backend has no Sarvam API key. Configure KESAMI_SARVAM_API_KEY in the backend's .env.local and restart Kesami."
             }
             .into());
         }
@@ -816,17 +897,11 @@ impl AppState {
                     utterance.start_ms,
                     utterance.end_ms,
                 );
-
             }
             if let Some(mut utterance) = session.system_vad.flush() {
                 utterance.start_ms += system_epoch;
                 utterance.end_ms += system_epoch;
-                tail_voice = Some((
-                    utterance.start_ms,
-                    utterance.end_ms,
-                    utterance.pcm.clone(),
-                ));
-
+                tail_voice = Some((utterance.start_ms, utterance.end_ms, utterance.pcm.clone()));
             }
             let mic_speech = std::mem::take(&mut session.mic_speech);
             let started_at = session
@@ -880,9 +955,10 @@ impl AppState {
         drop(session);
 
         let mut transcription_warning = None;
-        let diarize_recording = !self.security.hosted && (provider == "sarvam"
-            || (provider == "sarvam-realtime"
-                && self.settings.get_bool("sarvamDiarizeAfterMeeting").await != Some(false)));
+        let diarize_recording = !self.security.hosted
+            && (provider == "sarvam"
+                || (provider == "sarvam-realtime"
+                    && self.settings.get_bool("sarvamDiarizeAfterMeeting").await != Some(false)));
         if diarize_recording {
             let recording_offset = meeting
                 .recording
@@ -929,7 +1005,8 @@ impl AppState {
                     let mic_speaker = identify_mic_speaker(
                         &batch.turns,
                         &shift_intervals(&mic_speech, recording_offset),
-                    ).or_else(|| {
+                    )
+                    .or_else(|| {
                         // A confident active-speaker match from the meeting client
                         // can identify self when the microphone timing is ambiguous.
                         observed.iter().find_map(|(id, name)| {
@@ -1025,8 +1102,8 @@ impl AppState {
 
         // `autoSummarize: false` means "keep everything on device" — so do not
         // send the transcript anywhere, and do not fabricate notes either.
-        // The free tier keeps local transcription but has no AI: summaries
-        // stay empty until the workspace's account upgrades to Pro.
+        // A free workspace can spend one of its shared monthly AI uses here.
+        let mut free_auto_key = None;
         let summary = if self.settings.get_bool("autoSummarize").await == Some(false) {
             MeetingSummary {
                 summary_markdown: String::new(),
@@ -1034,17 +1111,39 @@ impl AppState {
                 ..Default::default()
             }
         } else if meeting_tier != "pro" {
-            MeetingSummary {
-                summary_markdown: String::new(),
-                provider: "unavailable".into(),
-                warning: Some("AI summaries require the Pro plan. Upgrade under Plans & pricing.".into()),
-                ..Default::default()
+            let key = format!("summary:auto:{}", meeting.id);
+            match self.billing.reserve_free_ai_use(key.clone()).await {
+                Ok(true) => {
+                    let summary = self.summarize_into(&mut meeting).await;
+                    if summary.summary_markdown.is_empty() {
+                        self.billing.release_free_ai_use(key).await;
+                    } else {
+                        free_auto_key = Some(key);
+                    }
+                    summary
+                }
+                Ok(false) => MeetingSummary {
+                    provider: "unavailable".into(),
+                    warning: Some(plans::free_ai_limit_message()),
+                    ..Default::default()
+                },
+                Err(_) => MeetingSummary {
+                    provider: "unavailable".into(),
+                    warning: Some("AI usage storage is unavailable. Please try again.".into()),
+                    ..Default::default()
+                },
             }
         } else {
             self.summarize_into(&mut meeting).await
         };
 
-        let mut meeting = self.store.put(meeting).await.map_err(|e| e.to_string())?;
+        let mut meeting = match self.store.put(meeting).await {
+            Ok(meeting) => meeting,
+            Err(error) => {
+                if let Some(key) = free_auto_key { self.billing.release_free_ai_use(key).await; }
+                return Err(error.to_string());
+            }
+        };
         if self
             .store
             .adopt_recording(&mut meeting)
@@ -1054,7 +1153,7 @@ impl AppState {
             meeting = self.store.put(meeting).await.map_err(|e| e.to_string())?;
         }
         if let Err(cause) = self.store.put_documents(&meeting).await {
-            eprintln!("[Alpha Core Backend] could not write the meeting documents: {cause}");
+            eprintln!("[Kesami Core Backend] could not write the meeting documents: {cause}");
         }
 
         let mut session = self.session.lock().await;
@@ -1084,7 +1183,36 @@ impl AppState {
         .await;
         self.emit("meeting_completed", serde_json::to_value(&meeting).unwrap())
             .await;
+        self.auto_push(&meeting).await;
         Ok(meeting)
+    }
+
+    async fn auto_push(&self, meeting: &Meeting) {
+        let mut targets = self.connectors.auto_push_targets().await;
+        if targets.is_empty() {
+            return;
+        }
+        let Ok(value) = serde_json::to_value(meeting) else {
+            return;
+        };
+        let notes = connectors::MeetingNotes::from_meeting(&value);
+        targets.retain(|provider| notes.wants(provider));
+        if targets.is_empty() {
+            return;
+        }
+        let connectors = self.connectors.clone();
+        let store = self.store.clone();
+        let events = self.events.clone();
+        let meeting_id = meeting.id.clone();
+        tokio::spawn(async move {
+            let sends = targets
+                .iter()
+                .map(|provider| async { (*provider, connectors.send(provider, &value).await) });
+            let deliveries = futures_util::future::join_all(sends).await;
+            if let Err(cause) = record_deliveries(&store, &events, &meeting_id, &deliveries, true).await {
+                eprintln!("[Kesami Core Backend] auto-push to {targets:?} failed: {cause}");
+            }
+        });
     }
 
     async fn summarize_into(&self, meeting: &mut Meeting) -> MeetingSummary {
@@ -1231,14 +1359,8 @@ impl AppState {
                             utterance.end_ms,
                         );
                     } else {
-                        heard.push((
-                            utterance.start_ms,
-                            utterance.end_ms,
-                            utterance.pcm.clone(),
-                        ));
+                        heard.push((utterance.start_ms, utterance.end_ms, utterance.pcm.clone()));
                     }
-
-
                 }
             }
         }
@@ -1374,7 +1496,12 @@ impl AppState {
         // auto-stop is on, wait out the rejoin grace before finishing here —
         // the UI will usually call the stop itself within the grace.
         let mut ended_report = None;
-        if ended && matches!(session.state, SessionState::Recording | SessionState::Paused) {
+        if ended
+            && matches!(
+                session.state,
+                SessionState::Recording | SessionState::Paused
+            )
+        {
             if session.client_end.is_none() {
                 let reason = reason.clone().unwrap_or_else(|| "ended".into());
                 let auto_stop = self.settings.get_bool("autoStopOnMeetingEnd").await != Some(false);
@@ -1606,7 +1733,9 @@ impl AppState {
 
             if stream_id == STREAM_MIC {
                 if session.echo_suppression
-                    && session.echo.repeats_meeting_audio(turn.start_ms, &turn.text)
+                    && session
+                        .echo
+                        .repeats_meeting_audio(turn.start_ms, &turn.text)
                 {
                     return;
                 }
@@ -1632,11 +1761,7 @@ impl AppState {
 
         let mut event = serde_json::to_value(&turn).unwrap_or_else(|_| json!({}));
         event["meetingId"] = json!(meeting_id);
-        self.emit(
-            "transcript_turn",
-            event,
-        )
-        .await;
+        self.emit("transcript_turn", event).await;
     }
 
     async fn remember_meeting_partial(&self, meeting_id: &str, text: &str) {
@@ -1715,7 +1840,7 @@ impl AppState {
                     fatal,
                 } => {
                     eprintln!(
-                        "[Alpha Core Backend] Sarvam realtime {}: {message}",
+                        "[Kesami Core Backend] Sarvam realtime {}: {message}",
                         channel_name(stream_id)
                     );
                     if fatal {
@@ -1738,6 +1863,8 @@ async fn main() -> io::Result<()> {
     // deployed secret injection and Electron's recording-path overrides intact.
     let _ = dotenvy::from_filename(".env.local")
         .or_else(|_| dotenvy::from_filename("apps/core-backend/.env.local"));
+    settings::adopt_legacy_data_dir();
+    library::adopt_legacy_root();
     if env::args().any(|arg| arg == "--migrate-users" || arg == "--migrate-billing") {
         // Only this explicit operator command reads development DB credentials.
         // Normal desktop startup never loads the owner connection from .env.
@@ -1773,27 +1900,27 @@ async fn main() -> io::Result<()> {
     // runs its defaults while the UI shows what the user picked last time.
     if let Some(model) = settings.get_str("aiModel").await {
         if let Err(cause) = summarizer.set_model(&model).await {
-            eprintln!("[Alpha Core Backend] stored aiModel ignored: {cause}");
+            eprintln!("[Kesami Core Backend] stored aiModel ignored: {cause}");
         }
     }
-    // An explicit ALPHA_SUMMARY_PROVIDER is a deliberate override, so a stored
+    // An explicit KESAMI_SUMMARY_PROVIDER is a deliberate override, so a stored
     // preference must not quietly replace it.
-    if env::var("ALPHA_SUMMARY_PROVIDER").is_err() {
+    if kesami_core_backend::env_compat::var("KESAMI_SUMMARY_PROVIDER").is_err() {
         if let Some(provider) = settings.get_str("summaryProvider").await {
             if let Err(cause) = summarizer.set_preference(&provider).await {
-                eprintln!("[Alpha Core Backend] stored summaryProvider ignored: {cause}");
+                eprintln!("[Kesami Core Backend] stored summaryProvider ignored: {cause}");
             }
         }
     }
     // An env key wins over a stored one, so a launcher can override without
     // rewriting the user's file.
-    if env::var("ALPHA_GEMINI_API_KEY").is_err() {
+    if kesami_core_backend::env_compat::var("KESAMI_GEMINI_API_KEY").is_err() {
         if let Some(key) = settings.gemini_key().await {
             summarizer.set_gemini_key(Some(key.clone())).await;
             podcast.set_gemini_key(Some(key)).await;
         }
     }
-    if env::var("ALPHA_SARVAM_API_KEY").is_err() {
+    if kesami_core_backend::env_compat::var("KESAMI_SARVAM_API_KEY").is_err() {
         if let Some(key) = settings.sarvam_key().await {
             sarvam.set_api_key(Some(key)).await;
         }
@@ -1818,29 +1945,31 @@ async fn main() -> io::Result<()> {
         summarizer: summarizer.clone(),
         settings: settings.clone(),
         calendar: calendar.clone(),
+        connectors: Arc::new(ConnectorService::new(settings.clone(), calendar.clone())),
         podcast: podcast.clone(),
         accounts,
         billing,
         billing_config,
         supabase: supabase.clone(),
         supabase_auth: Arc::new(supabase_auth::SupabaseAuth::from_env()),
+        billing_mirror: Arc::new(Notify::new()),
     };
 
-    println!("[Alpha Core Backend] Rust API listening on http://{host}:{port}");
+    println!("[Kesami Core Backend] Rust API listening on http://{host}:{port}");
     println!(
-        "[Alpha Core Backend] transcription engine: {}",
+        "[Kesami Core Backend] transcription engine: {}",
         state.stt_status(None).await
     );
     println!(
-        "[Alpha Core Backend] summary engine: {}",
+        "[Kesami Core Backend] summary engine: {}",
         summarizer.status_value().await
     );
 
     match supabase.endpoint() {
-        None => println!("[Alpha Core Backend] Supabase: not configured (local storage only)"),
+        None => println!("[Kesami Core Backend] Supabase: not configured (local storage only)"),
         Some(endpoint) => {
             println!(
-                "[Alpha Core Backend] Supabase: connecting to {}:{}/{} as {}",
+                "[Kesami Core Backend] Supabase: connecting to {}:{}/{} as {}",
                 endpoint.host, endpoint.port, endpoint.database, endpoint.username
             );
             let probe = supabase.clone();
@@ -1848,13 +1977,19 @@ async fn main() -> io::Result<()> {
                 let check = probe.check().await;
                 match check.error {
                     None => println!(
-                        "[Alpha Core Backend] Supabase: connected in {}ms ({})",
+                        "[Kesami Core Backend] Supabase: connected in {}ms ({})",
                         check.latency_ms,
-                        check.server_version.unwrap_or_else(|| "unknown version".into())
+                        check
+                            .server_version
+                            .unwrap_or_else(|| "unknown version".into())
                     ),
-                    Some(error) => eprintln!("[Alpha Core Backend] Supabase: unavailable — {error}"),
+                    Some(error) => {
+                        eprintln!("[Kesami Core Backend] Supabase: unavailable — {error}")
+                    }
                 }
             });
+            let mirror = state.clone();
+            tokio::spawn(async move { mirror.mirror_billing_to_supabase().await });
         }
     }
 
@@ -1905,7 +2040,11 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
                 Some(token) => state.accounts.session_account(&token).await.is_some(),
                 None => false,
             };
-            if valid_session { None } else { denial }
+            if valid_session {
+                None
+            } else {
+                denial
+            }
         }
         denial => denial,
     };
@@ -1929,10 +2068,7 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
                 .get("sec-websocket-key")
                 .map(String::as_str)
                 .unwrap_or(""),
-            request
-                .headers
-                .get("sec-websocket-protocol")
-                .is_some_and(|value| value.split(',').any(|p| p.trim() == "alpha")),
+            offered_protocol(request.headers.get("sec-websocket-protocol").map(String::as_str)),
             state,
             tier,
         )
@@ -1942,8 +2078,14 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
     let mut extra = cors_headers(&request, &state.security);
     if request.method == "OPTIONS" {
         extra.extend([
-            ("Access-Control-Allow-Methods".to_string(), "GET, POST, PATCH, DELETE, OPTIONS".to_string()),
-            ("Access-Control-Allow-Headers".to_string(), "Content-Type, Authorization".to_string()),
+            (
+                "Access-Control-Allow-Methods".to_string(),
+                "GET, POST, PATCH, DELETE, OPTIONS".to_string(),
+            ),
+            (
+                "Access-Control-Allow-Headers".to_string(),
+                "Content-Type, Authorization".to_string(),
+            ),
             ("Access-Control-Max-Age".to_string(), "86400".to_string()),
         ]);
     }
@@ -1991,7 +2133,10 @@ fn access_decision(
         return Some((403, "Unrecognized Host header".into()));
     }
     if !security.origin_allowed(req.headers.get("origin").map(String::as_str)) {
-        return Some((403, "This origin is not allowed to connect to this backend".into()));
+        return Some((
+            403,
+            "This origin is not allowed to connect to this backend".into(),
+        ));
     }
     if req.method == "OPTIONS" {
         return None; // Preflights carry no credentials by design.
@@ -2146,23 +2291,39 @@ fn auth_grant_json(grant: accounts::AuthGrant) -> Value {
 }
 
 async fn google_sign_in_client_id(settings: &SettingsStore) -> Option<String> {
-    for key in ["ALPHA_GOOGLE_OAUTH_CLIENT_ID", "ALPHA_GOOGLE_CALENDAR_CLIENT_ID"] {
-        if let Ok(value) = env::var(key) {
+    for key in [
+        "KESAMI_GOOGLE_OAUTH_CLIENT_ID",
+        "KESAMI_GOOGLE_CALENDAR_CLIENT_ID",
+    ] {
+        if let Ok(value) = kesami_core_backend::env_compat::var(key) {
             let value = value.trim().to_string();
-            if !value.is_empty() { return Some(value); }
+            if !value.is_empty() {
+                return Some(value);
+            }
         }
     }
-    settings.credential("googleCalendarClientId").await.filter(|value| !value.trim().is_empty())
+    settings
+        .credential("googleCalendarClientId")
+        .await
+        .filter(|value| !value.trim().is_empty())
 }
 
 async fn google_sign_in_client_secret(settings: &SettingsStore) -> Option<String> {
-    for key in ["ALPHA_GOOGLE_OAUTH_CLIENT_SECRET", "ALPHA_GOOGLE_CALENDAR_CLIENT_SECRET"] {
-        if let Ok(value) = env::var(key) {
+    for key in [
+        "KESAMI_GOOGLE_OAUTH_CLIENT_SECRET",
+        "KESAMI_GOOGLE_CALENDAR_CLIENT_SECRET",
+    ] {
+        if let Ok(value) = kesami_core_backend::env_compat::var(key) {
             let value = value.trim().to_string();
-            if !value.is_empty() { return Some(value); }
+            if !value.is_empty() {
+                return Some(value);
+            }
         }
     }
-    settings.credential("googleCalendarClientSecret").await.filter(|value| !value.trim().is_empty())
+    settings
+        .credential("googleCalendarClientSecret")
+        .await
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn build_stamp() -> &'static Value {
@@ -2187,8 +2348,10 @@ fn json_response(status: u16, value: Value) -> (u16, &'static str, String) {
 }
 
 fn podcast_path(path: &str) -> bool {
-    path == "/api/podcast" || path.starts_with("/api/podcast/")
-        || path == "/api/podcasts" || path.starts_with("/api/podcasts/")
+    path == "/api/podcast"
+        || path.starts_with("/api/podcast/")
+        || path == "/api/podcasts"
+        || path.starts_with("/api/podcasts/")
 }
 
 async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, String) {
@@ -2196,7 +2359,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         return (204, "text/plain", String::new());
     }
     if podcast_path(&req.path) {
-        return json_response(403, json!({"error":"Podcast is disabled.","code":"FEATURE_DISABLED"}));
+        return json_response(
+            403,
+            json!({"error":"Podcast is disabled.","code":"FEATURE_DISABLED"}),
+        );
     }
     let body: Value = serde_json::from_slice(&req.body).unwrap_or_else(|_| json!({}));
     match (req.method.as_str(), req.path.as_str()) {
@@ -2214,14 +2380,21 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             // Accounts share this workspace. Never allow anonymous registration
             // to bypass a deployment token and expose existing meetings.
             if !state.security.authorized(&req.headers, false) {
-                return json_response(403, json!({"error": "Account creation requires the workspace owner's access token. You can still use the app locally without an account."}));
+                return json_response(
+                    403,
+                    json!({"error": "Account creation requires the workspace owner's access token. You can still use the app locally without an account."}),
+                );
             }
             match state
                 .accounts
                 .register(
                     body.get("name").and_then(Value::as_str).unwrap_or_default(),
-                    body.get("email").and_then(Value::as_str).unwrap_or_default(),
-                    body.get("password").and_then(Value::as_str).unwrap_or_default(),
+                    body.get("email")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    body.get("password")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
                 )
                 .await
             {
@@ -2233,8 +2406,12 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             match state
                 .accounts
                 .login(
-                    body.get("email").and_then(Value::as_str).unwrap_or_default(),
-                    body.get("password").and_then(Value::as_str).unwrap_or_default(),
+                    body.get("email")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    body.get("password")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
                 )
                 .await
             {
@@ -2244,44 +2421,96 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         }
         ("POST", "/api/auth/google") => {
             let Some(client_id) = google_sign_in_client_id(&state.settings).await else {
-                return json_response(503, json!({"error":"Google sign-in needs a Desktop app OAuth client ID in Calendar settings or ALPHA_GOOGLE_OAUTH_CLIENT_ID."}));
+                return json_response(
+                    503,
+                    json!({"error":"Google sign-in needs a Desktop app OAuth client ID in Calendar settings or KESAMI_GOOGLE_OAUTH_CLIENT_ID."}),
+                );
             };
             let code = body.get("code").and_then(Value::as_str).unwrap_or_default();
-            let verifier = body.get("verifier").and_then(Value::as_str).unwrap_or_default();
-            let redirect = body.get("redirectUri").and_then(Value::as_str).unwrap_or_default();
-            let nonce = body.get("nonce").and_then(Value::as_str).unwrap_or_default();
-            if nonce.is_empty() || nonce.len() > 128 { return json_response(400, json!({"error":"Google sign-in nonce is invalid."})); }
-            if let Err((status,error)) = state.accounts.throttle_google_attempt() {
+            let verifier = body
+                .get("verifier")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let redirect = body
+                .get("redirectUri")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let nonce = body
+                .get("nonce")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if nonce.is_empty() || nonce.len() > 128 {
+                return json_response(400, json!({"error":"Google sign-in nonce is invalid."}));
+            }
+            if let Err((status, error)) = state.accounts.throttle_google_attempt() {
                 return json_response(status, json!({"error":error}));
             }
             let secret = google_sign_in_client_secret(&state.settings).await;
-            let id_token = match google_auth::exchange_code(code, verifier, redirect, &client_id, secret.as_deref()).await {
-                Ok(token) => token,
+            let tokens = match google_auth::exchange_code(
+                code,
+                verifier,
+                redirect,
+                &client_id,
+                secret.as_deref(),
+            )
+            .await
+            {
+                Ok(tokens) => tokens,
                 Err(error) => return json_response(401, json!({"error":error})),
             };
-            let identity = match google_auth::verify_id_token(&id_token, &client_id, nonce).await {
+            let id_token = tokens.get("id_token").and_then(Value::as_str).unwrap_or_default();
+            let identity = match google_auth::verify_id_token(id_token, &client_id, nonce).await {
                 Ok(identity) => identity,
                 Err(error) => return json_response(401, json!({"error":error})),
             };
-            match state.accounts.google_sign_in(&identity.sub, &identity.email, &identity.name, state.security.authorized(&req.headers, false)).await {
+            if !state.security.hosted && state.calendar.shares_google_sign_in(&client_id).await {
+                if let Err(cause) = state.calendar.adopt_google_sign_in(&tokens).await {
+                    eprintln!("[Kesami Core Backend] Google sign-in did not connect the calendar: {cause}");
+                }
+            }
+            match state
+                .accounts
+                .google_sign_in(
+                    &identity.sub,
+                    &identity.email,
+                    &identity.name,
+                    state.security.authorized(&req.headers, false),
+                )
+                .await
+            {
                 Ok(grant) => json_response(200, auth_grant_json(grant)),
-                Err((status,error)) => json_response(status, json!({"error":error})),
+                Err((status, error)) => json_response(status, json!({"error":error})),
             }
         }
         ("POST", "/api/auth/supabase/google") => {
             if let Err((status, error)) = state.accounts.throttle_google_attempt() {
                 return json_response(status, json!({"error": error}));
             }
-            let identity = match state.supabase_auth.exchange_google_code(
-                body.get("code").and_then(Value::as_str).unwrap_or_default(),
-                body.get("verifier").and_then(Value::as_str).unwrap_or_default(),
-            ).await {
+            let identity = match state
+                .supabase_auth
+                .exchange_google_code(
+                    body.get("code").and_then(Value::as_str).unwrap_or_default(),
+                    body.get("verifier")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )
+                .await
+            {
                 Ok(identity) => identity,
                 Err((status, error)) => return json_response(status, json!({"error": error})),
             };
             // Preserve the Google subject mapping when moving an existing local
             // account to Supabase. Matching email alone never links accounts.
-            match state.accounts.google_sign_in(&identity.sub, &identity.email, &identity.name, state.security.authorized(&req.headers, false)).await {
+            match state
+                .accounts
+                .google_sign_in(
+                    &identity.sub,
+                    &identity.email,
+                    &identity.name,
+                    state.security.authorized(&req.headers, false),
+                )
+                .await
+            {
                 Ok(grant) => json_response(200, auth_grant_json(grant)),
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
@@ -2294,25 +2523,44 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }
             json_response(200, json!({"success": true}))
         }
-        ("GET", "/api/auth/config") => json_response(200, json!({
-            "registrationAllowed": state.security.authorized(&req.headers, false),
-            "localAccess": !state.security.hosted,
-            "workspaceScope": "shared",
-            "googleClientId": google_sign_in_client_id(&state.settings).await,
-            "googleAuth": state.supabase_auth.public_config()
-        })),
+        ("GET", "/api/auth/config") => {
+            let google_client_id = google_sign_in_client_id(&state.settings).await;
+            let google_calendar = match google_client_id.as_deref() {
+                Some(client_id) if !state.security.hosted => state.calendar.wants_google_sign_in(client_id).await,
+                _ => false,
+            };
+            json_response(
+                200,
+                json!({
+                    "registrationAllowed": state.security.authorized(&req.headers, false),
+                    "localAccess": !state.security.hosted,
+                    "workspaceScope": "shared",
+                    "googleClientId": google_client_id,
+                    "googleCalendar": google_calendar,
+                    "googleAuth": state.supabase_auth.public_config()
+                }),
+            )
+        }
         ("GET", "/api/plans") => {
-            json_response(200, plans::catalog(state.billing_config.billing_enabled()))
+            let mut catalog = plans::catalog(state.billing_config.billing_enabled());
+            catalog["billing"] = state.billing_config.public_status();
+            json_response(200, catalog)
         }
         ("POST", "/api/billing/checkout") => {
-            let Some(token) = bearer_or_protocol_token(&req.headers, false) else {
+            if !state.billing_config.billing_enabled() {
+                return json_response(503, json!({"error": "Billing is not configured on this backend."}));
+            }
+            let Some(account) = state.session_account(&req).await else {
                 return json_response(401, json!({"error": "Sign in to start a subscription."}));
             };
-            let Some(account) = state.accounts.session_account(&token).await else {
-                return json_response(401, json!({"error": "Sign in to start a subscription."}));
-            };
+            if state.billing.active_subscription(&account.id).await.is_some() {
+                return json_response(409, json!({"error": "Your Pro subscription is already active."}));
+            }
             let plan = body.get("plan").and_then(Value::as_str).unwrap_or_default();
-            let currency = body.get("currency").and_then(Value::as_str).unwrap_or_default();
+            let currency = body
+                .get("currency")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let origin = req.headers.get("origin").cloned().unwrap_or_default();
             match billing::create_checkout(
                 &state.billing_config,
@@ -2328,24 +2576,74 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
+        ("POST", "/api/billing/razorpay/sync") => {
+            let Some(account) = state.session_account(&req).await else {
+                return json_response(401, json!({"error": "Sign in to confirm your subscription."}));
+            };
+            let subscription_id = body
+                .get("subscriptionId")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if let Err((status, error)) = billing::sync_razorpay_subscription(
+                &state.billing_config,
+                &state.billing,
+                &account.id,
+                subscription_id,
+            )
+            .await
+            {
+                return json_response(status, json!({"error": error}));
+            }
+            state.billing_mirror.notify_one();
+            let subscription = state.billing.active_subscription(&account.id).await;
+            json_response(
+                200,
+                json!({
+                    "tier": billing::tier_for(subscription.as_ref()),
+                    "subscription": subscription.as_ref().map(billing::BillingStore::subscription_value),
+                }),
+            )
+        }
         // Webhooks authenticate by their HMAC signatures, not by the workspace
         // token, so they are exempt from it (see is_public_path) and must
         // never be treated as account sessions.
         ("POST", "/api/billing/webhook/stripe") => {
             let Some(secret) = state.billing_config.stripe_webhook_secret.as_deref() else {
-                return json_response(503, json!({"error": "Stripe billing is not configured on this backend."}));
+                return json_response(
+                    503,
+                    json!({"error": "Stripe billing is not configured on this backend."}),
+                );
             };
-            let signature = req.headers.get("stripe-signature").map(String::as_str).unwrap_or_default();
-            if let Err(error) = billing::verify_stripe_signature(secret, signature, &req.body, now_ms()) {
+            let signature = req
+                .headers
+                .get("stripe-signature")
+                .map(String::as_str)
+                .unwrap_or_default();
+            if let Err(error) =
+                billing::verify_stripe_signature(secret, signature, &req.body, now_ms())
+            {
                 return json_response(400, json!({"error": error}));
             }
             let Ok(event) = serde_json::from_slice::<Value>(&req.body) else {
-                return json_response(400, json!({"error": "The webhook payload is not valid JSON."}));
+                return json_response(
+                    400,
+                    json!({"error": "The webhook payload is not valid JSON."}),
+                );
             };
             match billing::parse_stripe_event(&event) {
-                Ok((event_type, event_id, payload)) => {
-                    match billing::apply_webhook(&state.billing, "stripe", &event_type, &event_id, &payload).await {
-                        Ok(value) => json_response(200, value),
+                Ok((_, event_id, payload)) => {
+                    match billing::apply_webhook(
+                        &state.billing,
+                        "stripe",
+                        &event_id,
+                        &payload,
+                    )
+                    .await
+                    {
+                        Ok(value) => {
+                            state.billing_mirror.notify_one();
+                            json_response(200, value)
+                        }
                         Err((status, error)) => json_response(status, json!({"error": error})),
                     }
                 }
@@ -2354,65 +2652,101 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         }
         ("POST", "/api/billing/webhook/razorpay") => {
             let Some(secret) = state.billing_config.razorpay_webhook_secret.as_deref() else {
-                return json_response(503, json!({"error": "Razorpay billing is not configured on this backend."}));
+                return json_response(
+                    503,
+                    json!({"error": "Razorpay billing is not configured on this backend."}),
+                );
             };
-            let signature = req.headers.get("x-razorpay-signature").map(String::as_str).unwrap_or_default();
+            let signature = req
+                .headers
+                .get("x-razorpay-signature")
+                .map(String::as_str)
+                .unwrap_or_default();
             if let Err(error) = billing::verify_razorpay_signature(secret, signature, &req.body) {
                 return json_response(400, json!({"error": error}));
             }
             let Ok(event) = serde_json::from_slice::<Value>(&req.body) else {
-                return json_response(400, json!({"error": "The webhook payload is not valid JSON."}));
+                return json_response(
+                    400,
+                    json!({"error": "The webhook payload is not valid JSON."}),
+                );
             };
-            let event_type = event.get("event").and_then(Value::as_str).unwrap_or_default();
-            let event_id = req.headers.get("x-razorpay-event-id").cloned().unwrap_or_default();
-            if event_id.is_empty() {
-                return json_response(400, json!({"error": "The Razorpay webhook carries no event id."}));
-            }
-            let payload = event
-                .pointer("/payload/subscription/entity")
+            let event_id = req
+                .headers
+                .get("x-razorpay-event-id")
                 .cloned()
-                .unwrap_or_else(|| json!({}));
-            match billing::apply_webhook(&state.billing, "razorpay", event_type, &event_id, &payload).await {
-                Ok(value) => json_response(200, value),
+                .unwrap_or_default();
+            if event_id.is_empty() {
+                return json_response(
+                    400,
+                    json!({"error": "The Razorpay webhook carries no event id."}),
+                );
+            }
+            let payload = billing::razorpay_subscription_entity(&event);
+            match billing::apply_webhook(
+                &state.billing,
+                "razorpay",
+                &event_id,
+                &payload,
+            )
+            .await
+            {
+                Ok(value) => {
+                    state.billing_mirror.notify_one();
+                    json_response(200, value)
+                }
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
         ("GET", "/api/billing/subscription") => {
-            let Some(token) = bearer_or_protocol_token(&req.headers, false) else {
-                return json_response(401, json!({"error": "Sign in to read your subscription."}));
-            };
-            let Some(account) = state.accounts.session_account(&token).await else {
+            let Some(account) = state.session_account(&req).await else {
                 return json_response(401, json!({"error": "Sign in to read your subscription."}));
             };
             let subscription = state.billing.active_subscription(&account.id).await;
             let tier = billing::tier_for(subscription.as_ref());
             let minutes_used = state.month_minutes_used().await;
-            json_response(200, json!({
-                "tier": tier,
-                "subscription": subscription.as_ref().map(billing::BillingStore::subscription_value),
-                "billing": state.billing_config.public_status(),
-                "usage": {
-                    "minutesUsed": minutes_used,
-                    "freeMonthlyMinutes": plans::FREE_MONTHLY_MINUTES,
-                    "canRecord": tier == "pro" || minutes_used < plans::FREE_MONTHLY_MINUTES,
-                }
-            }))
+            let ai_uses = match state.billing.free_ai_uses().await {
+                Ok(uses) => uses,
+                Err((status, error)) => return json_response(status, json!({"error":error})),
+            };
+            json_response(
+                200,
+                json!({
+                    "tier": tier,
+                    "subscription": subscription.as_ref().map(billing::BillingStore::subscription_value),
+                    "billing": state.billing_config.public_status(),
+                    "usage": {
+                        "minutesUsed": minutes_used,
+                        "freeMonthlyMinutes": plans::FREE_MONTHLY_MINUTES,
+                        "canRecord": plans::can_record(tier, minutes_used),
+                        "aiUses": ai_uses,
+                        "freeMonthlyAiUses": plans::FREE_MONTHLY_AI_USES,
+                        "canUseAi": tier == "pro" || ai_uses < plans::FREE_MONTHLY_AI_USES,
+                    }
+                }),
+            )
         }
         ("POST", "/api/auth/password") => {
             let token = bearer_or_protocol_token(&req.headers, false).unwrap_or_default();
-            match state.accounts.change_password(&token,
-                body.get("currentPassword").and_then(Value::as_str).unwrap_or_default(),
-                body.get("password").and_then(Value::as_str).unwrap_or_default()).await {
+            match state
+                .accounts
+                .change_password(
+                    &token,
+                    body.get("currentPassword")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    body.get("password")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )
+                .await
+            {
                 Ok(grant) => json_response(200, auth_grant_json(grant)),
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
         ("GET", "/api/auth/session") => {
-            let account = match bearer_or_protocol_token(&req.headers, false) {
-                Some(token) => state.accounts.session_account(&token).await,
-                None => None,
-            };
-            json_response(200, json!({"account": account}))
+            json_response(200, json!({"account": state.session_account(&req).await}))
         }
         ("GET", "/api/folders") | ("POST", "/api/folders") => {
             match workspace::folders(&state.store, (req.method == "POST").then_some(&body)).await {
@@ -2421,12 +2755,6 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }
         }
         (_, path) if path == "/api/chat" || path.starts_with("/api/chat/") => {
-            if state.session_tier(&req).await != "pro" {
-                return json_response(402, json!({
-                    "error": "AI chat requires the Pro plan. Upgrade under Plans & pricing.",
-                    "code": "PRO_REQUIRED",
-                }));
-            }
             chat::route(req, state, &body).await
         }
         ("GET", "/api/status") => json_response(200, state.status().await),
@@ -2434,7 +2762,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         ("POST", "/api/supabase/check") => {
             if state.supabase.configured() {
                 let check = state.supabase.check().await;
-                json_response(if check.ok { 200 } else { 503 }, state.supabase.status_value().await)
+                json_response(
+                    if check.ok { 200 } else { 503 },
+                    state.supabase.status_value().await,
+                )
             } else {
                 json_response(503, state.supabase.status_value().await)
             }
@@ -2464,23 +2795,26 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             // Pro records without limits. Anonymous local use is free tier.
             let tier = state.session_tier(&req).await;
             if tier != "pro" {
-                let used = state.month_minutes_used().await;
+                let used = 0;
                 if used >= plans::FREE_MONTHLY_MINUTES {
-                    return json_response(402, json!({
-                        "error": format!(
-                            "Monthly free limit reached ({used} of {limit} recording minutes this month). Upgrade to Pro for unlimited recording.",
-                            used = used.min(plans::FREE_MONTHLY_MINUTES),
-                            limit = plans::FREE_MONTHLY_MINUTES,
-                        ),
-                        "code": "FREE_MONTHLY_LIMIT",
-                    }));
+                    return json_response(
+                        402,
+                        json!({
+                            "error": format!(
+                                "Monthly free limit reached ({used} of {limit} recording minutes this month). Upgrade to Pro for unlimited recording.",
+                                used = used.min(plans::FREE_MONTHLY_MINUTES),
+                                limit = plans::FREE_MONTHLY_MINUTES,
+                            ),
+                            "code": "FREE_MONTHLY_LIMIT",
+                        }),
+                    );
                 }
             }
             match state.start(&body, tier).await {
                 Ok(m) => json_response(200, json!({"success":true,"meeting":m})),
                 Err(e) => json_response(409, json!({"error":e})),
             }
-        },
+        }
         ("POST", "/api/meetings/pause") => {
             let mut s = state.session.lock().await;
             if matches!(s.state, SessionState::Recording) {
@@ -2510,7 +2844,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json!({
                     "tier": tier,
                     "status": "active",
-                    "canRecord": tier == "pro" || minutes_used < plans::FREE_MONTHLY_MINUTES,
+                    "canRecord": plans::can_record(tier, minutes_used),
                     "requiresAccount": false,
                     "billingEnabled": state.billing_config.billing_enabled(),
                     "licenseActivationSupported": false,
@@ -2520,17 +2854,22 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     }
                 }),
             )
-        },
+        }
         ("POST", "/api/license/activate") => json_response(
             200,
             json!({"success":false,"error":"License verification is not implemented in the Rust core yet."}),
         ),
         ("GET", "/api/settings") => {
             let mut settings = state.settings.public_value().await;
-            settings["deploymentMode"] = json!(if state.security.hosted { "hosted" } else { "local" });
+            settings["deploymentMode"] = json!(if state.security.hosted {
+                "hosted"
+            } else {
+                "local"
+            });
             settings["supportsLocalRecording"] = json!(!state.security.hosted);
             settings["calendarConnectSupported"] = json!(!state.security.hosted);
-            settings["geminiApiKeySet"] = state.summarizer.status_value().await["geminiKeySet"].clone();
+            settings["geminiApiKeySet"] =
+                state.summarizer.status_value().await["geminiKeySet"].clone();
             settings["sarvamApiKeySet"] = json!(state.sarvam.has_key().await);
             if state.security.hosted {
                 settings["sarvamDiarizeAfterMeeting"] = json!(false);
@@ -2560,6 +2899,15 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             let Some(object) = incoming.as_object() else {
                 return json_response(400, json!({"error": "settings must be an object"}));
             };
+            // Hosted users share one provider configuration. An account session
+            // may change preferences, but only the deployment owner may replace
+            // the server's provider credentials.
+            if state.security.hosted
+                && (object.contains_key("sarvamApiKey") || object.contains_key("geminiApiKey"))
+                && !state.security.authorized(&req.headers, false)
+            {
+                return json_response(403, json!({"error": "Only the workspace administrator can update provider credentials."}));
+            }
             let mut warnings = Vec::new();
 
             if let Some(provider) = object.get("transcriptionProvider").and_then(Value::as_str) {
@@ -2593,7 +2941,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }
             for key in ["noiseSuppression", "echoSuppression"] {
                 if object.get(key).is_some_and(|value| !value.is_boolean()) {
-                    return json_response(400, json!({"error": format!("{key} must be true or false")}));
+                    return json_response(
+                        400,
+                        json!({"error": format!("{key} must be true or false")}),
+                    );
                 }
             }
             if let Some(value) = object.get("sarvamNumSpeakers") {
@@ -2650,7 +3001,8 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 for suffix in ["ClientId", "ClientSecret"] {
                     let field = format!("{provider}Calendar{suffix}");
                     if let Some(value) = object.get(&field).and_then(Value::as_str) {
-                        if let Err(cause) = state.settings.set_credential(&field, Some(value)).await {
+                        if let Err(cause) = state.settings.set_credential(&field, Some(value)).await
+                        {
                             warnings.push(format!("could not store {field}: {cause}"));
                         }
                     }
@@ -2692,9 +3044,12 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 }),
             )
         }
-        ("POST", "/api/stt/config") => json_response(410, json!({
-            "error": "Local Whisper has been removed. Configure Sarvam in Transcription settings.",
-        })),
+        ("POST", "/api/stt/config") => json_response(
+            410,
+            json!({
+                "error": "Local Whisper has been removed. Configure Sarvam in Transcription settings.",
+            }),
+        ),
         ("POST", "/api/summary/config") => {
             if let Some(model) = body.get("model").and_then(Value::as_str) {
                 if let Err(cause) = state.summarizer.set_model(model).await {
@@ -2706,22 +3061,115 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json!({"success": true, "summary": state.summarizer.status_value().await}),
             )
         }
-        ("GET", "/api/podcast/status") => {
-            json_response(200, state.podcast.status_value().await)
+        ("GET", "/api/podcast/status") => json_response(200, state.podcast.status_value().await),
+        ("POST", "/mcp") => {
+            let library = state.store.meetings.read().await;
+            let load_meetings = || {
+                let mut meetings: Vec<&Meeting> = library.values().collect();
+                meetings.sort_by_key(|m| std::cmp::Reverse(m.started_at));
+                meetings
+                    .into_iter()
+                    .filter_map(|meeting| serde_json::to_value(meeting).ok())
+                    .collect()
+            };
+            let reply = mcp::handle(&req.body, load_meetings, VERSION, now_ms());
+            drop(library);
+            match reply {
+                Some(reply) => json_response(200, reply),
+                None => (202, "application/json", String::new()),
+            }
+        }
+        ("GET", "/mcp") | ("DELETE", "/mcp") => json_response(
+            405,
+            json!({"error": "This MCP server is stateless: send JSON-RPC messages with POST."}),
+        ),
+        ("GET", "/api/connectors") => {
+            let mut status = state.connectors.status().await;
+            status["mcp"] = json!({"path": "/mcp", "hosted": state.security.hosted});
+            json_response(200, status)
+        }
+        ("POST", "/api/connectors/save") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let config = body.get("config").cloned().unwrap_or_else(|| json!({}));
+            match state.connectors.save(provider, &config).await {
+                Ok(connector) => json_response(200, json!({"success": true, "connector": connector})),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("POST", "/api/connectors/connect") => {
+            if state.security.hosted {
+                return json_response(
+                    409,
+                    json!({"error": "Google sign-in requires the local backend. Hosted OAuth is not configured."}),
+                );
+            }
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            match state.connectors.connect(provider).await {
+                Ok(value) => json_response(200, value),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("POST", "/api/connectors/disconnect") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            match state.connectors.disconnect(provider).await {
+                Ok(()) => json_response(200, json!({"success": true, "provider": provider})),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("POST", "/api/connectors/test") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            match state.connectors.test(provider).await {
+                Ok(message) => json_response(200, json!({"success": true, "message": message})),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("POST", "/api/connectors/send") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let meeting_id = body.get("meetingId").and_then(Value::as_str).unwrap_or_default();
+            let force = body.get("force").and_then(Value::as_bool).unwrap_or(false);
+            if connectors::spec_for(provider).is_none() {
+                return json_response(400, json!({"error": format!("unknown connector: {provider}")}));
+            }
+            let Some(meeting) = state.store.get(meeting_id).await else {
+                return json_response(404, json!({"error": "Meeting not found"}));
+            };
+            let value = serde_json::to_value(&meeting).unwrap_or_else(|_| json!({}));
+            if !force && connectors::delivered_ok(&value, provider) {
+                return json_response(
+                    409,
+                    json!({"error": "Already sent. Send again to create another copy.", "code": "ALREADY_SENT"}),
+                );
+            }
+            match deliver_to_connector(&state.connectors, &state.store, &state.events, meeting_id, &value, provider).await {
+                Ok(delivery) => json_response(
+                    if delivery["ok"] == json!(true) { 200 } else { 502 },
+                    json!({"delivery": delivery, "error": delivery.get("error")}),
+                ),
+                Err(cause) => json_response(500, json!({"error": cause})),
+            }
         }
         ("GET", "/api/calendar/status") => json_response(200, state.calendar.status().await),
         ("POST", "/api/calendar/connect") => {
             if state.security.hosted {
-                return json_response(409, json!({"error": "Calendar sign-in requires the local backend. Hosted OAuth is not configured."}));
+                return json_response(
+                    409,
+                    json!({"error": "Calendar sign-in requires the local backend. Hosted OAuth is not configured."}),
+                );
             }
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             match state.calendar.begin(provider).await {
                 Ok(value) => json_response(200, value),
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
         ("POST", "/api/calendar/disconnect") => {
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             match state.calendar.disconnect(provider).await {
                 Ok(()) => json_response(200, json!({"success": true, "provider": provider})),
                 Err(cause) => json_response(400, json!({"error": cause})),
@@ -2782,33 +3230,62 @@ async fn route_podcast(
             } else if let Some(meeting_id) = body.get("meetingId").and_then(Value::as_str) {
                 match state.store.get(meeting_id).await {
                     Some(meeting) => serde_json::to_value(
-                        meeting.transcript.into_iter().map(|turn| PodcastSourceTurn {
-                            id: turn.id,
-                            speaker: turn.speaker,
-                            start_ms: turn.start_ms,
-                            text: turn.text,
-                        }).collect::<Vec<_>>()
-                    ).unwrap_or_else(|_| json!([])),
-                    None => return json_response(404, json!({"error": "Source meeting not found"})),
+                        meeting
+                            .transcript
+                            .into_iter()
+                            .map(|turn| PodcastSourceTurn {
+                                id: turn.id,
+                                speaker: turn.speaker,
+                                start_ms: turn.start_ms,
+                                text: turn.text,
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap_or_else(|_| json!([])),
+                    None => {
+                        return json_response(404, json!({"error": "Source meeting not found"}))
+                    }
                 }
             } else {
                 json!([])
             };
-            let transcript: Vec<PodcastSourceTurn> = match serde_json::from_value(transcript_value) {
+            let transcript: Vec<PodcastSourceTurn> = match serde_json::from_value(transcript_value)
+            {
                 Ok(value) => value,
-                Err(cause) => return json_response(400, json!({"error": format!("Podcast transcript is invalid: {cause}")})),
+                Err(cause) => {
+                    return json_response(
+                        400,
+                        json!({"error": format!("Podcast transcript is invalid: {cause}")}),
+                    )
+                }
             };
-            let hosts: Vec<PodcastHost> = match serde_json::from_value(body.get("hosts").cloned().unwrap_or_else(|| json!([
-                {"id":"host-a","name":"Avery","voice":"Kore"},
-                {"id":"host-b","name":"Riley","voice":"Puck"}
-            ]))) {
-                Ok(value) => value,
-                Err(cause) => return json_response(400, json!({"error": format!("Podcast hosts are invalid: {cause}")})),
-            };
+            let hosts: Vec<PodcastHost> =
+                match serde_json::from_value(body.get("hosts").cloned().unwrap_or_else(|| {
+                    json!([
+                        {"id":"host-a","name":"Avery","voice":"Kore"},
+                        {"id":"host-b","name":"Riley","voice":"Puck"}
+                    ])
+                })) {
+                    Ok(value) => value,
+                    Err(cause) => {
+                        return json_response(
+                            400,
+                            json!({"error": format!("Podcast hosts are invalid: {cause}")}),
+                        )
+                    }
+                };
             let request = PodcastScriptRequest {
                 project_id: project_id.to_string(),
-                title: body.get("title").and_then(Value::as_str).unwrap_or("Untitled podcast").to_string(),
-                language: body.get("language").and_then(Value::as_str).unwrap_or("auto").to_string(),
+                title: body
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Untitled podcast")
+                    .to_string(),
+                language: body
+                    .get("language")
+                    .and_then(Value::as_str)
+                    .unwrap_or("auto")
+                    .to_string(),
                 hosts,
                 transcript,
             };
@@ -2866,20 +3343,42 @@ async fn transcribe_podcast_asset(
     project_id: &str,
     source: &Path,
 ) -> Result<Vec<PodcastSourceTurn>, String> {
-    let batch = state.sarvam.transcribe(source, BatchConfig {
-        language: state.settings.get_str("sarvamLanguage").await.unwrap_or_else(|| "unknown".into()),
-        mode: state.settings.get_str("sarvamMode").await.unwrap_or_else(|| "transcribe".into()),
-        ..Default::default()
-    }).await?;
+    let batch = state
+        .sarvam
+        .transcribe(
+            source,
+            BatchConfig {
+                language: state
+                    .settings
+                    .get_str("sarvamLanguage")
+                    .await
+                    .unwrap_or_else(|| "unknown".into()),
+                mode: state
+                    .settings
+                    .get_str("sarvamMode")
+                    .await
+                    .unwrap_or_else(|| "transcribe".into()),
+                ..Default::default()
+            },
+        )
+        .await?;
     let labels = label_speakers(&batch.turns, None);
-    let turns = batch.turns.into_iter().enumerate().filter_map(|(index, turn)| {
-        strip_non_speech(&turn.text).map(|text| PodcastSourceTurn {
-            id: format!("import-{index:05}"),
-            speaker: labels.get(&turn.speaker_id).cloned().unwrap_or_else(|| "Speaker 1".into()),
-            start_ms: turn.start_ms,
-            text,
+    let turns = batch
+        .turns
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, turn)| {
+            strip_non_speech(&turn.text).map(|text| PodcastSourceTurn {
+                id: format!("import-{index:05}"),
+                speaker: labels
+                    .get(&turn.speaker_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Speaker 1".into()),
+                start_ms: turn.start_ms,
+                text,
+            })
         })
-    }).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
     state.podcast.save_transcript(project_id, &turns).await?;
     Ok(turns)
 }
@@ -2962,16 +3461,17 @@ async fn route_meeting(
                 })
                 .unwrap_or(false);
 
-            // Stored summaries stay readable on the free tier, but asking the
-            // AI for a fresh one is a paid feature.
-            let wants_ai = !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty());
-            if wants_ai && state.session_tier(req).await != "pro" {
-                return json_response(402, json!({
-                    "error": "AI summaries require the Pro plan. Upgrade under Plans & pricing.",
-                    "code": "PRO_REQUIRED",
-                }));
-            }
-
+            // Stored summaries are free to read; only a new generation counts.
+            let wants_ai = !meeting.transcript.is_empty()
+                && (regenerate || meeting.summary_markdown.is_empty());
+            let free_use_key = if wants_ai && state.session_tier(req).await != "pro" {
+                let key = format!("summary:manual:{}", Uuid::new_v4());
+                match state.billing.reserve_free_ai_use(key.clone()).await {
+                    Ok(true) => Some(key),
+                    Ok(false) => return json_response(402, json!({"error":plans::free_ai_limit_message(),"code":"FREE_AI_LIMIT"})),
+                    Err((status, error)) => return json_response(status, json!({"error":error})),
+                }
+            } else { None };
             let mut provider = "stored".to_string();
             let mut warning = None;
             if !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty())
@@ -2979,11 +3479,17 @@ async fn route_meeting(
                 let summary = state.summarize_into(&mut meeting).await;
                 provider = summary.provider;
                 warning = summary.warning;
+                if meeting.summary_markdown.is_empty() {
+                    if let Some(key) = &free_use_key { state.billing.release_free_ai_use(key.clone()).await; }
+                }
                 match state.store.put(meeting.clone()).await {
                     Ok(stored) => {
                         let _ = state.store.put_documents(&stored).await;
                     }
-                    Err(cause) => return json_response(500, json!({"error": cause.to_string()})),
+                    Err(cause) => {
+                        if let Some(key) = free_use_key { state.billing.release_free_ai_use(key).await; }
+                        return json_response(500, json!({"error": cause.to_string()}));
+                    }
                 }
             }
 
@@ -3030,10 +3536,15 @@ fn export_markdown(meeting: &Meeting) -> String {
     out
 }
 
+fn offered_protocol(header: Option<&str>) -> Option<&'static str> {
+    let offered: Vec<&str> = header.unwrap_or_default().split(',').map(str::trim).collect();
+    ["kesami", "alpha"].into_iter().find(|protocol| offered.contains(protocol))
+}
+
 async fn websocket_session(
     stream: TcpStream,
     key: &str,
-    alpha_protocol: bool,
+    app_protocol: Option<&'static str>,
     state: AppState,
     tier: &'static str,
 ) -> io::Result<()> {
@@ -3041,11 +3552,9 @@ async fn websocket_session(
     let accept = websocket_accept(key);
     // Echoing a protocol the client never offered makes browsers fail the
     // handshake, so only confirm the one the client asked for.
-    let protocol = if alpha_protocol {
-        "\r\nSec-WebSocket-Protocol: alpha"
-    } else {
-        ""
-    };
+    let protocol = app_protocol
+        .map(|name| format!("\r\nSec-WebSocket-Protocol: {name}"))
+        .unwrap_or_default();
     let response=format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}{protocol}\r\n\r\n");
     writer.write_all(response.as_bytes()).await?;
     let mut receiver = state.events.subscribe();
@@ -3185,7 +3694,11 @@ async fn write_ws_text<W: AsyncWriteExt + Unpin>(stream: &mut W, text: &str) -> 
 async fn write_ws_pong<W: AsyncWriteExt + Unpin>(stream: &mut W, data: &[u8]) -> io::Result<()> {
     write_ws_frame(stream, 10, data).await
 }
-async fn write_ws_frame<W: AsyncWriteExt + Unpin>(stream: &mut W, opcode: u8, data: &[u8]) -> io::Result<()> {
+async fn write_ws_frame<W: AsyncWriteExt + Unpin>(
+    stream: &mut W,
+    opcode: u8,
+    data: &[u8],
+) -> io::Result<()> {
     let mut frame = Vec::with_capacity(data.len() + 10);
     frame.push(0x80 | opcode);
     match data.len() {
@@ -3321,10 +3834,25 @@ mod tests {
 
         let mic_speaker = Some("1");
         let self_name = Some("Riyam");
-        let mut labels = label_speakers(&[
-            BatchTurn { speaker_id: "0".into(), start_ms: 0, end_ms: 9000, text: "Hi".into(), language: None },
-            BatchTurn { speaker_id: "1".into(), start_ms: 10000, end_ms: 19000, text: "Hello".into(), language: None },
-        ], mic_speaker);
+        let mut labels = label_speakers(
+            &[
+                BatchTurn {
+                    speaker_id: "0".into(),
+                    start_ms: 0,
+                    end_ms: 9000,
+                    text: "Hi".into(),
+                    language: None,
+                },
+                BatchTurn {
+                    speaker_id: "1".into(),
+                    start_ms: 10000,
+                    end_ms: 19000,
+                    text: "Hello".into(),
+                    language: None,
+                },
+            ],
+            mic_speaker,
+        );
 
         let named = participants.attribute(
             &spans,
@@ -3372,12 +3900,21 @@ mod tests {
     }
 
     #[test]
+    fn the_websocket_protocol_prefers_kesami_and_still_accepts_alpha() {
+        assert_eq!(offered_protocol(Some("kesami, kesami-token.abc")), Some("kesami"));
+        assert_eq!(offered_protocol(Some("alpha, alpha-token.abc")), Some("alpha"));
+        assert_eq!(offered_protocol(Some("alpha, kesami")), Some("kesami"));
+        assert_eq!(offered_protocol(Some("chat")), None);
+        assert_eq!(offered_protocol(None), None);
+    }
+
+    #[test]
     fn a_meeting_without_a_calendar_event_has_no_invited_names() {
         assert!(invited_names(&json!({})).is_empty());
         assert!(invited_names(&json!({ "calendarEvent": { "title": "Ad hoc" } })).is_empty());
     }
 
-    /// A real record from `.alpha-meeting-assistant/meetings.json`, written before
+    /// A real record from `.kesami/meetings.json`, written before
     /// turns carried a language and before meetings carried a recording. There are
     /// 24 of these on the author's machine; if they stop deserialising, the whole
     /// history silently loads as empty.
@@ -3503,7 +4040,7 @@ mod tests {
 
     #[test]
     fn sarvam_can_only_read_recordings_under_the_trusted_root() {
-        let scratch = env::temp_dir().join(format!("alpha-sarvam-path-{}", Uuid::new_v4()));
+        let scratch = env::temp_dir().join(format!("kesami-sarvam-path-{}", Uuid::new_v4()));
         let root = scratch.join("recordings");
         let meeting = root.join("meeting-id");
         let outside = scratch.join("outside.webm");
@@ -3526,7 +4063,7 @@ mod tests {
     fn every_stored_meeting_in_the_repo_data_file_parses() {
         // Guards against a schema change that would drop real history. Skipped
         // when the file is absent, so a clean checkout still passes.
-        let path = std::path::Path::new(".alpha-meeting-assistant/meetings.json");
+        let path = std::path::Path::new(".kesami/meetings.json");
         let Ok(bytes) = std::fs::read(path) else {
             return;
         };
@@ -3589,8 +4126,13 @@ mod tests {
         }
 
         fn hosted() -> SecurityConfig {
-            SecurityConfig::new("0.0.0.0", Some(TOKEN), Some("https://app.example.com"), None)
-                .unwrap()
+            SecurityConfig::new(
+                "0.0.0.0",
+                Some(TOKEN),
+                Some("https://app.example.com"),
+                None,
+            )
+            .unwrap()
         }
 
         #[test]
@@ -3610,9 +4152,16 @@ mod tests {
                 access_decision(&request("OPTIONS", "/api/status", &host), &security, false),
                 None
             );
-            let authorized = [("host", "backend.example.com"), ("authorization", &format!("Bearer {TOKEN}"))];
+            let authorized = [
+                ("host", "backend.example.com"),
+                ("authorization", &format!("Bearer {TOKEN}")),
+            ];
             assert_eq!(
-                access_decision(&request("GET", "/api/status", &authorized), &security, false),
+                access_decision(
+                    &request("GET", "/api/status", &authorized),
+                    &security,
+                    false
+                ),
                 None
             );
         }
@@ -3629,9 +4178,12 @@ mod tests {
             );
             let subprotocol = (
                 "sec-websocket-protocol",
-                format!("alpha, alpha-token.{}", URL_SAFE_NO_PAD.encode(TOKEN)),
+                format!("kesami, kesami-token.{}", URL_SAFE_NO_PAD.encode(TOKEN)),
             );
-            let authorized = [("host", "backend.example.com"), (subprotocol.0, subprotocol.1.as_str())];
+            let authorized = [
+                ("host", "backend.example.com"),
+                (subprotocol.0, subprotocol.1.as_str()),
+            ];
             assert_eq!(
                 access_decision(&request("GET", "/ws", &authorized), &security, true),
                 None
@@ -3647,8 +4199,12 @@ mod tests {
                 ("origin", "https://evil.test"),
             ];
             assert_eq!(
-                access_decision(&request("GET", "/api/status", &evil_origin), &security, false)
-                    .map(|(status, _)| status),
+                access_decision(
+                    &request("GET", "/api/status", &evil_origin),
+                    &security,
+                    false
+                )
+                .map(|(status, _)| status),
                 Some(403)
             );
 
@@ -3680,7 +4236,10 @@ mod tests {
             let allowed = request(
                 "GET",
                 "/api/status",
-                &[("host", "backend.example.com"), ("origin", "https://app.example.com")],
+                &[
+                    ("host", "backend.example.com"),
+                    ("origin", "https://app.example.com"),
+                ],
             );
             let headers = cors_headers(&allowed, &security);
             assert!(headers.contains(&(

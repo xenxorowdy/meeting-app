@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiRequest, createBackendSocket } from '@/lib/backend';
 
 export function usePodcastStudio() {
-    const bridge = globalThis.alphaPodcast || null;
+    const bridge = globalThis.kesamiPodcast || null;
     const [projects, setProjects] = useState([]);
     const [activeProject, setActiveProject] = useState(null);
     const [settings, setSettings] = useState({ youtubeConnected: false });

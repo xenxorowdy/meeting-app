@@ -72,7 +72,7 @@ mod tests {
 
     #[tokio::test]
     async fn folders_persist_rename_and_move_without_changing_meeting_paths() {
-        let root = std::env::temp_dir().join(format!("alpha-folders-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("kesami-folders-{}", uuid::Uuid::new_v4()));
         let store = Store { library: Arc::new(RwLock::new(Library::new(root.clone()))), meetings: Arc::new(RwLock::new(HashMap::new())) };
         let result = folders(&store, Some(&json!({"name":"Product"}))).await.unwrap();
         let id = &result["folders"][0]["id"];

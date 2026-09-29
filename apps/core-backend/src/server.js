@@ -39,8 +39,8 @@ class BackendServer {
                 if (addr && typeof addr === 'object') {
                     this.port = addr.port;
                 }
-                console.log(`[Alpha Core Backend] API Server listening on http://${this.host}:${this.port}`);
-                console.log(`[Alpha Core Backend] WebSocket endpoint available at ws://${this.host}:${this.port}`);
+                console.log(`[Kesami Core Backend] API Server listening on http://${this.host}:${this.port}`);
+                console.log(`[Kesami Core Backend] WebSocket endpoint available at ws://${this.host}:${this.port}`);
                 resolve(this);
             });
 
@@ -88,7 +88,7 @@ class BackendServer {
             }
         }
 
-        console.log('[Alpha Core Backend] Server stopped cleanly.');
+        console.log('[Kesami Core Backend] Server stopped cleanly.');
     }
 
     /**

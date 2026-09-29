@@ -138,7 +138,7 @@ async fn live_scope_uses_a_snapshot_and_survives_append_only_transcription() {
 
 #[test]
 fn threads_persist_idempotently_and_rebuild_does_not_remove_history() {
-    let root = std::env::temp_dir().join(format!("alpha-chat-test-{}", uuid::Uuid::new_v4()));
+    let root = std::env::temp_dir().join(format!("kesami-chat-test-{}", uuid::Uuid::new_v4()));
     private_directory(&root).unwrap();
     let path = root.join("threads.sqlite");
     let mut db = threads::Threads::open(&path).unwrap();
@@ -169,7 +169,7 @@ fn threads_persist_idempotently_and_rebuild_does_not_remove_history() {
 
 #[tokio::test]
 async fn scopes_are_resolved_from_the_whole_library_and_revalidated() {
-    let root = std::env::temp_dir().join(format!("alpha-chat-scope-{}", uuid::Uuid::new_v4()));
+    let root = std::env::temp_dir().join(format!("kesami-chat-scope-{}", uuid::Uuid::new_v4()));
     let meetings: HashMap<_, _> = (0..205)
         .map(|i| {
             let m = meeting(&format!("m{i}"), "Zephyr ships Friday");
@@ -225,7 +225,7 @@ fn semantic_retrieval_can_find_a_paraphrase_without_keyword_overlap() {
 #[tokio::test]
 #[ignore = "Downloads the pinned 487 MB public model; run explicitly with network access"]
 async fn local_multilingual_embedding_smoke() {
-    let cache = std::env::temp_dir().join("alpha-chat-model-smoke");
+    let cache = std::env::temp_dir().join("kesami-chat-model-smoke");
     let mut model = embeddings::load(&cache).await.unwrap();
     let docs = vec![
         "query: When is the deadline?",

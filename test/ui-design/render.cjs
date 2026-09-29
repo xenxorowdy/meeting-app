@@ -100,18 +100,64 @@ async function run() {
         await settle();
     };
     const capture = async name => {
+        await evaluate('new Promise(resolve => setTimeout(resolve, 250))');
         await settle();
         await fs.writeFile(path.join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG());
     };
     await window.loadFile(path.join(output, 'index.html'));
     await evaluate('document.fonts.ready');
     await capture('01-sign-in');
-    await click('Create account');
-    assert(await evaluate("!!document.querySelector('input[autocomplete=name]')"));
-    await click('I already have an account');
-    await click('Use it locally, no account');
+    if (process.argv.includes('--workspace-only')) {
+        await evaluate('window.fixtureEnterWorkspace()');
+    } else {
+        await click('Create account');
+        assert(await evaluate("!!document.querySelector('input[autocomplete=name]')"));
+        await click('I already have an account');
+        await click('Use it locally, no account');
+    }
     await capture('02-home');
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 3);
+    for (const theme of ['light', 'dark']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await settle();
+        await capture(`02-home-${theme}`);
+        assert(await evaluate(`(() => {
+            const agenda = document.querySelector('.ks-agenda').getBoundingClientRect();
+            const meetings = document.querySelector('.ks-meetings-list').getBoundingClientRect();
+            return agenda.left >= meetings.right;
+        })()`), 'desktop schedule sits beside the meeting library');
+        window.setContentSize(620, 860);
+        await settle();
+        assert(await evaluate(`document.querySelector('.ks-home-scroll').scrollWidth <= document.querySelector('.ks-home-scroll').clientWidth`), 'narrow dashboard has no horizontal overflow');
+        await capture(`02-home-narrow-${theme}`);
+        window.setContentSize(1280, 824);
+    }
+    await evaluate(`(() => {
+        const input = document.querySelector('[aria-label="Search meetings"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Design System');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await settle();
+    assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 1, 'global search opens and filters the library');
+    await evaluate("document.querySelector('[aria-label=\"Clear search\"]').click()");
+    await settle();
+    assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 3);
+    await click('Home');
+    await click('Schedule meeting');
+    assert(await evaluate('window.fixtureScheduleOpened'), 'schedule action still opens the scheduling flow');
+    await evaluate("document.querySelector('[aria-label=\"Workspace tools\"]').click()");
+    await settle();
+    await evaluate("document.querySelector('[aria-label=\"Noise cancellation\"]').click()");
+    await settle();
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Noise cancellation\"]').getAttribute('aria-checked')"), 'false');
+    await capture('02-workspace-tools');
+    await evaluate("document.querySelector('[aria-label=\"Workspace tools\"]').click()");
+    await evaluate('window.fixtureSetEmpty(true)');
+    await capture('02-home-empty');
+    assert(await evaluate("document.body.textContent.includes('Your next conversation starts here')"));
+    assert(await evaluate("document.body.textContent.includes('Nothing scheduled today')"));
+    await evaluate('window.fixtureSetEmpty(false)');
+    await settle();
     window.setContentSize(794, 1000);
     await evaluate("document.documentElement.dataset.textSize = 'large'");
     await settle();
@@ -164,12 +210,26 @@ async function run() {
     const midStream = await evaluate("document.querySelector('li[aria-live=\"polite\"] p').textContent");
     await evaluate('new Promise(resolve => setTimeout(resolve, 800))');
     await capture('03-transcript');
+    assert(await evaluate(`(() => {
+        const panel = document.querySelector('.ks-meeting-panel').getBoundingClientRect();
+        const controls = document.querySelector('.ks-recording-hud').getBoundingClientRect();
+        return controls.top >= panel.bottom && controls.bottom <= innerHeight;
+    })()`), 'recording controls stay below the transcript and inside the window');
+    await evaluate("document.querySelector('[aria-label=\"Search and filter transcript\"]').click()");
+    await settle();
+    assert(await evaluate("!!document.querySelector('[aria-label=\"Search transcript\"]')"), 'live transcript filters are reachable');
+    await evaluate("document.querySelector('[aria-label=\"Search and filter transcript\"]').click()");
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-panel li[data-turn-id]').length"), 6);
     const settledInterim = await evaluate("document.querySelector('li[aria-live=\"polite\"] p').textContent");
     assert.equal(settledInterim, 'One more thing before we');
     assert(midStream.length < settledInterim.length, `live speech arrives word by word, not all at once (saw "${midStream}")`);
     assert(await evaluate("document.querySelectorAll('li[aria-live=\"polite\"] .ks-word').length") >= 5, 'each revealed word is its own element');
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-panel li[data-turn-id] .ks-word').length"), 0, 'a stored transcript renders at once');
+    await evaluate("document.querySelector('[aria-label=\"Pause recording\"]').click()");
+    await settle();
+    assert(await evaluate("document.querySelector('.ks-transcript-heading').textContent.includes('Recording paused')"));
+    await evaluate("document.querySelector('[aria-label=\"Resume recording\"]').click()");
+    await settle();
     assert.deepEqual(
         await evaluate("[...document.querySelectorAll('.ks-meeting-tabs > button')].map(button => button.id)"),
         ['tab-transcript', 'tab-notes'],
@@ -230,14 +290,45 @@ async function run() {
     await capture('04-tasks');
     await click('Summary');
     await capture('05-summary');
+    await evaluate("document.querySelector('.ks-meeting-actions button:last-child').click()");
+    await settle();
+    for (const theme of ['light', 'dark']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await capture(`05-summary-${theme}`);
+    }
+    await evaluate("document.querySelector('.ks-meeting-actions button:last-child').click()");
+    await settle();
+    assert(await evaluate("!document.querySelector('.ks-summary-recording').open"), 'summary leads with notes and a collapsed recording');
+    await evaluate("document.querySelector('.ks-summary-recording > summary').click()");
+    await evaluate("new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('.ks-replay-compact video')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Summary recording preview never loaded')); } }, 25); })");
+    assert(await evaluate("!document.querySelector('.ks-replay-compact .ks-replay-transcript')"), 'summary preview avoids duplicating the transcript');
+    await capture('05-summary-recording');
+    await evaluate("document.querySelector('.ks-summary-recording > summary').click()");
+    await settle();
+    assert(await evaluate("!document.querySelector('.ks-replay-compact video')"), 'collapsing the preview unmounts the media');
     await evaluate(
         "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (window.fixtureReady) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Fixture video timeout')); } }, 50); })"
     );
-    await click('ScreenHD');
+    await click('Recording');
     await evaluate(
         "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('video')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy recording player never loaded')); } }, 25); })"
     );
     await capture('06-replay');
+    assert.equal(await evaluate("document.querySelector('.ks-replay-body').scrollTop"), 0, 'transcript following does not scroll the recording out of view');
+    await evaluate(`(() => {
+        const speed = document.querySelector('[aria-label="Playback speed"]');
+        speed.value = '2';
+        speed.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await settle();
+    assert.equal(await evaluate("document.querySelector('video').playbackRate"), 2);
+    await click('Copy timestamp');
+    assert(await evaluate("window.fixtureCopiedText.includes('Q4 Product Roadmap Review')"));
+    await evaluate("window.fixturePatchMeeting({ recording: { videoPath: 'fixture.webm', durationMs: 25000, mode: 'audio' } })");
+    await capture('06-audio-replay');
+    assert(await evaluate("!!document.querySelector('audio') && !document.querySelector('[aria-label=\"Zoom in\"]')"), 'audio recording uses audio playback and omits video zoom');
+    await evaluate("window.fixturePatchMeeting({ recording: { videoPath: 'fixture.webm', durationMs: 25000, mode: 'screen' } })");
+    await settle();
     assert(await evaluate("!!document.querySelector('video')"));
     await click('Mark');
     assert.equal(await evaluate("document.querySelectorAll('.ks-bookmarks button').length"), 1);
@@ -299,6 +390,12 @@ async function run() {
         await click('New Meeting');
         await evaluate('new Promise(resolve => setTimeout(resolve, 800))');
         await capture(`11-live-${theme}`);
+        window.setContentSize(620, 860);
+        await settle();
+        await capture(`11-live-narrow-${theme}`);
+        assert(await evaluate("document.querySelector('.ks-meeting-main').scrollWidth <= document.querySelector('.ks-meeting-main').clientWidth"), 'live transcript fits a narrow window');
+        window.setContentSize(1280, 824);
+        await settle();
         const live = await probe([
             '.ks-rec',
             '.ks-meeting-panel li[data-turn-id] p',
@@ -370,23 +467,25 @@ async function run() {
     await window.loadFile(path.resolve(__dirname, '../../apps/ui/dist/index.html'));
     await evaluate('document.fonts.ready');
     await capture('09-production-sign-in');
-    await click('Use it locally, no account');
-    await capture('10-production-home-offline');
-    assert(await evaluate("!!document.querySelector('.ks-workspace')"));
-    assert(await evaluate("document.querySelector('.ks-new-meeting button').disabled"));
-    await window.reload();
-    await evaluate("new Promise(resolve => setTimeout(resolve, 250))");
-    assert(await evaluate("!!document.querySelector('.ks-workspace')"), 'local access survives a reload without sign-in');
-    // Code-split surfaces are fetched at runtime; over file:// that is exactly
-    // where a dynamic import would fail, so prove one actually loads.
-    await click('Settings');
-    await evaluate(
-        "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('[role=\"dialog\"]')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy settings chunk never loaded')); } }, 25); })"
-    );
-    assert(await evaluate("document.querySelector('[role=\"dialog\"]').textContent.length > 0"), 'the lazily loaded settings surface rendered');
-    assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
+    if (!process.argv.includes('--workspace-only')) {
+        await click('Use it locally, no account');
+        await capture('10-production-home-offline');
+        assert(await evaluate("!!document.querySelector('.ks-workspace')"));
+        assert(await evaluate("document.querySelector('.ks-new-meeting button').disabled"));
+        await window.reload();
+        await evaluate("new Promise(resolve => setTimeout(resolve, 250))");
+        assert(await evaluate("!!document.querySelector('.ks-workspace')"), 'local access survives a reload without sign-in');
+        // Code-split surfaces are fetched at runtime; over file:// that is exactly
+        // where a dynamic import would fail, so prove one actually loads.
+        await click('Settings');
+        await evaluate(
+            "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('[role=\"dialog\"]')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy settings chunk never loaded')); } }, 25); })"
+        );
+        assert(await evaluate("document.querySelector('[role=\"dialog\"]').textContent.length > 0"), 'the lazily loaded settings surface rendered');
+        assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
+    }
     console.log(
-        `PASS: sign-in, persistent local entry, Free/Pro pricing in both themes, password rotation UI, folder filtering, live transcript and tab narrowing, dark+light contrast (AA), meeting tabs, task completion, recording stop, replay zoom/bookmark, AI citations/copy/follow-ups, responsive overflow. Screenshots: ${output}`
+        `PASS: ${process.argv.includes('--workspace-only') ? 'workspace-only (auth/local-entry checks excluded), dashboard layout and search,' : 'sign-in, persistent local entry,'} Free/Pro pricing in both themes, password rotation UI, folder filtering, live transcript and tab narrowing, dark+light contrast (AA), meeting tabs, task completion, recording stop, replay zoom/bookmark, AI citations/copy/follow-ups, responsive overflow. Screenshots: ${output}`
     );
     window.destroy();
     app.quit();

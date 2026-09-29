@@ -10,6 +10,7 @@ export function useMeetingChat(scope, isConnected) {
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [requiresPro, setRequiresPro] = useState(false);
     const [index, setIndex] = useState(null);
     const [before, setBefore] = useState(null);
     const [nextOffset, setNextOffset] = useState(null);
@@ -21,8 +22,17 @@ export function useMeetingChat(scope, isConnected) {
     const keyRef = useRef(key);
     keyRef.current = key;
 
+    // A 402 means the workspace is on the Free plan. The panel shows an upgrade card for it instead of an
+    // error banner under starters that could never succeed, so the flag outlives setError(null) resets and
+    // only clears once the backend answers a chat request.
+    const fail = useCallback(cause => {
+        setError(cause.message);
+        setRequiresPro(cause?.status === 402);
+    }, []);
+
     const refreshThreads = useCallback(async () => {
         const response = await apiRequest('/api/chat/threads');
+        setRequiresPro(false);
         setThreads(response.threads || []);
         setNextOffset(response.nextOffset ?? null);
         return response.threads || [];
@@ -49,11 +59,11 @@ export function useMeetingChat(scope, isConnected) {
             setMessages(response.messages || []);
             setBefore(response.before ?? null);
         } catch (cause) {
-            if (run === generation.current) setError(cause.message);
+            if (run === generation.current) fail(cause);
         } finally {
             if (run === generation.current) setLoading(false);
         }
-    }, [cancel]);
+    }, [cancel, fail]);
 
     useEffect(() => {
         cancel();
@@ -66,9 +76,9 @@ export function useMeetingChat(scope, isConnected) {
             const recent = list.find(item => scopeKey(item.scope) === key);
             if (recent) openThread(recent);
             else setLoading(false);
-        }).catch(cause => { if (run === generation.current) { setError(cause.message); setLoading(false); } });
+        }).catch(cause => { if (run === generation.current) { fail(cause); setLoading(false); } });
         return cancel;
-    }, [key, isConnected, cancel, openThread, refreshThreads]);
+    }, [key, isConnected, cancel, openThread, refreshThreads, fail]);
 
     useEffect(() => {
         if (!isConnected) return;
@@ -113,11 +123,11 @@ export function useMeetingChat(scope, isConnected) {
             refreshThreads().catch(() => {});
         } catch (cause) {
             if (run !== generation.current) return;
-            setQuestion(text); setError(cause.message);
+            setQuestion(text); fail(cause);
         } finally {
             if (run === generation.current) { active.current = null; setBusy(false); }
         }
-    }, [question, isConnected, loading, refreshThreads]);
+    }, [question, isConnected, loading, refreshThreads, fail]);
 
     const loadEarlier = async () => {
         if (!before || !threadRef.current || loading) return;
@@ -127,7 +137,7 @@ export function useMeetingChat(scope, isConnected) {
             const response = await apiRequest(`/api/chat/threads/${threadRef.current.id}/messages?before=${before}`);
             if (run !== generation.current) return;
             setMessages(previous => [...(response.messages || []), ...previous]); setBefore(response.before ?? null);
-        } catch (cause) { if (run === generation.current) setError(cause.message); }
+        } catch (cause) { if (run === generation.current) fail(cause); }
         finally { if (run === generation.current) setLoading(false); }
     };
 
@@ -137,7 +147,7 @@ export function useMeetingChat(scope, isConnected) {
             const response = await apiRequest(`/api/chat/threads?offset=${nextOffset}`);
             setThreads(previous => [...previous, ...(response.threads || []).filter(item => !previous.some(old => old.id === item.id))]);
             setNextOffset(response.nextOffset ?? null);
-        } catch (cause) { setError(cause.message); }
+        } catch (cause) { fail(cause); }
     };
 
     const deleteThread = async () => {
@@ -145,9 +155,9 @@ export function useMeetingChat(scope, isConnected) {
         const id = threadRef.current.id;
         cancel();
         try { await apiRequest(`/api/chat/threads/${id}`, { method: 'DELETE' }); newThread(); await refreshThreads(); }
-        catch (cause) { setError(cause.message); }
+        catch (cause) { fail(cause); }
     };
 
-    return { threads, thread, messages, question, setQuestion, busy, loading, error, index,
+    return { threads, thread, messages, question, setQuestion, busy, loading, error, requiresPro, index,
         send, cancel, openThread, newThread, deleteThread, before, loadEarlier, nextOffset, loadMoreThreads };
 }

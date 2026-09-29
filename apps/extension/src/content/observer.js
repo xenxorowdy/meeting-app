@@ -201,7 +201,7 @@
 
         const send = payload => {
             try {
-                runtime.sendMessage({ type: 'alpha:observation', payload });
+                runtime.sendMessage({ type: 'kesami:observation', payload });
             } catch {
                 mutations.disconnect();
             }
@@ -290,6 +290,6 @@
     }
 
     const api = { tidyName, observationFrom, sameObservation, reportWarranted, ActivityTracker, start };
-    globalThis.AlphaNames = api;
+    globalThis.KesamiNames = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

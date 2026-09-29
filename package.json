@@ -27,7 +27,8 @@
         "build:mic-watch": "swiftc -O -o apps/desktop/assets/mic-watch apps/desktop/mic-watch/main.swift",
         "build:all": "npm run build:ui && npm run build:backend",
         "package": "npm run --prefix ../.. package",
-        "make": "npm run --prefix ../.. make"
+        "make": "npm run --prefix ../.. make",
+        "dist:mac": "npm run build:all && npm run build:mic-watch && npm run --prefix apps/desktop dist:mac"
     },
     "keywords": [
         "meeting assistant",
@@ -36,6 +37,6 @@
         "sarvam",
         "claude"
     ],
-    "author": "Alpha Team",
+    "author": "Kesami Team",
     "license": "Commercial"
 }

@@ -133,7 +133,7 @@ export function WorkspaceView({ meetings = [], isLoading, isConnected, onReload,
                                 {visible.map(meeting => {
                                     const checked = selectedIds.includes(meeting.id);
                                     return <li key={meeting.id} className="group flex items-center gap-2 rounded-xl p-2 hover:bg-muted/65">
-                                        <button type="button" onClick={() => toggleMeeting(meeting)} className={cn('flex size-5 shrink-0 items-center justify-center rounded border', checked && 'border-primary bg-primary text-primary-foreground')} aria-label={`${checked ? 'Remove' : 'Add'} ${meeting.title} from Ask Alpha`} aria-pressed={checked}>{checked && <Check className="size-3" />}</button>
+                                        <button type="button" onClick={() => toggleMeeting(meeting)} className={cn('flex size-5 shrink-0 items-center justify-center rounded border', checked && 'border-primary bg-primary text-primary-foreground')} aria-label={`${checked ? 'Remove' : 'Add'} ${meeting.title} from Ask Kesami`} aria-pressed={checked}>{checked && <Check className="size-3" />}</button>
                                         <button type="button" onClick={() => onSelectMeeting(meeting)} className="min-w-0 flex-1 text-left">
                                             <span className="block truncate text-callout font-medium">{meeting.title}</span>
                                             <span className="block truncate text-footnote text-muted-foreground">{shortDate(meeting.startedAt)} · {meeting.durationSeconds ? `${Math.max(1, Math.round(meeting.durationSeconds / 60))} min` : 'No duration'}</span>

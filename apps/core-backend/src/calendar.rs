@@ -16,12 +16,15 @@ use crate::settings::SettingsStore;
 
 pub const GOOGLE: &str = "google";
 pub const MICROSOFT: &str = "microsoft";
+pub const GOOGLE_DOCS: &str = "googledocs";
 
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);
 const REFRESH_MARGIN_SECS: i64 = 60;
 
 struct Spec {
     id: &'static str,
+    client: &'static str,
+    calendar: bool,
     label: &'static str,
     auth_url: &'static str,
     token_url: &'static str,
@@ -30,9 +33,11 @@ struct Spec {
     extra_auth: &'static [(&'static str, &'static str)],
 }
 
-const SPECS: [Spec; 2] = [
+const SPECS: [Spec; 3] = [
     Spec {
         id: GOOGLE,
+        client: GOOGLE,
+        calendar: true,
         label: "Google Calendar",
         auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
         token_url: "https://oauth2.googleapis.com/token",
@@ -42,12 +47,25 @@ const SPECS: [Spec; 2] = [
     },
     Spec {
         id: MICROSOFT,
+        client: MICROSOFT,
+        calendar: true,
         label: "Microsoft Outlook",
         auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
         token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         scope: "openid email offline_access https://graph.microsoft.com/Calendars.Read",
         redirect_host: "localhost",
         extra_auth: &[("response_mode", "query")],
+    },
+    Spec {
+        id: GOOGLE_DOCS,
+        client: GOOGLE,
+        calendar: false,
+        label: "Google Docs",
+        auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_url: "https://oauth2.googleapis.com/token",
+        scope: "openid email https://www.googleapis.com/auth/drive.file",
+        redirect_host: "127.0.0.1",
+        extra_auth: &[("access_type", "offline"), ("prompt", "consent")],
     },
 ];
 
@@ -56,7 +74,11 @@ fn spec_for(provider: &str) -> Option<&'static Spec> {
 }
 
 pub fn is_provider(value: &str) -> bool {
-    spec_for(value).is_some()
+    spec_for(value).is_some_and(|spec| spec.calendar)
+}
+
+fn client_of(provider: &str) -> &str {
+    spec_for(provider).map(|spec| spec.client).unwrap_or(provider)
 }
 
 fn encode(value: &str) -> String {
@@ -126,18 +148,22 @@ fn client_secret_key(provider: &str) -> String {
 }
 
 fn env_key(provider: &str, suffix: &str) -> String {
-    format!("ALPHA_{}_CALENDAR_{suffix}", provider.to_uppercase())
+    format!("KESAMI_{}_CALENDAR_{suffix}", provider.to_uppercase())
 }
 
 fn rfc3339(at: DateTime<Utc>) -> String {
     at.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-const CLOSE_PAGE: &str = "<!doctype html><meta charset=\"utf-8\"><title>Alpha</title>\
-<style>body{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;color:#1D1D1F;background:#fff;\
-padding:40px;max-width:680px;margin:auto;line-height:1.4}h1{font-size:28px;font-weight:600;letter-spacing:-0.02em;margin:0 0 8px}\
-p{color:#6E6E73;font-size:15px;margin:0}</style>\
-<h1>Calendar connected</h1><p>You can close this tab and go back to Alpha.</p>";
+fn close_page(label: &str) -> String {
+    format!(
+        "<!doctype html><meta charset=\"utf-8\"><title>Kesami</title>\
+<style>body{{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;color:#1D1D1F;background:#fff;\
+padding:40px;max-width:680px;margin:auto;line-height:1.4}}h1{{font-size:28px;font-weight:600;letter-spacing:-0.02em;margin:0 0 8px}}\
+p{{color:#6E6E73;font-size:15px;margin:0}}</style>\
+<h1>{label} connected</h1><p>You can close this tab and go back to Kesami.</p>"
+    )
+}
 
 struct Tokens {
     access_token: String,
@@ -202,6 +228,24 @@ fn account_from_id_token(id_token: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
+fn grant_was_revoked(body: &Value) -> bool {
+    body.get("error").and_then(Value::as_str) == Some("invalid_grant")
+}
+
+const GOOGLE_CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
+
+fn sign_in_calendar_tokens(body: &Value) -> Result<Option<Tokens>, String> {
+    let granted = body.get("scope").and_then(Value::as_str).unwrap_or_default();
+    if !granted.split_whitespace().any(|scope| scope == GOOGLE_CALENDAR_SCOPE) {
+        return Ok(None);
+    }
+    let tokens = Tokens::from_response(body, None, None)?;
+    if tokens.refresh_token.is_none() {
+        return Err("Google did not return a refresh token with calendar access".into());
+    }
+    Ok(Some(tokens))
+}
+
 pub struct CalendarService {
     http: Client,
     settings: Arc<SettingsStore>,
@@ -221,7 +265,8 @@ impl CalendarService {
     }
 
     async fn client_id(&self, provider: &str) -> Option<String> {
-        if let Ok(value) = std::env::var(env_key(provider, "CLIENT_ID")) {
+        let provider = client_of(provider);
+        if let Ok(value) = kesami_core_backend::env_compat::var(&env_key(provider, "CLIENT_ID")) {
             let trimmed = value.trim().to_string();
             if !trimmed.is_empty() {
                 return Some(trimmed);
@@ -234,7 +279,8 @@ impl CalendarService {
     }
 
     async fn client_secret(&self, provider: &str) -> Option<String> {
-        if let Ok(value) = std::env::var(env_key(provider, "CLIENT_SECRET")) {
+        let provider = client_of(provider);
+        if let Ok(value) = kesami_core_backend::env_compat::var(&env_key(provider, "CLIENT_SECRET")) {
             let trimmed = value.trim().to_string();
             if !trimmed.is_empty() {
                 return Some(trimmed);
@@ -262,21 +308,26 @@ impl CalendarService {
 
     pub async fn status(&self) -> Value {
         let mut providers = Vec::new();
-        for spec in SPECS.iter() {
-            let tokens = self.stored(spec.id).await;
-            providers.push(json!({
-                "provider": spec.id,
-                "label": spec.label,
-                "connected": tokens.is_some(),
-                "account": tokens.and_then(|token| token.account),
-                "configured": self.client_id(spec.id).await.is_some(),
-            }));
+        for spec in SPECS.iter().filter(|spec| spec.calendar) {
+            let mut status = self.oauth_status(spec.id).await;
+            status["provider"] = json!(spec.id);
+            status["label"] = json!(spec.label);
+            providers.push(status);
         }
         json!({ "providers": providers })
     }
 
+    pub async fn oauth_status(&self, provider: &str) -> Value {
+        let tokens = self.stored(provider).await;
+        json!({
+            "connected": tokens.is_some(),
+            "account": tokens.and_then(|token| token.account),
+            "configured": self.client_id(provider).await.is_some(),
+        })
+    }
+
     pub async fn disconnect(&self, provider: &str) -> Result<(), String> {
-        if !is_provider(provider) {
+        if spec_for(provider).is_none() {
             return Err(format!("unknown calendar provider: {provider}"));
         }
         self.settings
@@ -286,14 +337,39 @@ impl CalendarService {
             .map_err(|error| error.to_string())
     }
 
+    pub async fn shares_google_sign_in(&self, sign_in_client_id: &str) -> bool {
+        self.client_id(GOOGLE).await.as_deref() == Some(sign_in_client_id)
+    }
+
+    pub async fn wants_google_sign_in(&self, sign_in_client_id: &str) -> bool {
+        self.stored(GOOGLE).await.is_none() && self.shares_google_sign_in(sign_in_client_id).await
+    }
+
+    pub async fn adopt_google_sign_in(&self, body: &Value) -> Result<Option<String>, String> {
+        let Some(tokens) = sign_in_calendar_tokens(body)? else {
+            return Ok(None);
+        };
+        let account = tokens.account.clone();
+        self.save(GOOGLE, &tokens).await?;
+        let _ = self.events.send(
+            json!({
+                "type": "calendar_connection",
+                "data": { "provider": GOOGLE, "connected": true, "account": account },
+                "timestamp": Utc::now().timestamp_millis(),
+            })
+            .to_string(),
+        );
+        Ok(account)
+    }
+
     pub async fn begin(self: &Arc<Self>, provider: &str) -> Result<Value, String> {
         let spec = spec_for(provider).ok_or_else(|| format!("unknown calendar provider: {provider}"))?;
         let client_id = self.client_id(provider).await.ok_or_else(|| {
             format!(
                 "{} needs an OAuth client id. Set {} or save {} in settings.",
                 spec.label,
-                env_key(provider, "CLIENT_ID"),
-                client_id_key(provider)
+                env_key(client_of(provider), "CLIENT_ID"),
+                client_id_key(client_of(provider))
             )
         })?;
 
@@ -324,6 +400,7 @@ impl CalendarService {
         let service = Arc::clone(self);
         let provider = provider.to_string();
         let announced = provider.clone();
+        let event_type = if spec.calendar { "calendar_connection" } else { "connector_connection" };
         tokio::spawn(async move {
             let outcome = service.finish(&provider, listener, state, verifier, redirect).await;
             let data = match outcome {
@@ -332,7 +409,7 @@ impl CalendarService {
             };
             let _ = service.events.send(
                 json!({
-                    "type": "calendar_connection",
+                    "type": event_type,
                     "data": data,
                     "timestamp": Utc::now().timestamp_millis(),
                 })
@@ -351,8 +428,8 @@ impl CalendarService {
         verifier: String,
         redirect: String,
     ) -> Result<Option<String>, String> {
-        let code = wait_for_code(listener, state).await?;
         let spec = spec_for(provider).ok_or("unknown calendar provider")?;
+        let code = wait_for_code(listener, state, spec.label).await?;
         let client_id = self.client_id(provider).await.ok_or("the OAuth client id went missing")?;
 
         let mut form = vec![
@@ -377,30 +454,34 @@ impl CalendarService {
     }
 
     async fn post_form(&self, url: &str, form: &[(&str, String)]) -> Result<Value, String> {
+        self.post_token_form(url, form).await.map_err(|(_, detail)| detail)
+    }
+
+    async fn post_token_form(&self, url: &str, form: &[(&str, String)]) -> Result<Value, (bool, String)> {
         let response = self
             .http
             .post(url)
             .form(form)
             .send()
             .await
-            .map_err(|error| format!("the token request failed: {error}"))?;
+            .map_err(|error| (false, format!("the token request failed: {error}")))?;
         let status = response.status();
         let body: Value = response
             .json()
             .await
-            .map_err(|error| format!("the token response was not JSON: {error}"))?;
+            .map_err(|error| (false, format!("the token response was not JSON: {error}")))?;
         if !status.is_success() {
             let detail = body
                 .get("error_description")
                 .or_else(|| body.get("error"))
                 .and_then(Value::as_str)
                 .unwrap_or("the provider rejected the request");
-            return Err(detail.to_string());
+            return Err((grant_was_revoked(&body), detail.to_string()));
         }
         Ok(body)
     }
 
-    async fn access_token(&self, provider: &str) -> Result<String, String> {
+    pub async fn access_token(&self, provider: &str) -> Result<String, String> {
         let stored = self
             .stored(provider)
             .await
@@ -428,7 +509,14 @@ impl CalendarService {
             form.push(("client_secret", secret));
         }
 
-        let body = self.post_form(spec.token_url, &form).await?;
+        let body = match self.post_token_form(spec.token_url, &form).await {
+            Ok(body) => body,
+            Err((true, detail)) => {
+                self.disconnect(provider).await?;
+                return Err(format!("{} access expired or was revoked; reconnect it ({detail})", spec.label));
+            }
+            Err((false, detail)) => return Err(detail),
+        };
         let tokens = Tokens::from_response(&body, Some(refresh), stored.account)?;
         let access = tokens.access_token.clone();
         self.save(provider, &tokens).await?;
@@ -443,7 +531,7 @@ impl CalendarService {
         let mut events = Vec::new();
         let mut warnings = Vec::new();
 
-        for spec in SPECS.iter() {
+        for spec in SPECS.iter().filter(|spec| spec.calendar) {
             if self.stored(spec.id).await.is_none() {
                 continue;
             }
@@ -466,7 +554,7 @@ impl CalendarService {
     pub async fn create_event(&self, provider: &str, draft: &Value) -> Result<Value, String> {
         if provider != GOOGLE {
             return Err(
-                "Outlook is connected read-only. Alpha can create events on Google Calendar; \
+                "Outlook is connected read-only. Kesami can create events on Google Calendar; \
                  Microsoft support needs a wider permission than the one this account granted."
                     .to_string(),
             );
@@ -497,7 +585,7 @@ impl CalendarService {
             return Err(detail.to_string());
         }
 
-        normalize(provider, &created).ok_or_else(|| "the calendar returned an event Alpha could not read".to_string())
+        normalize(provider, &created).ok_or_else(|| "the calendar returned an event Kesami could not read".to_string())
     }
 
     async fn fetch(&self, provider: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Value>, String> {
@@ -758,7 +846,7 @@ fn normalize_graph_time(value: &str) -> String {
     }
 }
 
-async fn wait_for_code(listener: TcpListener, expected_state: String) -> Result<String, String> {
+async fn wait_for_code(listener: TcpListener, expected_state: String, label: &str) -> Result<String, String> {
     let accepted = timeout(CONSENT_TIMEOUT, listener.accept())
         .await
         .map_err(|_| "the browser did not come back within five minutes".to_string())?
@@ -786,10 +874,11 @@ async fn wait_for_code(listener: TcpListener, expected_state: String) -> Result<
         }
     }
 
+    let page = close_page(label);
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        CLOSE_PAGE.len(),
-        CLOSE_PAGE
+        page.len(),
+        page
     );
     let _ = stream.write_all(response.as_bytes()).await;
     let _ = stream.flush().await;
@@ -817,6 +906,47 @@ mod tests {
         assert_eq!(scopes, vec!["openid", "email", "https://www.googleapis.com/auth/calendar.events"]);
         assert!(spec.extra_auth.contains(&("access_type", "offline")));
         assert!(spec.extra_auth.contains(&("prompt", "consent")));
+    }
+
+    fn id_token_for(email: &str) -> String {
+        format!("h.{}.s", B64URL.encode(json!({ "email": email }).to_string()))
+    }
+
+    #[test]
+    fn a_sign_in_that_granted_calendar_becomes_a_connection() {
+        let body = json!({
+            "access_token": "ya29.a",
+            "refresh_token": "1//r",
+            "expires_in": 3599,
+            "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events",
+            "id_token": id_token_for("asha@example.com"),
+        });
+        let tokens = sign_in_calendar_tokens(&body).unwrap().expect("tokens");
+        assert_eq!(tokens.access_token, "ya29.a");
+        assert_eq!(tokens.refresh_token.as_deref(), Some("1//r"));
+        assert_eq!(tokens.account.as_deref(), Some("asha@example.com"));
+        assert!(tokens.is_fresh());
+    }
+
+    #[test]
+    fn a_sign_in_without_calendar_scope_stores_nothing() {
+        let body = json!({ "access_token": "ya29.a", "refresh_token": "1//r", "scope": "openid email profile" });
+        assert!(sign_in_calendar_tokens(&body).unwrap().is_none());
+        let readonly = json!({ "access_token": "ya29.a", "refresh_token": "1//r", "scope": "https://www.googleapis.com/auth/calendar.events.readonly" });
+        assert!(sign_in_calendar_tokens(&readonly).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_sign_in_with_calendar_but_no_refresh_token_is_refused() {
+        let body = json!({ "access_token": "ya29.a", "scope": "openid https://www.googleapis.com/auth/calendar.events" });
+        assert!(sign_in_calendar_tokens(&body).is_err());
+    }
+
+    #[test]
+    fn only_an_invalid_grant_forgets_the_stored_connection() {
+        assert!(grant_was_revoked(&json!({ "error": "invalid_grant", "error_description": "Token has been expired or revoked." })));
+        assert!(!grant_was_revoked(&json!({ "error": "invalid_client" })));
+        assert!(!grant_was_revoked(&json!({ "error": "temporarily_unavailable" })));
     }
 
     #[test]

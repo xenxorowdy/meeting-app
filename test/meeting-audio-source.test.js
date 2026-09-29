@@ -48,12 +48,12 @@ function fakeDevices(devices) {
 }
 
 function withGlobals({ bridge, devices }, run) {
-    const previousBridge = globalThis.alphaSystemAudio;
+    const previousBridge = globalThis.kesamiSystemAudio;
     const previousNavigator = globalThis.navigator;
-    globalThis.alphaSystemAudio = bridge;
+    globalThis.kesamiSystemAudio = bridge;
     if (devices) Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices: devices }, configurable: true, writable: true });
     return run().finally(() => {
-        globalThis.alphaSystemAudio = previousBridge;
+        globalThis.kesamiSystemAudio = previousBridge;
         if (devices) Object.defineProperty(globalThis, 'navigator', { value: previousNavigator, configurable: true, writable: true });
     });
 }

@@ -283,7 +283,7 @@ function recogniserStub() {
 }
 
 test('a live meeting keeps the microphone as You and meeting audio provisional until the diarization pass', { timeout: 60000 }, async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-speakers-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-speakers-'));
     let backend;
     const stub = recogniserStub();
     t.after(async () => {
@@ -305,19 +305,19 @@ test('a live meeting keeps the microphone as You and meeting audio provisional u
     );
 
     const port = await freePort();
-    backend = spawn(path.resolve(__dirname, '../apps/core-backend/target/debug/alpha-core-backend'), [], {
+    backend = spawn(path.resolve(__dirname, '../apps/core-backend/target/debug/kesami-core-backend'), [], {
         cwd: root,
         stdio: ['ignore', 'ignore', 'ignore'],
         env: {
             ...process.env,
-            ALPHA_DATA_DIR: root,
-            ALPHA_LIBRARY_DIR: path.join(root, 'library'),
+            KESAMI_DATA_DIR: root,
+            KESAMI_LIBRARY_DIR: path.join(root, 'library'),
             CORE_BACKEND_DATA_FILE: path.join(root, 'absent.json'),
             CORE_BACKEND_PORT: String(port),
-            ALPHA_SARVAM_API_KEY: 'test-key',
-            ALPHA_SARVAM_REALTIME_URL: `ws://127.0.0.1:${recogniserPort}/ws`,
-            ALPHA_GEMINI_API_KEY: '',
-            ALPHA_CHAT_EMBEDDINGS: 'off',
+            KESAMI_SARVAM_API_KEY: 'test-key',
+            KESAMI_SARVAM_REALTIME_URL: `ws://127.0.0.1:${recogniserPort}/ws`,
+            KESAMI_GEMINI_API_KEY: '',
+            KESAMI_CHAT_EMBEDDINGS: 'off',
         },
     });
     let spawnError;

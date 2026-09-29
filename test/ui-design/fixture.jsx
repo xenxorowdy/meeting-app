@@ -34,6 +34,16 @@ const base = {
     participants: ['Maya Chen', 'Alex Rivera', 'Sam Park', 'Jo Nguyen'],
     summaryMarkdown:
         'Team aligned on shipping the AI search feature by Oct 15. Pushed onboarding redesign to Q1. Budget approved for 2 additional engineers.',
+    summarySections: [
+        { heading: 'Product direction', bullets: [
+            { text: 'Ship AI search by October 15, with a scope freeze this week.', sourceTurnIds: ['turn-1'] },
+            { text: 'Move the onboarding redesign to Q1 to leave time for research.', sourceTurnIds: ['turn-5'] },
+        ] },
+        { heading: 'Design & collaboration', bullets: [
+            { text: 'Run another round of filter usability testing before finalizing the experience.', sourceTurnIds: ['turn-2'] },
+            { text: 'Bring the data team into the Friday review.', sourceTurnIds: ['turn-3'] },
+        ] },
+    ],
     actionItems: [{ id: 'task1', task: 'Schedule filter UX test — Friday', owner: 'Alex Rivera', deadline: 'Sep 12', completed: false }],
     keyDecisions: ['Ship AI search by Oct 15.'],
     metadata: { collectionId: 'product', tags: ['roadmap', 'ai'], noiseLevel: 'low' },
@@ -78,7 +88,7 @@ window.fetch = async (url, options = {}) => {
     if (path === '/api/auth/config') return new Response(JSON.stringify({ registrationAllowed: true }));
     if (path === '/api/billing/subscription') return new Response(JSON.stringify({
         tier: 'free', subscription: null, billing: { billingEnabled: false },
-        usage: { minutesUsed: 0, freeMonthlyMinutes: 60, canRecord: true },
+        usage: { minutesUsed: 0, freeMonthlyMinutes: 120, canRecord: true },
     }));
     if (path === '/api/plans') return new Response(JSON.stringify({ billingEnabled: false, plans: [
         { id: 'free', name: 'Local', status: 'available', price: { amountMinor: 0 }, description: 'Your meetings, on your device. No account required.', features: ['Record meetings on your device', 'Keep and export your meeting library', 'Use your own transcription and AI providers'], note: 'Provider API usage may be billed separately by your chosen provider.' },
@@ -91,10 +101,15 @@ window.fetch = async (url, options = {}) => {
 
 function Fixture({ theme }) {
     const [view, setView] = useState('home');
+    const [empty, setEmpty] = useState(false);
+    window.fixtureSetEmpty = setEmpty;
+    const [noise, setNoise] = useState(true);
     const [account, setAccount] = useState(null);
     window.fixtureSetAccount = setAccount;
     const [entered, setEntered] = useState(false);
+    window.fixtureEnterWorkspace = () => setEntered(true);
     const [meeting, setMeeting] = useState(base);
+    window.fixturePatchMeeting = updates => setMeeting(value => ({ ...value, ...updates }));
     const [recording, setRecording] = useState(false);
     const [paused, setPaused] = useState(false);
     useEffect(() => {
@@ -120,7 +135,7 @@ function Fixture({ theme }) {
         recorder.ondataavailable = event => chunks.push(event.data);
         recorder.onstop = () => {
             const url = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
-            window.alphaRecorder = { mediaUrl: () => url };
+            window.kesamiRecorder = { mediaUrl: () => url };
             stream.getTracks().forEach(track => track.stop());
             window.fixtureReady = true;
         };
@@ -134,13 +149,18 @@ function Fixture({ theme }) {
     if (!entered) return <SignInView theme={theme} onToggleTheme={window.fixtureSetTheme} onContinue={() => setEntered(true)} />;
     return (
         <DesignWorkspace
+            theme={theme}
+            onToggleTheme={() => window.fixtureSetTheme(theme === 'dark' ? 'light' : 'dark')}
+            onNewMeeting={() => { window.fixtureScheduleOpened = true; }}
+            noiseSuppression={noise}
+            onUpdateSettings={async settings => { setNoise(settings.noiseSuppression); return { ok: true, persisted: true }; }}
             activeTab={view}
             setActiveTab={setView}
             meeting={meeting}
             turns={meeting.transcript}
             interimTurns={recording && !paused ? [{ id: 'interim-system', speaker: 'Sam Park', stream: 'system', text: 'One more thing before we', interim: true }] : []}
             history={{
-                meetings: [
+                meetings: empty ? [] : [
                     meeting,
                     {
                         ...base,
@@ -165,7 +185,7 @@ function Fixture({ theme }) {
                 deleteMeeting: async () => true,
             }}
             calendar={{
-                events: ['Q4 Product Roadmap', 'Design System Weekly', '1:1 with Alex'].map((title, i) => ({
+                events: empty ? [] : ['Q4 Product Roadmap', 'Design System Weekly', '1:1 with Alex'].map((title, i) => ({
                     id: i,
                     title,
                     start: new Date(today.getTime() + i * 14400000).toISOString(),

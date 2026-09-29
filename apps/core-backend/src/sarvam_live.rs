@@ -3,7 +3,6 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::{
-    env,
     sync::{
         atomic::{AtomicI64, Ordering},
         Arc,
@@ -43,7 +42,7 @@ impl Default for LiveConfig {
         Self {
             language: "auto".into(),
             mode: "transcribe".into(),
-            endpoint: env::var("ALPHA_SARVAM_REALTIME_URL").unwrap_or_else(|_| DEFAULT_URL.into()),
+            endpoint: kesami_core_backend::env_compat::var("KESAMI_SARVAM_REALTIME_URL").unwrap_or_else(|_| DEFAULT_URL.into()),
         }
     }
 }
@@ -70,7 +69,7 @@ impl LiveConfig {
 
     fn url(&self) -> String {
         let base = &self.endpoint;
-        let model = env::var("ALPHA_SARVAM_REALTIME_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
+        let model = kesami_core_backend::env_compat::var("KESAMI_SARVAM_REALTIME_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
         let separator = if base.contains('?') { '&' } else { '?' };
         format!(
             "{base}{separator}model={model}&language_code={}&mode={}&encoding=linear16&sample_rate={SAMPLE_RATE}&return_timestamps=true",
@@ -80,7 +79,7 @@ impl LiveConfig {
 }
 
 pub fn model_name() -> String {
-    env::var("ALPHA_SARVAM_REALTIME_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into())
+    kesami_core_backend::env_compat::var("KESAMI_SARVAM_REALTIME_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into())
 }
 
 #[derive(Clone, Debug, PartialEq)]

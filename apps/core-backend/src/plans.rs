@@ -3,16 +3,26 @@
 use serde_json::{json, Value};
 
 /// Free tier recording allowance, minutes per calendar month.
-pub const FREE_MONTHLY_MINUTES: i64 = 60;
+pub const FREE_MONTHLY_MINUTES: i64 = 120;
+/// Summaries and AI chat replies share this monthly workspace allowance.
+pub const FREE_MONTHLY_AI_USES: i64 = 3;
 /// Pro monthly prices per region, minor currency units.
-pub const PRO_MONTHLY_MINOR_INR: u32 = 59_900;
+pub const PRO_MONTHLY_MINOR_INR: u32 = 49_900;
 pub const PRO_MONTHLY_MINOR_USD: u32 = 1_000;
+
+pub fn can_record(tier: &str, minutes_used: i64) -> bool {
+    tier == "pro" || minutes_used < FREE_MONTHLY_MINUTES
+}
+
+pub fn free_ai_limit_message() -> String {
+    format!("Your {FREE_MONTHLY_AI_USES} free AI uses for this month are used. Upgrade to Pro for unlimited summaries and chat.")
+}
 
 pub fn catalog(billing_enabled: bool) -> Value {
     catalog_with(
         billing_enabled,
-        std::env::var("ALPHA_PRO_MONTHLY_MINOR").ok().as_deref(),
-        std::env::var("ALPHA_BILLING_CURRENCY").ok().as_deref(),
+        kesami_core_backend::env_compat::var("KESAMI_PRO_MONTHLY_MINOR").ok().as_deref(),
+        kesami_core_backend::env_compat::var("KESAMI_BILLING_CURRENCY").ok().as_deref(),
     )
 }
 
@@ -23,7 +33,9 @@ fn catalog_with(billing_enabled: bool, amount: Option<&str>, currency: Option<&s
     ];
     // Optional single-region override, e.g. a launch discount. An invalid or
     // unknown-currency override is ignored rather than breaking the catalog.
-    let override_amount = amount.and_then(|s| s.parse::<u32>().ok()).filter(|n| *n > 0 && *n <= 100_000_000);
+    let override_amount = amount
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|n| *n > 0 && *n <= 100_000_000);
     let override_currency = currency.map(|c| c.to_ascii_uppercase());
     if let (Some(amount), Some(currency)) = (override_amount, override_currency) {
         for price in pro_prices.iter_mut() {
@@ -35,11 +47,12 @@ fn catalog_with(billing_enabled: bool, amount: Option<&str>, currency: Option<&s
     json!({
         "billingEnabled": billing_enabled,
         "freeMonthlyMinutes": FREE_MONTHLY_MINUTES,
+        "freeMonthlyAiUses": FREE_MONTHLY_AI_USES,
         "plans": [
             {"id":"free","name":"Free","status":"available","requiresAccount":false,
              "prices":[{"amountMinor":0,"currency":"USD","interval":null}],
              "description":"Your meetings, on your device.",
-             "features":["1 hour of meeting recording per month","Keep and export your meeting library","Search and transcripts on your device","No AI summaries or AI features"],
+             "features":[format!("{} hours of meeting recording per month", FREE_MONTHLY_MINUTES / 60),format!("{FREE_MONTHLY_AI_USES} shared AI summaries or chat replies per month"),"Keep and export your meeting library","Search and transcripts on your device"],
              "note":"Provider API usage for local transcription may still be billed separately by your chosen provider."},
             {"id":"pro","name":"Pro","status":"available","requiresAccount":true,
              "prices":pro_prices,
@@ -66,12 +79,14 @@ mod tests {
         assert_eq!(catalog["freeMonthlyMinutes"], FREE_MONTHLY_MINUTES);
         let plans = catalog["plans"].as_array().unwrap();
         assert_eq!(plans.len(), 3);
-        let [free, pro, enterprise] = plans.as_slice() else { panic!("three plans") };
+        let [free, pro, enterprise] = plans.as_slice() else {
+            panic!("three plans")
+        };
         assert_eq!(free["id"], "free");
         assert_eq!(free["requiresAccount"], false);
         assert_eq!(free["prices"][0]["amountMinor"], 0);
         assert_eq!(pro["id"], "pro");
-        assert_eq!(pro["prices"][0]["amountMinor"], 59_900);
+        assert_eq!(pro["prices"][0]["amountMinor"], 49_900);
         assert_eq!(pro["prices"][0]["currency"], "INR");
         assert_eq!(pro["prices"][0]["provider"], "razorpay");
         assert_eq!(pro["prices"][1]["amountMinor"], 1_000);
@@ -98,8 +113,14 @@ mod tests {
         ] {
             let catalog = catalog_with(false, Some(amount), Some(currency));
             let prices = catalog["plans"][1]["prices"].as_array().unwrap();
-            assert_eq!(prices[0]["amountMinor"], 59_900, "{amount}/{currency} ignored");
-            assert_eq!(prices[1]["amountMinor"], 1_000, "{amount}/{currency} ignored");
+            assert_eq!(
+                prices[0]["amountMinor"], 49_900,
+                "{amount}/{currency} ignored"
+            );
+            assert_eq!(
+                prices[1]["amountMinor"], 1_000,
+                "{amount}/{currency} ignored"
+            );
         }
     }
 

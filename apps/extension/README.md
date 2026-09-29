@@ -1,8 +1,8 @@
-# Alpha Meeting Names (browser extension)
+# Kesami Meeting Names (browser extension)
 
 The audio pipeline can tell voices apart, but it cannot know their names. The meeting's own
 web client already knows them — this extension reads the participant list and the speaking
-indicator out of Google Meet or Zoom and posts them to the Alpha backend running on the same
+indicator out of Google Meet or Zoom and posts them to the Kesami backend running on the same
 machine, so the transcript says **Aditi Sharma** where it would otherwise say **Others** or
 **Speaker 2**.
 
@@ -11,10 +11,10 @@ page content, no message text — just names and who is talking right now.
 
 ## Install
 
-1. Start Alpha (the backend must be listening; the extension talks to port 48900 by default).
+1. Start Kesami (the backend must be listening; the extension talks to port 48900 by default).
 2. Open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select
    this `apps/extension` directory. Chrome, Edge, Brave and Arc all take it as-is.
-3. Join a Google Meet or Zoom call. The toolbar badge turns green once Alpha is recording and
+3. Join a Google Meet or Zoom call. The toolbar badge turns green once Kesami is recording and
    accepting names.
 
 Open the popup to see what the extension currently sees: the roster, who it thinks is speaking,
@@ -38,11 +38,11 @@ The content script polls the page every 700 ms and posts a snapshot to
 
 Two more signals ride along when the page offers them:
 
-- **`micMuted`** — whether *your* microphone is muted in the meeting client. Alpha stops
+- **`micMuted`** — whether *your* microphone is muted in the meeting client. Kesami stops
   capturing and transcribing your side of the call while it is true, and picks up again the
   moment you unmute. It is omitted when the page state cannot be read.
 - **`ended`** — sent once, with a `reason` (`ended`, `left`, or `tab-closed`), when the page
-  shows a post-leave screen, the meeting is over, or the tab closes. Alpha uses it to stop the
+  shows a post-leave screen, the meeting is over, or the tab closes. Kesami uses it to stop the
   recording and summarize; a rejoin within the grace window cancels the stop. Only a tab that
   actually joined a meeting reports this, so a parked `meet.google.com` home tab stays silent.
 

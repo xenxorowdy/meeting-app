@@ -18,6 +18,7 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+deploy/oracle/backend.env
 
 # OS / Editor generated files
 .DS_Store
@@ -29,5 +30,10 @@ ehthumbs.db
 Thumbs.db
 .vscode/
 .idea/
+.kesami-chat/
 .alpha-chat/
 .fastembed_cache/
+
+# Desktop packaging output
+apps/desktop/release/
+apps/desktop/packaging/generated/

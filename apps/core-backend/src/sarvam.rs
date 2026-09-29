@@ -6,7 +6,7 @@
 
 use reqwest::{header, Client, RequestBuilder, Response};
 use serde_json::{json, Value};
-use std::{collections::HashMap, env, path::Path, time::Duration};
+use std::{collections::HashMap, path::Path, time::Duration};
 use tokio::{fs::File, sync::RwLock, time::Instant};
 use tokio_util::io::ReaderStream;
 
@@ -85,14 +85,14 @@ pub struct SarvamService {
 impl SarvamService {
     pub fn detect() -> Self {
         let timeout = Duration::from_secs(
-            env::var("ALPHA_SARVAM_TIMEOUT_SECS")
+            kesami_core_backend::env_compat::var("KESAMI_SARVAM_TIMEOUT_SECS")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(DEFAULT_TIMEOUT_SECS),
         );
         Self {
             key: RwLock::new(
-                env::var("ALPHA_SARVAM_API_KEY")
+                kesami_core_backend::env_compat::var("KESAMI_SARVAM_API_KEY")
                     .ok()
                     .map(|key| key.trim().to_string())
                     .filter(|key| !key.is_empty()),
@@ -102,7 +102,7 @@ impl SarvamService {
                 .timeout(timeout)
                 .build()
                 .expect("reqwest client configuration is valid"),
-            base_url: env::var("ALPHA_SARVAM_BASE_URL")
+            base_url: kesami_core_backend::env_compat::var("KESAMI_SARVAM_BASE_URL")
                 .unwrap_or_else(|_| DEFAULT_BASE_URL.into())
                 .trim_end_matches('/')
                 .to_string(),

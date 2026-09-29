@@ -1,0 +1,16 @@
+144-24-109-107.sslip.io {
+    @razorpay_webhook {
+        method POST
+        path /api/billing/webhook/razorpay
+    }
+
+    handle @razorpay_webhook {
+        reverse_proxy 127.0.0.1:48900 {
+            header_up Host 127.0.0.1:48900
+        }
+    }
+
+    handle {
+        respond 404
+    }
+}

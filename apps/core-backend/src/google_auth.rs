@@ -13,7 +13,7 @@ struct Claims { sub: String, email: Option<String>, email_verified: Option<bool>
 
 pub struct GoogleIdentity { pub sub: String, pub email: String, pub name: String }
 
-pub async fn exchange_code(code: &str, verifier: &str, redirect: &str, client_id: &str, client_secret: Option<&str>) -> Result<String, String> {
+pub async fn exchange_code(code: &str, verifier: &str, redirect: &str, client_id: &str, client_secret: Option<&str>) -> Result<Value, String> {
     if code.is_empty() || code.len() > 2_048 || !(43..=128).contains(&verifier.len()) || !verifier.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"-._~".contains(&byte)) {
         return Err("Google sign-in authorization is invalid.".into());
     }
@@ -30,7 +30,8 @@ pub async fn exchange_code(code: &str, verifier: &str, redirect: &str, client_id
     if !status.is_success() {
         return Err(body.get("error_description").and_then(Value::as_str).unwrap_or("Google rejected the authorization.").to_string());
     }
-    body.get("id_token").and_then(Value::as_str).map(str::to_string).ok_or("Google did not return an ID token.".into())
+    if body.get("id_token").and_then(Value::as_str).is_none() { return Err("Google did not return an ID token.".into()); }
+    Ok(body)
 }
 
 pub async fn verify_id_token(token: &str, client_id: &str, expected_nonce: &str) -> Result<GoogleIdentity, String> {

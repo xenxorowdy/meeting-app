@@ -29,6 +29,7 @@ export function TranscriptView({
     turns = [],
     interimTurns = [],
     isLive = false,
+    isPaused = false,
     isConnected = true,
     citationFocus = null,
     seekable = false,
@@ -38,6 +39,8 @@ export function TranscriptView({
     stt = null,
 }) {
     const [query, setQuery] = useState('');
+    const [filtersOpen, setFiltersOpen] = useState(false);
+    const liveSession = isLive || isPaused;
     const [speakerFilter, setSpeakerFilter] = useState('ALL');
     const [follow, setFollow] = useState(true);
     const [showJump, setShowJump] = useState(false);
@@ -187,16 +190,13 @@ export function TranscriptView({
             <div className="ks-transcript-toolbar flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
                 <div className="flex items-center gap-2">
                     <MessageSquareText className="size-4 text-muted-foreground" aria-hidden="true" />
-                    <h3 className="text-headline font-semibold">Transcript</h3>
-                    <Badge variant="muted" className="tnum">
+                    <div className="ks-transcript-heading">
+                        <h3 className="text-headline font-semibold">{liveSession ? 'Live transcript' : 'Transcript'}</h3>
+                        {liveSession && <p>{isPaused ? 'Recording paused' : 'Capturing your conversation'}</p>}
+                    </div>
+                    {!liveSession && <Badge variant="muted" className="tnum">
                         {turns.length} {turns.length === 1 ? 'turn' : 'turns'}
-                    </Badge>
-                    {isLive && (
-                        <span className="flex items-center gap-1 text-footnote font-medium text-destructive" aria-live="polite">
-                            <span className="size-[6px] animate-breathe rounded-full bg-destructive" aria-hidden="true" />
-                            Live
-                        </span>
-                    )}
+                    </Badge>}
                     {sttNotice && (
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -211,6 +211,7 @@ export function TranscriptView({
                 </div>
 
                 <div className="flex items-center gap-1">
+                    {liveSession && <Button variant="ghost" size="iconXs" aria-label="Search and filter transcript" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(value => !value)}><Search /></Button>}
                     {isLive && (
                         <Button
                             variant={follow ? 'tinted' : 'ghost'}
@@ -228,7 +229,7 @@ export function TranscriptView({
                 </div>
             </div>
 
-            <div className="ks-transcript-discovery flex items-center gap-2 px-4 pb-3">
+            {(!liveSession || filtersOpen) && <div className="ks-transcript-discovery flex items-center gap-2 px-4 pb-3">
                 <div className="relative min-w-0 flex-1 sm:max-w-xs">
                     <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                     <Input
@@ -267,7 +268,7 @@ export function TranscriptView({
                         </SegmentedItem>
                     ))}
                 </SegmentedControl>
-            </div>
+            </div>}
 
             <div ref={scrollRef} onScroll={handleScroll} className="ks-transcript-list min-h-0 flex-1 overflow-y-auto">
                 {filtered.length === 0 && pending.length === 0 ? (
@@ -358,7 +359,7 @@ export function TranscriptView({
                                             ) : (
                                                 <span className="tnum shrink-0 text-footnote text-muted-foreground">{formatMs(turn.startMs)}</span>
                                             )}
-                                            <span className="shrink-0 text-footnote text-muted-foreground">
+                                            <span className="ks-transcript-source shrink-0 text-footnote text-muted-foreground">
                                                 {turn.stream === 'mic' ? 'Microphone' : 'Meeting audio'}
                                             </span>
 
@@ -403,7 +404,7 @@ export function TranscriptView({
                         })}
 
                         {pending.map(turn => (
-                            <li key={turn.id} className="turn-in flex items-start gap-4 px-4 py-4 opacity-75" aria-live="polite">
+                            <li key={turn.id} className="ks-transcript-pending turn-in flex items-start gap-4 px-4 py-4" aria-live="polite">
                                 <div
                                     className={cn(
                                         'flex size-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold',
@@ -416,7 +417,7 @@ export function TranscriptView({
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-baseline gap-2">
                                         <h4 className="truncate text-headline font-semibold">{turn.speaker}</h4>
-                                        <Badge variant="tinted">
+                                        <Badge variant="tinted" className="ks-speaking-badge">
                                             <JumpingBalls size="sm" />
                                             speaking
                                         </Badge>
@@ -460,7 +461,8 @@ export function TranscriptView({
             )}
 
             {speakerStats.length > 0 && (
-                <div className="ks-talk-time px-4 pb-4 pt-3 hairline-top">
+                <details className="ks-talk-time px-4 pb-4 pt-3 hairline-top">
+                    <summary>Speaker activity <span>{speakers.length} participants · {totalWords} words</span></summary>
                     <div className="mb-2 flex items-center justify-between text-footnote text-muted-foreground">
                         <span>Talk time</span>
                         <span className="tnum">{totalWords} words</span>
@@ -487,7 +489,7 @@ export function TranscriptView({
                             </li>
                         ))}
                     </ul>
-                </div>
+                </details>
             )}
         </section>
     );

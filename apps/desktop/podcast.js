@@ -8,8 +8,9 @@ const https = require('node:https');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+const { env } = require('./legacy');
 
-const PODCAST_SCHEME = 'alpha-podcast';
+const PODCAST_SCHEME = 'kesami-podcast';
 const PODCASTS_ROOT = path.join(app.getPath('userData'), 'podcast-projects');
 const SETTINGS_PATH = path.join(PODCASTS_ROOT, 'settings.json');
 const TOKEN_PATH = path.join(PODCASTS_ROOT, 'youtube-token.bin');
@@ -282,8 +283,8 @@ async function deleteProject(projectId) {
 }
 
 function executable(name) {
-    const envName = `ALPHA_${name.replace(/-/g, '_').toUpperCase()}_PATH`;
-    if (process.env[envName]) return process.env[envName];
+    const envName = `${name.replace(/-/g, '_').toUpperCase()}_PATH`;
+    if (env(envName)) return env(envName);
     const file = process.platform === 'win32' ? `${name}.exe` : name;
     const bundled = path.join(process.resourcesPath || '', 'media-tools', process.platform, process.arch, file);
     return fs.existsSync(bundled) ? bundled : file;
@@ -417,13 +418,13 @@ async function validateRemoteUrl(input) {
 async function fetchLimited(input, maxBytes, redirects = 0) {
     if (redirects > 4) throw new Error('Too many redirects while importing the RSS feed.');
     const url = await validateRemoteUrl(input);
-    const response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Alpha-Podcast-Studio/1.0' } });
+    const response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Kesami-Podcast-Studio/1.0' } });
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
         return fetchLimited(new URL(response.headers.get('location'), url).toString(), maxBytes, redirects + 1);
     }
     if (!response.ok) throw new Error(`RSS request failed with ${response.status}.`);
     const declared = Number(response.headers.get('content-length') || 0);
-    if (declared > maxBytes) throw new Error('The remote file is larger than Alpha allows.');
+    if (declared > maxBytes) throw new Error('The remote file is larger than Kesami allows.');
     const reader = response.body.getReader();
     const chunks = [];
     let total = 0;
@@ -431,7 +432,7 @@ async function fetchLimited(input, maxBytes, redirects = 0) {
         const { value, done } = await reader.read();
         if (done) break;
         total += value.byteLength;
-        if (total > maxBytes) throw new Error('The remote file is larger than Alpha allows.');
+        if (total > maxBytes) throw new Error('The remote file is larger than Kesami allows.');
         chunks.push(Buffer.from(value));
     }
     return { buffer: Buffer.concat(chunks), contentType: response.headers.get('content-type') || '', finalUrl: url.toString() };
@@ -440,13 +441,13 @@ async function fetchLimited(input, maxBytes, redirects = 0) {
 async function downloadLimited(input, file, maxBytes, redirects = 0) {
     if (redirects > 4) throw new Error('Too many redirects while importing the RSS enclosure.');
     const url = await validateRemoteUrl(input);
-    const response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Alpha-Podcast-Studio/1.0' } });
+    const response = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Kesami-Podcast-Studio/1.0' } });
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
         return downloadLimited(new URL(response.headers.get('location'), url).toString(), file, maxBytes, redirects + 1);
     }
     if (!response.ok) throw new Error(`RSS enclosure request failed with ${response.status}.`);
     const declared = Number(response.headers.get('content-length') || 0);
-    if (declared > maxBytes) throw new Error('The remote file is larger than Alpha allows.');
+    if (declared > maxBytes) throw new Error('The remote file is larger than Kesami allows.');
     const handle = await fsp.open(file, 'w');
     let total = 0;
     try {
@@ -455,7 +456,7 @@ async function downloadLimited(input, file, maxBytes, redirects = 0) {
             const { value, done } = await reader.read();
             if (done) break;
             total += value.byteLength;
-            if (total > maxBytes) throw new Error('The remote file is larger than Alpha allows.');
+            if (total > maxBytes) throw new Error('The remote file is larger than Kesami allows.');
             await handle.write(Buffer.from(value));
         }
     } catch (cause) {
@@ -504,10 +505,10 @@ async function inspectRss(url) {
 
 async function importRssEpisode(projectId, feed, episode) {
     if (!episode?.enclosureUrl) throw new Error('Choose an RSS episode with a media enclosure.');
-    if (Number(episode.length || 0) > MAX_ENCLOSURE_BYTES) throw new Error('That RSS enclosure is larger than Alpha allows.');
+    if (Number(episode.length || 0) > MAX_ENCLOSURE_BYTES) throw new Error('That RSS enclosure is larger than Kesami allows.');
     const guessedUrl = new URL(episode.enclosureUrl);
     let ext = path.extname(guessedUrl.pathname).toLowerCase();
-    const initialTemp = path.join(app.getPath('temp'), `alpha-rss-${crypto.randomUUID()}${ALLOWED_EXTENSIONS.has(ext) ? ext : '.media'}`);
+    const initialTemp = path.join(app.getPath('temp'), `kesami-rss-${crypto.randomUUID()}${ALLOWED_EXTENSIONS.has(ext) ? ext : '.media'}`);
     const response = await downloadLimited(episode.enclosureUrl, initialTemp, MAX_ENCLOSURE_BYTES);
     const url = new URL(response.finalUrl);
     ext = path.extname(url.pathname).toLowerCase();
@@ -579,7 +580,7 @@ async function cleanSpeech(projectId, assetId) {
             await runProcess(deepFilter, ['-o', enhancedDir, prepared], { signal: controller.signal });
         } catch (cause) {
             if (cause.code === 'ENOENT' || /ENOENT|not found/i.test(cause.message)) {
-                throw new Error('DeepFilterNet is not installed in this Alpha build. Set ALPHA_DEEP_FILTER_PATH or install the packaged media tools.');
+                throw new Error('DeepFilterNet is not installed in this Kesami build. Set KESAMI_DEEP_FILTER_PATH or install the packaged media tools.');
             }
             throw cause;
         }
@@ -762,7 +763,7 @@ async function storeToken(token) {
 
 async function oauthClientId() {
     const settings = await podcastSettings();
-    const clientId = process.env.ALPHA_GOOGLE_OAUTH_CLIENT_ID || settings.youtubeClientId;
+    const clientId = env('GOOGLE_OAUTH_CLIENT_ID') || settings.youtubeClientId;
     if (!clientId) throw new Error('Add a Google OAuth client ID in Podcast settings before connecting YouTube.');
     return clientId;
 }
@@ -785,7 +786,7 @@ async function connectYouTube() {
         const timer = setTimeout(() => reject(new Error('YouTube sign-in timed out.')), 5 * 60 * 1000);
         server.on('request', (request, response) => {
             const incoming = new URL(request.url, redirectUri);
-            response.end('<!doctype html><title>Alpha connected</title><p>You can return to Alpha.</p>');
+            response.end('<!doctype html><title>Kesami connected</title><p>You can return to Kesami.</p>');
             clearTimeout(timer);
             if (incoming.searchParams.get('state') !== state) reject(new Error('YouTube sign-in state did not match.'));
             else if (incoming.searchParams.get('error')) reject(new Error(`YouTube sign-in failed: ${incoming.searchParams.get('error')}`));
@@ -903,7 +904,7 @@ async function ensurePodcastPlaylist(project, title) {
     const escapedTitle = String(title).replace(/[<>&]/g, '').slice(0, 80);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><rect width="800" height="800" rx="80" fill="url(#g)"/><circle cx="400" cy="315" r="120" fill="none" stroke="white" stroke-width="32"/><path d="M230 390c0 104 76 180 170 180s170-76 170-180M400 570v90M320 660h160" fill="none" stroke="white" stroke-width="32" stroke-linecap="round"/><text x="400" y="745" fill="white" font-family="sans-serif" font-size="34" text-anchor="middle">${escapedTitle}</text></svg>`;
     const png = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`).resize({ width: 800, height: 800 }).toPNG();
-    const boundary = `alpha-playlist-${crypto.randomUUID()}`;
+    const boundary = `kesami-playlist-${crypto.randomUUID()}`;
     const metadata = JSON.stringify({ snippet: { playlistId: created.id, type: 'hero', width: 800, height: 800 } });
     const multipart = Buffer.concat([
         Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: image/png\r\nContent-Disposition: form-data; name="media"; filename="podcast.png"\r\n\r\n`),
@@ -923,7 +924,7 @@ async function publishYouTube(projectId, exportId = null) {
     const file = resolveProjectPath(projectId, chosen.relativePath);
     const stat = await fsp.stat(file);
     const token = await accessToken();
-    const metadata = { snippet: { title: project.title.slice(0, 100), description: project.description || 'Created with Alpha Podcast Studio', categoryId: '22' }, status: { privacyStatus: 'private', selfDeclaredMadeForKids: false, containsSyntheticMedia: project.script?.turns?.length > 0 } };
+    const metadata = { snippet: { title: project.title.slice(0, 100), description: project.description || 'Created with Kesami Podcast Studio', categoryId: '22' }, status: { privacyStatus: 'private', selfDeclaredMadeForKids: false, containsSyntheticMedia: project.script?.turns?.length > 0 } };
     const init = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Length': String(stat.size), 'X-Upload-Content-Type': 'video/mp4' }, body: JSON.stringify(metadata) });
     if (!init.ok) throw new Error(`YouTube upload could not start: ${await init.text()}`);
     const location = init.headers.get('location');

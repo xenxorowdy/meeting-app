@@ -1,6 +1,48 @@
 //! Performance-sensitive primitives for the Rust core backend.
 
 pub mod denoise;
+
+pub mod env_compat {
+    use std::{env, ffi::OsString};
+
+    const PREFIX: &str = "KESAMI_";
+    const LEGACY_PREFIX: &str = "ALPHA_";
+
+    fn legacy(name: &str) -> Option<String> {
+        name.strip_prefix(PREFIX).map(|rest| format!("{LEGACY_PREFIX}{rest}"))
+    }
+
+    pub fn var(name: &str) -> Result<String, env::VarError> {
+        match env::var(name) {
+            Err(env::VarError::NotPresent) => match legacy(name) {
+                Some(old) => env::var(old),
+                None => Err(env::VarError::NotPresent),
+            },
+            found => found,
+        }
+    }
+
+    pub fn var_os(name: &str) -> Option<OsString> {
+        env::var_os(name).or_else(|| legacy(name).and_then(env::var_os))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn the_new_name_wins_and_the_legacy_name_is_a_fallback() {
+            env::set_var("ALPHA_ENV_COMPAT_TEST_ONLY_A", "old");
+            assert_eq!(var("KESAMI_ENV_COMPAT_TEST_ONLY_A").as_deref(), Ok("old"));
+            env::set_var("KESAMI_ENV_COMPAT_TEST_ONLY_A", "new");
+            assert_eq!(var("KESAMI_ENV_COMPAT_TEST_ONLY_A").as_deref(), Ok("new"));
+            assert!(var_os("KESAMI_ENV_COMPAT_TEST_ONLY_MISSING").is_none());
+            env::set_var("ALPHA_ENV_COMPAT_TEST_ONLY_B", "old");
+            assert_eq!(var_os("KESAMI_ENV_COMPAT_TEST_ONLY_B"), Some("old".into()));
+            assert!(var("OTHER_ENV_COMPAT_TEST_ONLY").is_err());
+        }
+    }
+}
 pub mod dsp;
 pub mod echo;
 pub mod voiceprint;

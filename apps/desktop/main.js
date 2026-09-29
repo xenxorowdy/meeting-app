@@ -1,4 +1,6 @@
 const { app, BrowserWindow, Menu, shell, nativeImage, nativeTheme } = require('electron');
+const legacy = require('./legacy');
+legacy.adoptLegacyLocations(app);
 const recorder = require('./recorder');
 const podcast = require('./podcast');
 const widget = require('./widget');
@@ -6,6 +8,7 @@ const menubar = require('./menubar');
 const systemAudio = require('./systemAudio');
 const micUsage = require('./micUsage');
 const googleSignIn = require('./googleSignIn');
+const connection = require('./connection');
 const { showDockIcon } = require('./dock');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -17,12 +20,34 @@ const BACKEND_PORT = Number(process.env.CORE_BACKEND_PORT || 48900);
 
 const HEALTH_TIMEOUT_MS = 800;
 const BACKEND_START_TIMEOUT_MS = 90_000;
+const BACKEND_WATCH_MS = 10_000;
 
-const CORE_BACKEND_DIR = path.resolve(__dirname, '..', 'core-backend');
-const CORE_BACKEND_BINARY = path.join(CORE_BACKEND_DIR, 'target', 'release', 'alpha-core-backend');
-const UI_DIST_INDEX = path.resolve(__dirname, '..', 'ui', 'dist', 'index.html');
-const UI_DIST_WIDGET = path.resolve(__dirname, '..', 'ui', 'dist', 'widget.html');
+// A packaged build carries the backend and UI in Resources, and keeps backend
+// data in Application Support rather than beside a source checkout.
+const CORE_BACKEND_DIR = app.isPackaged ? app.getPath('userData') : path.resolve(__dirname, '..', 'core-backend');
+const CORE_BACKEND_BINARY = app.isPackaged
+    ? path.join(process.resourcesPath, 'kesami-core-backend')
+    : path.join(CORE_BACKEND_DIR, 'target', 'release', 'kesami-core-backend');
+const UI_DIST_DIR = app.isPackaged ? path.join(process.resourcesPath, 'ui') : path.resolve(__dirname, '..', 'ui', 'dist');
+const UI_DIST_INDEX = path.join(UI_DIST_DIR, 'index.html');
+const UI_DIST_WIDGET = path.join(UI_DIST_DIR, 'widget.html');
 const DEV_UI_URL = process.env.MEETING_UI_URL || 'http://localhost:5173/';
+
+function packagedAuthConfig() {
+    if (!app.isPackaged || fs.existsSync(path.join(CORE_BACKEND_DIR, '.env.local'))) return null;
+    try {
+        const config = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'auth-config.json'), 'utf8'));
+        const url = new URL(config.url);
+        if (config.provider !== 'supabase' || url.protocol !== 'https:' || url.username || url.password
+            || url.pathname !== '/' || url.search || url.hash || !config.publishableKey?.startsWith('sb_publishable_')) {
+            throw new Error('invalid public auth settings');
+        }
+        return config;
+    } catch (cause) {
+        console.error(`[Kesami] bundled Google sign-in settings unavailable: ${cause.message}`);
+        return null;
+    }
+}
 
 let backendProcess = null;
 let mainWindow = null;
@@ -66,10 +91,10 @@ async function startBackend() {
         if (!isCurrentBuild(existing)) {
             throw new Error(
                 `a core backend from an earlier build is holding :${BACKEND_PORT}. Quit the app instance that started it (or kill the ` +
-                    `alpha-core-backend process on that port), then relaunch.`
+                    `kesami-core-backend process on that port), then relaunch.`
             );
         }
-        console.log(`[Alpha] reusing the core backend already on :${BACKEND_PORT}`);
+        console.log(`[Kesami] reusing the core backend already on :${BACKEND_PORT}`);
         return existing;
     }
 
@@ -82,23 +107,32 @@ async function startBackend() {
         // the backend writes one folder per meeting, so both values are the same
         // directory by design — the backend only moves a finished recording into a
         // meeting folder when they match.
-        ALPHA_RECORDINGS_DIR: recorder.LIBRARY_ROOT,
-        ALPHA_LIBRARY_DIR: recorder.LIBRARY_ROOT,
+        KESAMI_RECORDINGS_DIR: recorder.LIBRARY_ROOT,
+        KESAMI_LIBRARY_DIR: recorder.LIBRARY_ROOT,
         // Podcast media follows the same trust model as recordings: renderer
         // requests carry project ids, while the backend receives one fixed root.
-        ALPHA_PODCASTS_DIR: podcast.PODCASTS_ROOT,
-        ALPHA_FFMPEG_PATH: podcast.mediaTool('ffmpeg'),
+        KESAMI_PODCASTS_DIR: podcast.PODCASTS_ROOT,
+        KESAMI_FFMPEG_PATH: podcast.mediaTool('ffmpeg'),
     };
+
+    const auth = packagedAuthConfig();
+    if (auth) {
+        if (!env.KESAMI_AUTH_PROVIDER && !env.ALPHA_AUTH_PROVIDER) env.KESAMI_AUTH_PROVIDER = auth.provider;
+        if (!env.KESAMI_SUPABASE_URL && !env.ALPHA_SUPABASE_URL) env.KESAMI_SUPABASE_URL = auth.url;
+        if (!env.KESAMI_SUPABASE_PUBLISHABLE_KEY && !env.ALPHA_SUPABASE_PUBLISHABLE_KEY) {
+            env.KESAMI_SUPABASE_PUBLISHABLE_KEY = auth.publishableKey;
+        }
+    }
 
     if (fs.existsSync(CORE_BACKEND_BINARY)) {
         backendProcess = spawn(CORE_BACKEND_BINARY, [], { cwd: CORE_BACKEND_DIR, env, stdio: ['ignore', 'inherit', 'inherit'] });
     } else {
-        console.log('[Alpha] release binary not found, falling back to cargo run');
+        console.log('[Kesami] release binary not found, falling back to cargo run');
         backendProcess = spawn('cargo', ['run', '--release'], { cwd: CORE_BACKEND_DIR, env, stdio: ['ignore', 'inherit', 'inherit'] });
     }
 
     backendProcess.on('exit', code => {
-        if (code !== 0 && code !== null) console.error(`[Alpha] core backend exited with code ${code}`);
+        if (code !== 0 && code !== null) console.error(`[Kesami] core backend exited with code ${code}`);
         backendProcess = null;
     });
 
@@ -113,7 +147,31 @@ async function startBackend() {
     throw new Error(`the core backend did not answer on :${BACKEND_PORT}`);
 }
 
+let backendStarting = null;
+let backendWatch = null;
+
+function watchBackend() {
+    if (backendWatch) return;
+    backendWatch = setInterval(async () => {
+        if (backendProcess || backendStarting) return;
+        if (await health()) return;
+        console.log(`[Kesami] no core backend on :${BACKEND_PORT}; starting one`);
+        backendStarting = startBackend()
+            .then(status => {
+                console.log(`[Kesami] core backend ${status.version} ready on :${BACKEND_PORT}`);
+                void menubar.refresh();
+            })
+            .catch(cause => console.error(`[Kesami] ${cause.message}`))
+            .finally(() => {
+                backendStarting = null;
+            });
+    }, BACKEND_WATCH_MS);
+    backendWatch.unref?.();
+}
+
 function stopBackend() {
+    clearInterval(backendWatch);
+    backendWatch = null;
     if (!backendProcess) return;
     backendProcess.removeAllListeners('exit');
     backendProcess.kill('SIGTERM');
@@ -190,7 +248,7 @@ function createWindow() {
 
     const useDevServer = process.argv.includes('--dev') || !fs.existsSync(UI_DIST_INDEX);
     if (useDevServer) {
-        console.log(`[Alpha] loading the dev server at ${DEV_UI_URL}`);
+        console.log(`[Kesami] loading the dev server at ${DEV_UI_URL}`);
         mainWindow.loadURL(DEV_UI_URL);
     } else {
         mainWindow.loadFile(UI_DIST_INDEX);
@@ -241,7 +299,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on('second-instance', showMainWindow);
 
     app.whenReady().then(async () => {
-        showDockIcon({ app, nativeImage }).catch(cause => console.error(`[Alpha] could not apply the Dock icon: ${cause.message}`));
+        showDockIcon({ app, nativeImage }).catch(cause => console.error(`[Kesami] could not apply the Dock icon: ${cause.message}`));
         buildMenu();
         recorder.serveMediaScheme();
         recorder.registerHandlers();
@@ -250,6 +308,7 @@ if (!app.requestSingleInstanceLock()) {
         systemAudio.registerHandlers();
         micUsage.registerHandlers();
         googleSignIn.registerHandlers();
+        connection.registerHandlers();
 
         menubar.create({
             onActivateMain: showMainWindow,
@@ -259,12 +318,15 @@ if (!app.requestSingleInstanceLock()) {
 
         try {
             const status = await startBackend();
-            console.log(`[Alpha] core backend ${status.version} ready on :${BACKEND_PORT}`);
+            console.log(`[Kesami] core backend ${status.version} ready on :${BACKEND_PORT}`);
+            // The tray was created before the backend answered; load today's meetings now it can.
+            void menubar.refresh();
         } catch (cause) {
             // The window still opens: the UI reports the backend as offline and
             // offers a retry, which is more useful than refusing to launch.
-            console.error(`[Alpha] ${cause.message}`);
+            console.error(`[Kesami] ${cause.message}`);
         }
+        watchBackend();
 
         createWindow();
         createWidget();

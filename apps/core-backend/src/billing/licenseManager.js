@@ -16,7 +16,7 @@ class LicenseManager extends EventEmitter {
         this.options = {
             freeMonthlyMeetingLimit: 10,
             freeMonthlyMinutesLimit: 300,
-            signingSecret: options.signingSecret || 'alpha-commercial-license-secret-v1',
+            signingSecret: options.signingSecret || 'kesami-commercial-license-secret-v1',
             ...options,
         };
 
@@ -158,9 +158,9 @@ class LicenseManager extends EventEmitter {
     /**
      * Activate a commercial license key.
      * Key Formats:
-     * - `ALPHA-PRO-XXXX-XXXX-XXXX-XXXX`
-     * - `ALPHA-LIFE-XXXX-XXXX-XXXX-XXXX`
-     * - `ALPHA-DEV-XXXX-XXXX-XXXX-XXXX`
+     * - `KESAMI-PRO-XXXX-XXXX-XXXX-XXXX`
+     * - `KESAMI-LIFE-XXXX-XXXX-XXXX-XXXX`
+     * - `KESAMI-DEV-XXXX-XXXX-XXXX-XXXX`
      * @param {string} licenseKey
      * @returns {Promise<{ success: boolean, tier?: string, message: string }>}
      */
@@ -253,15 +253,15 @@ class LicenseManager extends EventEmitter {
      */
     _validateLicenseKeySignature(key) {
         // Pattern: PREFIX-TIER-CHKSUM-BLOCK-BLOCK
-        const pattern = /^ALPHA-(PRO|LIFE|DEV)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/;
+        const pattern = /^KESAMI-(PRO|LIFE|DEV)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/;
         const match = key.match(pattern);
 
         if (!match) {
             // Check for development / test keys
-            if (key === 'ALPHA-PRO-TEST-DEV-2026' || key === 'ALPHA-LIFETIME-DEV-TEST') {
+            if (key === 'KESAMI-PRO-TEST-DEV-2026' || key === 'KESAMI-LIFETIME-DEV-TEST') {
                 return { valid: true, tier: key.includes('LIFE') ? 'lifetime' : 'pro' };
             }
-            return { valid: false, reason: 'Key does not match Alpha license structure (ALPHA-TIER-XXXX-XXXX-XXXX-XXXX).' };
+            return { valid: false, reason: 'Key does not match Kesami license structure (KESAMI-TIER-XXXX-XXXX-XXXX-XXXX).' };
         }
 
         const tierCode = match[1];
@@ -294,7 +294,7 @@ class LicenseManager extends EventEmitter {
      * Generate valid license key for test / commercial issuance.
      * @static
      */
-    static generateLicenseKey(tier = 'PRO', secret = 'alpha-commercial-license-secret-v1') {
+    static generateLicenseKey(tier = 'PRO', secret = 'kesami-commercial-license-secret-v1') {
         const b1 = cryptoRandomHex(4).toUpperCase();
         const b2 = cryptoRandomHex(4).toUpperCase();
         const b3 = cryptoRandomHex(4).toUpperCase();
@@ -307,7 +307,7 @@ class LicenseManager extends EventEmitter {
             .substring(0, 4)
             .toUpperCase();
 
-        return `ALPHA-${tier}-${checksum}-${b1}-${b2}-${b3}`;
+        return `KESAMI-${tier}-${checksum}-${b1}-${b2}-${b3}`;
     }
 
     _maskKey(key) {

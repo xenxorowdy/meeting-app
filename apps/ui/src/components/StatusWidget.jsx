@@ -6,7 +6,7 @@ import { LevelHistory } from '@/components/widget/LevelHistory';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useTheme } from '@/lib/theme';
 
-const shell = globalThis.alphaWidget || null;
+const shell = globalThis.kesamiWidget || null;
 
 function formatClock(totalSeconds) {
     const seconds = Math.max(0, Math.floor(totalSeconds));
@@ -187,7 +187,7 @@ export function StatusWidget() {
 
             <div className="ks-widget-body">
                 {connection !== 'online' ? (
-                    <p className="ks-widget-empty">Waiting for the Alpha backend. The transcript appears here once it answers.</p>
+                    <p className="ks-widget-empty">Waiting for the Kesami backend. The transcript appears here once it answers.</p>
                 ) : (
                     <TranscriptFeed turns={turns} interimTurns={interimTurns} />
                 )}

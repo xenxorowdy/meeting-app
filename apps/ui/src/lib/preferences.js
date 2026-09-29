@@ -1,5 +1,7 @@
+import { adoptLegacyKey } from './legacyStorage.js';
 // Personal preferences belong to this device, never to the shared service.
-const STORAGE_KEY = 'alpha.preferences.v1';
+const STORAGE_KEY = 'kesami.preferences.v1';
+adoptLegacyKey('localStorage', 'alpha.preferences.v1', STORAGE_KEY);
 export const DEFAULT_PREFERENCES = Object.freeze({
     displayName: '',
     workspaceName: 'My workspace',

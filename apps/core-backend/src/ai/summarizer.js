@@ -27,7 +27,7 @@ class MeetingSummarizer extends EventEmitter {
             openaiModel: options.openaiModel || 'gpt-4o',
             ollamaEndpoint: options.ollamaEndpoint || 'http://localhost:11434',
             ollamaModel: options.ollamaModel || 'llama3:latest',
-            claudeCliModel: options.claudeCliModel || process.env.ALPHA_SUMMARY_MODEL || 'sonnet',
+            claudeCliModel: options.claudeCliModel || process.env.KESAMI_SUMMARY_MODEL || 'sonnet',
             claudeCliBinary: options.claudeCliBinary || null,
             claudeCliTimeoutMs: options.claudeCliTimeoutMs || null,
             ...options,
@@ -338,7 +338,7 @@ class MeetingSummarizer extends EventEmitter {
                 ? jsonBlock.followUpEmail
                 : {
                       subject: `Follow-up: ${meeting.title || 'Meeting Summary'}`,
-                      body: `Hi team,\n\nHere is a summary of our meeting discussion and next steps.\n\nBest regards,\n${meeting.author || 'Alpha Assistant'}`,
+                      body: `Hi team,\n\nHere is a summary of our meeting discussion and next steps.\n\nBest regards,\n${meeting.author || 'Kesami Assistant'}`,
                   };
 
         const topics =
@@ -445,7 +445,7 @@ class MeetingSummarizer extends EventEmitter {
             actionItems: uniqueActions,
             followUpEmail: {
                 subject: `Recap & Next Steps: ${title}`,
-                body: `Hi everyone,\n\nThanks for a productive meeting today. Here is the recap of our decisions and next steps:\n\n${uniqueActions.map(a => `• ${a.task} (${a.owner})`).join('\n')}\n\nBest regards,\nAlpha Team`,
+                body: `Hi everyone,\n\nThanks for a productive meeting today. Here is the recap of our decisions and next steps:\n\n${uniqueActions.map(a => `• ${a.task} (${a.owner})`).join('\n')}\n\nBest regards,\nKesami Team`,
             },
             topics: ['Project Roadmap', 'Technical Sync', 'Action Planning'],
             rawMarkdown,

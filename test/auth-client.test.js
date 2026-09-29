@@ -9,8 +9,8 @@ const MODULE_URL = pathToFileURL(path.join(__dirname, '..', 'apps', 'ui', 'src',
 
 function withStubs(fetchLog, savedConnections, { storedToken = '', responses } = {}) {
     const originalFetch = globalThis.fetch;
-    const originalConnection = globalThis.alphaConnection;
-    globalThis.alphaConnection = {
+    const originalConnection = globalThis.kesamiConnection;
+    globalThis.kesamiConnection = {
         get: () => ({ url: 'http://127.0.0.1:48900', token: storedToken }),
         save: async connection => savedConnections.push(connection),
     };
@@ -21,7 +21,7 @@ function withStubs(fetchLog, savedConnections, { storedToken = '', responses } =
     };
     return () => {
         globalThis.fetch = originalFetch;
-        globalThis.alphaConnection = originalConnection;
+        globalThis.kesamiConnection = originalConnection;
     };
 }
 
@@ -84,9 +84,9 @@ test('Google desktop authorization is exchanged through the backend and stores t
     const { signInWithGoogle } = await import(MODULE_URL);
     const fetches = [];
     const saved = [];
-    const originalGoogle = globalThis.alphaGoogleSignIn;
+    const originalGoogle = globalThis.kesamiGoogleSignIn;
     const authorization = { code: 'one-time-code', verifier: 'v'.repeat(48), redirectUri: 'http://127.0.0.1:54321', nonce: 'attempt-nonce' };
-    globalThis.alphaGoogleSignIn = { start: async clientId => {
+    globalThis.kesamiGoogleSignIn = { start: async clientId => {
         assert.equal(clientId, 'client.apps.googleusercontent.com');
         return authorization;
     } };
@@ -101,35 +101,35 @@ test('Google desktop authorization is exchanged through the backend and stores t
         assert.equal(saved[0].token, 'google-session');
     } finally {
         restore();
-        globalThis.alphaGoogleSignIn = originalGoogle;
+        globalThis.kesamiGoogleSignIn = originalGoogle;
     }
 });
 
 test('Supabase desktop sign-in sends only its proof to the backend and stores the local session', async () => {
     const { signInWithGoogle } = await import(MODULE_URL);
     const fetches = [], saved = [];
-    const originalGoogle = globalThis.alphaGoogleSignIn;
+    const originalGoogle = globalThis.kesamiGoogleSignIn;
     const options = { provider: 'supabase', configured: true, url: 'https://project.supabase.co' };
     const authorization = { code: 'supabase-code', verifier: 'v'.repeat(64) };
-    globalThis.alphaGoogleSignIn = { start: async input => { assert.deepEqual(input, options); return authorization; } };
+    globalThis.kesamiGoogleSignIn = { start: async input => { assert.deepEqual(input, options); return authorization; } };
     const restore = withStubs(fetches, saved, { responses: [{ ok: true, status: 200, text: async () => JSON.stringify({ token: 'local-session', account: { id: 'g1', authProvider: 'google' } }) }] });
     try {
         assert.equal((await signInWithGoogle(options)).authProvider, 'google');
         assert.equal(fetches[0].url, 'http://127.0.0.1:48900/api/auth/supabase/google');
         assert.deepEqual(JSON.parse(fetches[0].options.body), authorization);
         assert.equal(saved[0].token, 'local-session');
-    } finally { restore(); globalThis.alphaGoogleSignIn = originalGoogle; }
+    } finally { restore(); globalThis.kesamiGoogleSignIn = originalGoogle; }
 });
 
 test('Supabase verification failure does not persist a session', async () => {
     const { signInWithGoogle } = await import(MODULE_URL);
-    const saved = [], originalGoogle = globalThis.alphaGoogleSignIn;
-    globalThis.alphaGoogleSignIn = { start: async () => ({ code: 'bad', verifier: 'v'.repeat(64) }) };
+    const saved = [], originalGoogle = globalThis.kesamiGoogleSignIn;
+    globalThis.kesamiGoogleSignIn = { start: async () => ({ code: 'bad', verifier: 'v'.repeat(64) }) };
     const restore = withStubs([], saved, { responses: [{ ok: false, status: 401, text: async () => '{"error":"Identity rejected"}' }] });
     try {
         await assert.rejects(signInWithGoogle({ provider: 'supabase' }), /Identity rejected/);
         assert.equal(saved.length, 0);
-    } finally { restore(); globalThis.alphaGoogleSignIn = originalGoogle; }
+    } finally { restore(); globalThis.kesamiGoogleSignIn = originalGoogle; }
 });
 
 test('sign-out revokes the stored token server-side, then clears it locally', async () => {
@@ -181,10 +181,10 @@ test('a failed or empty session check reads as signed out', async () => {
 
 test('local entry switches a remote connection to loopback and persists the choice', async () => {
     const { enterLocalMode, hasLocalMode, rememberLocalMode } = await import(MODULE_URL);
-    const previous = { connection: globalThis.alphaConnection, storage: globalThis.localStorage };
+    const previous = { connection: globalThis.kesamiConnection, storage: globalThis.localStorage };
     const data = new Map();
     let connection = { url: 'https://workspace.example.com', token: 'remote-session' };
-    globalThis.alphaConnection = { get: () => connection, save: async value => { connection = value; } };
+    globalThis.kesamiConnection = { get: () => connection, save: async value => { connection = value; } };
     globalThis.localStorage = { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
     try {
         assert.equal(hasLocalMode(), false);
@@ -199,7 +199,7 @@ test('local entry switches a remote connection to loopback and persists the choi
         rememberLocalMode(false);
         assert.equal(data.size, 0);
     } finally {
-        globalThis.alphaConnection = previous.connection;
+        globalThis.kesamiConnection = previous.connection;
         globalThis.localStorage = previous.storage;
     }
 });
@@ -210,7 +210,7 @@ test('sign-out reports unconfirmed revocation and never hides storage failures',
     try { assert.equal((await signOut()).revoked, false); }
     finally { restore(); }
     const restoreAgain = withStubs([], []);
-    globalThis.alphaConnection.save = async () => { throw new Error('Storage locked'); };
+    globalThis.kesamiConnection.save = async () => { throw new Error('Storage locked'); };
     try { await assert.rejects(signOut(), /Storage locked/); }
     finally { restoreAgain(); }
 });

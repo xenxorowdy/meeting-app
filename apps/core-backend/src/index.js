@@ -1,5 +1,5 @@
 /**
- * @alpha/core-backend
+ * @kesami/core-backend
  * Commercial Desktop Meeting Assistant Core Engine.
  */
 

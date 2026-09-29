@@ -1,7 +1,9 @@
 target
 .git
+.kesami
 .alpha-meeting-assistant
 .env
 Dockerfile
 fly.toml
 test
+.env.*

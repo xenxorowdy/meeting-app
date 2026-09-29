@@ -29,8 +29,8 @@ export async function listAudioInputs() {
 }
 
 export async function systemAudioAvailability() {
-    const bridge = globalThis.alphaSystemAudio;
-    if (!bridge) return { available: false, source: null, reason: 'Capturing the other participants needs the Alpha desktop app.' };
+    const bridge = globalThis.kesamiSystemAudio;
+    if (!bridge) return { available: false, source: null, reason: 'Capturing the other participants needs the Kesami desktop app.' };
     const state = await bridge.available().catch(cause => ({ available: false, reason: cause.message }));
     if (state?.available) return { available: true, source: 'native', reason: null };
 
@@ -40,7 +40,7 @@ export async function systemAudioAvailability() {
 }
 
 async function startNativeCapture({ onPcm, onError, muted, includeStream }) {
-    const bridge = globalThis.alphaSystemAudio;
+    const bridge = globalThis.kesamiSystemAudio;
     let isMuted = muted;
     const recording = includeStream ? await createPcmMediaStream({ muted }) : null;
 
@@ -125,7 +125,7 @@ export async function startSystemCapture({ onPcm, onError, deviceId = 'default',
         return startDeviceCapture({ deviceId, label: device?.label, onPcm, onError, muted });
     }
 
-    const bridge = globalThis.alphaSystemAudio;
+    const bridge = globalThis.kesamiSystemAudio;
     if (bridge) {
         const state = await bridge.available().catch(() => null);
         if (state?.available) return startNativeCapture({ onPcm, onError, muted, includeStream });

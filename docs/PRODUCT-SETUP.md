@@ -6,9 +6,9 @@ Run `npm run dev` for desktop development. The standalone UI (`npm run start:ui`
 
 ## Account database
 
-`accounts.sqlite3` is created automatically beside the existing settings and credentials. Normally this is `apps/core-backend/.alpha-meeting-assistant/accounts.sqlite3` when launched by the workspace scripts. `ALPHA_DATA_DIR` changes the base directory; `CORE_BACKEND_DATA_FILE`, when supplied, takes precedence and uses that file's parent directory.
+`accounts.sqlite3` is created automatically beside the existing settings and credentials. Normally this is `apps/core-backend/.kesami/accounts.sqlite3` when launched by the workspace scripts. `KESAMI_DATA_DIR` changes the base directory; `CORE_BACKEND_DATA_FILE`, when supplied, takes precedence and uses that file's parent directory.
 
-The database holds `accounts`, `sessions`, `google_identities`, and a migration ledger. It uses unique emails, foreign keys, transactions, and hashed session tokens. Passwords retain the existing PBKDF2-HMAC-SHA256 format. Newly created passwords use 600,000 iterations in release builds; only debug builds allow `ALPHA_PBKDF2_ITERATIONS` to reduce test time. Password work runs on blocking workers with at most two concurrent jobs and a workspace-wide limit of 30 auth attempts per minute. The limiter resets when the backend restarts; an exposed service also needs a proxy rate limit.
+The database holds `accounts`, `sessions`, `google_identities`, and a migration ledger. It uses unique emails, foreign keys, transactions, and hashed session tokens. Passwords retain the existing PBKDF2-HMAC-SHA256 format. Newly created passwords use 600,000 iterations in release builds; only debug builds allow `KESAMI_PBKDF2_ITERATIONS` to reduce test time. Password work runs on blocking workers with at most two concurrent jobs and a workspace-wide limit of 30 auth attempts per minute. The limiter resets when the backend restarts; an exposed service also needs a proxy rate limit.
 
 Sessions expire after 30 days, with at most 20 per account. Logout is persisted before success is returned. Password changes require the current password and a valid session, revoke previous sessions, and issue a replacement. Auth/API responses use `Cache-Control: no-store`. On Unix the database is created with `0600` permissions; Windows deployment must restrict its data directory to the current OS user.
 
@@ -20,15 +20,15 @@ To back up accounts, stop the backend and copy the database together with the re
 
 All accounts on one backend share that backend's meetings and settings. This implementation is suitable for a local/private workspace, not a public multi-tenant service. Signing in does not enable cloud sync or isolate each account's meeting library.
 
-For a backend protected by `ALPHA_BACKEND_TOKEN`, registration requires that deployment token. An ordinary account session cannot create more accounts. Configure the owner's connection in **Connection & preferences** before creating an account; login remains available without presenting a deployment token. Do not distribute the owner token to untrusted users. Without a deployment token, the default loopback backend permits local registration and local use without an account.
+For a backend protected by `KESAMI_BACKEND_TOKEN`, registration requires that deployment token. An ordinary account session cannot create more accounts. Configure the owner's connection in **Connection & preferences** before creating an account; login remains available without presenting a deployment token. Do not distribute the owner token to untrusted users. Without a deployment token, the default loopback backend permits local registration and local use without an account.
 
-Non-loopback binding retains the existing strong-token and origin requirements. Keep TLS in front of any remote instance, configure exact `ALPHA_ALLOWED_ORIGINS`, and provision separate workspace storage for separate customers. Account identity alone is not tenant isolation.
+Non-loopback binding retains the existing strong-token and origin requirements. Keep TLS in front of any remote instance, configure exact `KESAMI_ALLOWED_ORIGINS`, and provision separate workspace storage for separate customers. Account identity alone is not tenant isolation.
 
 ## Google account sign-in
 
-The desktop welcome screen creates a Google account on the first authorized sign-in and returns to that account on later sign-ins. The system browser uses OAuth authorization code + PKCE with `openid email profile` only. Electron receives a one-time code; the backend exchanges it with Google, verifies the signed ID token (including audience, issuer, expiry, verified email, and the attempt's nonce), and issues an ordinary Alpha session. Google Calendar permission is separate.
+The desktop welcome screen creates a Google account on the first authorized sign-in and returns to that account on later sign-ins. The system browser uses OAuth authorization code + PKCE with `openid email profile` only. Electron receives a one-time code; the backend exchanges it with Google, verifies the signed ID token (including audience, issuer, expiry, verified email, and the attempt's nonce), and issues an ordinary Kesami session. Google Calendar permission is separate.
 
-Create a Google Cloud OAuth consent screen and a client of type **Desktop app**. Add your Google account as a test user while the consent screen is in testing. Set the client ID in **Settings → Calendar → Google client id**, or set `ALPHA_GOOGLE_OAUTH_CLIENT_ID` on the backend. The same Desktop client ID can be used for Calendar and account sign-in. If Google requires the issued client secret for token exchange, save it in **Settings → Calendar → Google client secret**, or set `ALPHA_GOOGLE_OAUTH_CLIENT_SECRET` on the backend. The backend also checks the corresponding Calendar environment variables. The secret stays in backend credentials and is never sent to the UI.
+Create a Google Cloud OAuth consent screen and a client of type **Desktop app**. Add your Google account as a test user while the consent screen is in testing. Set the client ID in **Settings → Calendar → Google client id**, or set `KESAMI_GOOGLE_OAUTH_CLIENT_ID` on the backend. The same Desktop client ID can be used for Calendar and account sign-in. If Google requires the issued client secret for token exchange, save it in **Settings → Calendar → Google client secret**, or set `KESAMI_GOOGLE_OAUTH_CLIENT_SECRET` on the backend. The backend also checks the corresponding Calendar environment variables. The secret stays in backend credentials and is never sent to the UI.
 
 Google account creation follows the same owner-token rule as password registration. A returning Google identity can sign in without the owner token. Accounts are bound to Google's stable subject identifier; an existing password account with the same email is not automatically linked, and Google sign-in reports the collision. Google-only accounts manage their password at Google. Standalone Vite UI in a normal browser does not provide this desktop loopback flow.
 
@@ -47,8 +47,8 @@ To preview an intended Pro monthly price, set both backend environment variables
 
 | Variable | Accepted values |
 | --- | --- |
-| `ALPHA_PRO_MONTHLY_MINOR` | Positive integer in minor currency units, at most 100000000 |
-| `ALPHA_BILLING_CURRENCY` | `INR`, `USD`, `EUR`, or `GBP` |
+| `KESAMI_PRO_MONTHLY_MINOR` | Positive integer in minor currency units, at most 100000000 |
+| `KESAMI_BILLING_CURRENCY` | `INR`, `USD`, `EUR`, or `GBP` |
 
 For example, `99900` and `INR` display a **planned** ₹999/month price. This is an illustration, not a chosen commercial price. Missing or invalid configuration displays **Price to be announced**. No price is stored in ordinary user settings, and no payment secrets are needed for the catalog.
 

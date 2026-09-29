@@ -5,7 +5,7 @@ const Module = require('node:module');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 
-const FAKE_USER_DATA = path.join('/tmp', 'alpha-podcast-test-userdata');
+const FAKE_USER_DATA = path.join('/tmp', 'kesami-podcast-test-userdata');
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
     if (request === 'electron') {
@@ -57,10 +57,10 @@ test('a complete project JSON prefix can be recovered from a collided save tail'
 });
 
 test('RSS parser returns only episodes with enclosures', () => {
-    const feed = parseRss(`<?xml version="1.0"?><rss><channel><title>Alpha &amp; Friends</title>
+    const feed = parseRss(`<?xml version="1.0"?><rss><channel><title>Kesami &amp; Friends</title>
       <item><guid>one</guid><title>First</title><enclosure url="https://media.example/one.mp3" type="audio/mpeg" length="42" /></item>
       <item><guid>two</guid><title>Text only</title></item></channel></rss>`, 'https://example.com/feed.xml');
-    assert.equal(feed.title, 'Alpha & Friends');
+    assert.equal(feed.title, 'Kesami & Friends');
     assert.equal(feed.episodes.length, 1);
     assert.equal(feed.episodes[0].length, 42);
 });

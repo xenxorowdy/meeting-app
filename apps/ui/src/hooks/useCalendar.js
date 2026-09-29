@@ -33,10 +33,13 @@ export function useCalendar({ isConnected }) {
             if (!mounted.current) return;
             setEvents(Array.isArray(next?.events) ? next.events : []);
             setWarnings(Array.isArray(next?.warnings) ? next.warnings : []);
+            if (next?.warnings?.length) refreshStatus();
+            // Keep the menu bar's "next meeting" in step with what this window just saw.
+            globalThis.kesamiShell?.refreshMenuBar?.()?.catch?.(() => {});
         } catch {
             if (mounted.current) setEvents([]);
         }
-    }, []);
+    }, [refreshStatus]);
 
     useEffect(() => {
         if (!isConnected) return;

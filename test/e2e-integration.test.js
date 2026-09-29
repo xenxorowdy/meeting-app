@@ -1,5 +1,5 @@
 /**
- * End-to-End System Integration Test Suite for Alpha Commercial Meeting Assistant.
+ * End-to-End System Integration Test Suite for Kesami Commercial Meeting Assistant.
  * Validates the complete decoupled architecture:
  * 1. Binary IPC Audio Ingestion & Resampling
  * 2. VAD & Multi-Channel Speech Segmentation

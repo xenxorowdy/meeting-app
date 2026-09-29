@@ -3,6 +3,7 @@
 // the rest of the app never learns where the token came from.
 import { apiRequest } from './backend.js';
 import { DEFAULT_BACKEND_URL, getBackendConnection, getBackendUrl, saveBackendConnection } from './connection.js';
+import { adoptLegacyKey } from './legacyStorage.js';
 
 async function rememberSession(token) {
     if (!token) throw new Error('The backend did not return a session token.');
@@ -30,8 +31,8 @@ export async function signIn({ email, password }) {
 }
 
 export async function signInWithGoogle(options) {
-    if (!globalThis.alphaGoogleSignIn?.start) throw new Error('Google sign-in is available in the desktop app.');
-    const authorization = await globalThis.alphaGoogleSignIn.start(options);
+    if (!globalThis.kesamiGoogleSignIn?.start) throw new Error('Google sign-in is available in the desktop app.');
+    const authorization = await globalThis.kesamiGoogleSignIn.start(options);
     const route = options?.provider === 'supabase' ? '/api/auth/supabase/google' : '/api/auth/google';
     const result = await apiRequest(route, { method: 'POST', body: authorization });
     await rememberSession(result.token);
@@ -74,7 +75,8 @@ export async function signOut() {
     return { revoked };
 }
 
-const LOCAL_MODE_KEY = 'alpha.local-mode';
+const LOCAL_MODE_KEY = 'kesami.local-mode';
+adoptLegacyKey('localStorage', 'alpha.local-mode', LOCAL_MODE_KEY);
 export function rememberLocalMode(enabled) {
     try {
         if (enabled) globalThis.localStorage?.setItem(LOCAL_MODE_KEY, 'true');

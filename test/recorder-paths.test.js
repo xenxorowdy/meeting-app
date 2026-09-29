@@ -11,7 +11,7 @@ const path = require('node:path');
 const Module = require('node:module');
 
 // `recorder.js` requires `electron` for app.getPath at load time, so stub it.
-const FAKE_USER_DATA = path.join('/tmp', 'alpha-recorder-test-userdata');
+const FAKE_USER_DATA = path.join('/tmp', 'kesami-recorder-test-userdata');
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
     if (request === 'electron') {
@@ -32,7 +32,7 @@ const recorder = require('../apps/desktop/recorder');
 Module._load = originalLoad;
 
 const { resolveMedia, resolveLegacyMedia, meetingDir } = recorder._testing;
-const ROOT = path.join(FAKE_USER_DATA, 'Alpha Meetings');
+const ROOT = path.join(FAKE_USER_DATA, 'Kesami Meetings');
 const IN_PROGRESS = path.join(ROOT, '.in-progress');
 
 test('serves paths inside the recordings root', () => {
@@ -55,7 +55,7 @@ test('refuses an absolute path', () => {
 test('refuses a sibling directory that merely shares the prefix', () => {
     // The separator has to be part of the comparison, or "recordings-stolen"
     // passes a naive startsWith check against "recordings".
-    const sibling = path.join(FAKE_USER_DATA, 'Alpha Meetings-stolen', 'x.webm');
+    const sibling = path.join(FAKE_USER_DATA, 'Kesami Meetings-stolen', 'x.webm');
     const relative = path.relative(ROOT, sibling);
     assert.equal(resolveMedia(relative), null);
 });

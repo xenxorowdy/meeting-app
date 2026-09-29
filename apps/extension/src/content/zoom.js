@@ -1,5 +1,5 @@
 (() => {
-    const names = globalThis.AlphaNames;
+    const names = globalThis.KesamiNames;
     if (!names) return;
 
     const profile = {

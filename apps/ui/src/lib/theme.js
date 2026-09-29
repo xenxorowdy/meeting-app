@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import { adoptLegacyKey } from './legacyStorage.js';
 
-const STORAGE_KEY = 'alpha.appearance';
+const STORAGE_KEY = 'kesami.appearance';
+adoptLegacyKey('localStorage', 'alpha.appearance', STORAGE_KEY);
 const listeners = new Set();
 
 function storedChoice() {

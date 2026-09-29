@@ -211,7 +211,7 @@ function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSee
  * if a stream stalls; if that ever shows up in practice the fix is a wall-clock
  * stamp per turn rather than a bigger constant here.
  */
-export function RecordingPlayer({ meeting, citationFocus = null, isConnected = true, nameSuggestions = [], onRenameSpeaker }) {
+export function RecordingPlayer({ compact = false, meeting, citationFocus = null, isConnected = true, nameSuggestions = [], onRenameSpeaker }) {
     const videoRef = useRef(null);
     const activeRef = useRef(null);
     const listRef = useRef(null);
@@ -242,8 +242,8 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
     }, [recording, meeting?.startedAt]);
 
     const src = useMemo(() => {
-        if (!recording?.videoPath || !globalThis.alphaRecorder) return null;
-        return globalThis.alphaRecorder.mediaUrl(recording.videoPath);
+        if (!recording?.videoPath || !globalThis.kesamiRecorder) return null;
+        return globalThis.kesamiRecorder.mediaUrl(recording.videoPath);
     }, [recording?.videoPath]);
 
     // The recorder measured this; `video.duration` cannot supply it. Fall back to
@@ -312,8 +312,14 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
     // Keep the highlighted line in view, unless the user has scrolled away to read
     // something else.
     useEffect(() => {
-        if (!follow || !activeRef.current) return;
-        activeRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const list = listRef.current;
+        const active = activeRef.current;
+        if (!follow || !list || !active) return;
+        // Follow inside the transcript only; scrolling every ancestor can hide the player.
+        const bounds = list.getBoundingClientRect();
+        const line = active.getBoundingClientRect();
+        if (line.top < bounds.top) list.scrollTop += line.top - bounds.top;
+        else if (line.bottom > bounds.bottom) list.scrollTop += line.bottom - bounds.bottom;
     }, [activeTurnId, follow]);
 
     useEffect(() => {
@@ -342,16 +348,15 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
         );
     }
 
-    if (!globalThis.alphaRecorder) {
+    if (!globalThis.kesamiRecorder) {
         return (
             <EmptyState title="Recordings need the desktop app">
-                This meeting has a recording, but a browser tab can’t read it. Open Alpha’s desktop window to watch it.
+                This meeting has a recording, but a browser tab can’t read it. Open Kesami’s desktop window to watch it.
             </EmptyState>
         );
     }
 
     const activeTurn = turns.find(turn => turn.id === activeTurnId);
-    const uniqueSpeakers = [...new Set(turns.map(turn => turn.speaker))];
     const mediaProps = {
         ref: videoRef,
         src,
@@ -366,14 +371,11 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
     };
 
     return (
-        <div className="ks-replay">
-            <header className="ks-replay-toolbar">
-                <span>{recording.mode === 'audio' ? 'AUDIO REPLAY' : 'SCREEN REPLAY'}</span>
+        <div className={`ks-replay${compact ? ' ks-replay-compact' : ''}`}>
+            {!compact && <header className="ks-replay-toolbar">
+                <span>{recording.mode === 'audio' ? 'Audio recording' : 'Screen recording'}</span>
                 <div className="ks-replay-toolbar-actions">
-                    <button className="ks-button ks-heatmap" disabled title="This recording has no pointer activity data for a heatmap.">
-                        ◉ Heatmap
-                    </button>
-                    <div className="ks-zoom">
+                    {recording.mode !== 'audio' && <div className="ks-zoom">
                         <button aria-label="Zoom out" disabled={zoom <= 50} onClick={() => setZoom(value => Math.max(50, value - 10))}>
                             <Minus />
                         </button>
@@ -381,7 +383,7 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
                         <button aria-label="Zoom in" disabled={zoom >= 200} onClick={() => setZoom(value => Math.min(200, value + 10))}>
                             <Plus />
                         </button>
-                    </div>
+                    </div>}
                     <button
                         className="ks-button ks-mark"
                         onClick={() => setBookmarks(items => [...new Set([...items, Math.round(currentMs)])].sort((a, b) => a - b))}
@@ -401,22 +403,10 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
                         }}
                     >
                         <Share2 />
-                        {copied ? 'Copied' : 'Share'}
+                        {copied ? 'Copied' : 'Copy timestamp'}
                     </button>
-                    <div className="ks-speeds" aria-label="Playback speed">
-                        {PLAYBACK_RATES.map(rate => (
-                            <button
-                                key={rate}
-                                aria-pressed={playbackRate === rate}
-                                aria-label={`Playback speed ${rate}×`}
-                                onClick={() => setPlaybackRate(rate)}
-                            >
-                                {rate}×
-                            </button>
-                        ))}
-                    </div>
                 </div>
-            </header>
+            </header>}
             {shareError && (
                 <p className="ks-error" role="alert">
                     {shareError}
@@ -425,15 +415,6 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
             <div className="ks-replay-body">
                 <section aria-label="Recording" className="ks-replay-stage">
                     <div className="ks-video-frame">
-                        <div className="ks-video-titlebar">
-                            <span className="ks-video-dots">
-                                <i />
-                                <i />
-                                <i />
-                            </span>
-                            <span>{meeting.title}</span>
-                            <small>{recording.mode === 'audio' ? 'Audio' : 'Recorded'}</small>
-                        </div>
                         <div className="ks-video-viewport">
                             {loadError ? (
                                 <div className="ks-empty">
@@ -529,17 +510,12 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
                             >
                                 {muted ? <VolumeX /> : <Volume2 />}
                             </button>
-                            <div className="ks-replay-speakers">
-                                {uniqueSpeakers.map(speaker => (
-                                    <span key={speaker}>
-                                        <i style={{ background: speakerColor(speaker) }} />
-                                        {initialsFor(speaker)}
-                                    </span>
-                                ))}
-                            </div>
+                            <select className="ks-playback-rate" aria-label="Playback speed" value={playbackRate} onChange={event => setPlaybackRate(Number(event.target.value))}>
+                                {PLAYBACK_RATES.map(rate => <option key={rate} value={rate}>{rate}×</option>)}
+                            </select>
                         </div>
                     </div>
-                    <details className="ks-speaker-details">
+                    {!compact && <details className="ks-speaker-details">
                         <summary>Speaker activity & names</summary>
                         <SpeakerActivityTimeline
                             turns={turns}
@@ -551,12 +527,12 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
                             nameSuggestions={nameSuggestions}
                             isConnected={isConnected}
                         />
-                    </details>
+                    </details>}
                 </section>
-                <section aria-label="Recording transcript" className="ks-replay-transcript">
+                {!compact && <section aria-label="Recording transcript" className="ks-replay-transcript">
                     <header>
                         <div>
-                            <span>TRANSCRIPT</span>
+                            <span>Transcript</span>
                             <button onClick={() => setFollow(value => !value)} aria-pressed={follow}>
                                 {follow ? 'Following' : 'Follow'}
                             </button>
@@ -593,7 +569,7 @@ export function RecordingPlayer({ meeting, citationFocus = null, isConnected = t
                             </button>
                         ))}
                     </div>
-                </section>
+                </section>}
             </div>
         </div>
     );

@@ -1,5 +1,5 @@
 {
-  "name": "@alpha/core-backend",
+  "name": "@kesami/core-backend",
   "version": "1.0.0",
   "description": "Rust performance core with a compatibility Node.js implementation",
   "main": "src/index.js",
@@ -24,7 +24,7 @@
     "claude-ai",
     "sqlite-fts"
   ],
-  "author": "Alpha Engineering Team",
+  "author": "Kesami Engineering Team",
   "license": "Commercial",
   "dependencies": {
     "ws": "^8.18.0"

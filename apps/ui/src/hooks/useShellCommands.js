@@ -5,12 +5,12 @@ export function useShellCommands({ onRecord, onNewNote, onNewMeeting, onSettings
     latestRef.current = { onRecord, onNewNote, onNewMeeting, onSettings };
 
     useEffect(() => {
-        const shell = globalThis.alphaShell;
+        const shell = globalThis.kesamiShell;
         if (!shell?.onMenuBarCommand) return undefined;
 
         const run = command => {
             const handlers = latestRef.current;
-            if (command.type === 'record') handlers.onRecord?.(command.event);
+            if (command.type === 'record') handlers.onRecord?.(command.event, { auto: command.auto === true });
             else if (command.type === 'new-note') handlers.onNewNote?.();
             else if (command.type === 'new-meeting') handlers.onNewMeeting?.();
             else if (command.type === 'settings') handlers.onSettings?.();

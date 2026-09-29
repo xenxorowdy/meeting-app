@@ -1,7 +1,7 @@
 //! Security boundary for a private, single-workspace backend.
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, env, io, net::IpAddr};
+use std::{collections::HashMap, io, net::IpAddr};
 use subtle::ConstantTimeEq;
 
 pub const MAX_HEADER_BYTES: usize = 16 * 1024;
@@ -22,9 +22,9 @@ impl SecurityConfig {
     pub fn from_env(host: &str) -> io::Result<Self> {
         Self::new(
             host,
-            env::var("ALPHA_BACKEND_TOKEN").ok().as_deref(),
-            env::var("ALPHA_ALLOWED_ORIGINS").ok().as_deref(),
-            env::var("ALPHA_ALLOW_NULL_ORIGIN").ok().as_deref(),
+            kesami_core_backend::env_compat::var("KESAMI_BACKEND_TOKEN").ok().as_deref(),
+            kesami_core_backend::env_compat::var("KESAMI_ALLOWED_ORIGINS").ok().as_deref(),
+            kesami_core_backend::env_compat::var("KESAMI_ALLOW_NULL_ORIGIN").ok().as_deref(),
         )
     }
 
@@ -32,25 +32,25 @@ impl SecurityConfig {
         let hosted = !is_loopback_host(host);
         let token = token.filter(|value| !value.is_empty());
         if hosted && token.is_none() {
-            return Err(io::Error::other("Non-loopback binding requires ALPHA_BACKEND_TOKEN (at least 32 characters)"));
+            return Err(io::Error::other("Non-loopback binding requires KESAMI_BACKEND_TOKEN (at least 32 characters)"));
         }
         if token.is_some_and(|value| value.len() < 32 || value.len() > 512 || !value.bytes().all(|b| b.is_ascii_graphic())) {
-            return Err(io::Error::other("ALPHA_BACKEND_TOKEN must contain 32 to 512 printable ASCII characters without spaces"));
+            return Err(io::Error::other("KESAMI_BACKEND_TOKEN must contain 32 to 512 printable ASCII characters without spaces"));
         }
         let origins = origins.unwrap_or("http://localhost:5173,http://127.0.0.1:5173")
             .split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect::<Vec<_>>();
         for origin in &origins {
-            let parsed = reqwest::Url::parse(origin).map_err(|_| io::Error::other("ALPHA_ALLOWED_ORIGINS must contain exact HTTP(S) origins"))?;
+            let parsed = reqwest::Url::parse(origin).map_err(|_| io::Error::other("KESAMI_ALLOWED_ORIGINS must contain exact HTTP(S) origins"))?;
             if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none()
                 || parsed.origin().ascii_serialization() != *origin || origin.contains('*') {
-                return Err(io::Error::other("ALPHA_ALLOWED_ORIGINS must contain exact HTTP(S) origins without paths or wildcards"));
+                return Err(io::Error::other("KESAMI_ALLOWED_ORIGINS must contain exact HTTP(S) origins without paths or wildcards"));
             }
         }
         let allow_null_origin = match allow_null {
             None => !hosted,
             Some("true" | "1") => true,
             Some("false" | "0") => false,
-            _ => return Err(io::Error::other("ALPHA_ALLOW_NULL_ORIGIN must be true or false")),
+            _ => return Err(io::Error::other("KESAMI_ALLOW_NULL_ORIGIN must be true or false")),
         };
         Ok(Self { hosted, token_hash: token.map(|value| Sha256::digest(value.as_bytes()).into()), origins, allow_null_origin })
     }
@@ -92,7 +92,7 @@ pub fn bearer_or_protocol_token(headers: &HashMap<String, String>, websocket: bo
         headers
             .get("sec-websocket-protocol")
             .and_then(|value| value.split(',').map(str::trim)
-                .find_map(|protocol| protocol.strip_prefix("alpha-token.")))
+                .find_map(|protocol| protocol.strip_prefix("kesami-token.").or_else(|| protocol.strip_prefix("alpha-token."))))
             .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
             .and_then(|bytes| String::from_utf8(bytes).ok())
             .filter(|token| !token.is_empty())
@@ -133,10 +133,10 @@ mod tests {
         headers.insert("authorization".into(), format!("Bearer {TOKEN}"));
         assert!(config.authorized(&headers, false));
         headers.remove("authorization");
-        headers.insert("sec-websocket-protocol".into(), format!("alpha, alpha-token.{}", URL_SAFE_NO_PAD.encode(TOKEN)));
+        headers.insert("sec-websocket-protocol".into(), format!("kesami, kesami-token.{}", URL_SAFE_NO_PAD.encode(TOKEN)));
         assert!(config.authorized(&headers, true));
         assert!(!config.authorized(&headers, false));
-        headers.insert("sec-websocket-protocol".into(), "alpha, alpha-token.%%%".into());
+        headers.insert("sec-websocket-protocol".into(), "kesami, kesami-token.%%%".into());
         assert!(!config.authorized(&headers, true));
     }
 
@@ -150,11 +150,16 @@ mod tests {
         headers.remove("authorization");
         headers.insert(
             "sec-websocket-protocol".into(),
-            format!("alpha, alpha-token.{}", URL_SAFE_NO_PAD.encode("tok-2")),
+            format!("kesami, kesami-token.{}", URL_SAFE_NO_PAD.encode("tok-2")),
         );
         assert_eq!(bearer_or_protocol_token(&headers, true).as_deref(), Some("tok-2"));
+        headers.insert(
+            "sec-websocket-protocol".into(),
+            format!("alpha, alpha-token.{}", URL_SAFE_NO_PAD.encode("tok-legacy")),
+        );
+        assert_eq!(bearer_or_protocol_token(&headers, true).as_deref(), Some("tok-legacy"));
         assert_eq!(bearer_or_protocol_token(&headers, false), None);
-        headers.insert("sec-websocket-protocol".into(), "alpha, alpha-token.%%%".into());
+        headers.insert("sec-websocket-protocol".into(), "kesami, kesami-token.%%%".into());
         assert_eq!(bearer_or_protocol_token(&headers, true), None);
     }
 

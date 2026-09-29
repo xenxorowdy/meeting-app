@@ -8,9 +8,10 @@ const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
+const { DatabaseSync } = require('node:sqlite');
 
 test('Rust chat retrieves bounded evidence, persists threads, cancels and invalidates sources', { timeout: 30000 }, async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-chat-http-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-chat-http-'));
     let backend;
     t.after(async () => {
         if (backend && backend.exitCode === null) { backend.kill('SIGTERM'); await once(backend, 'exit'); }
@@ -21,8 +22,8 @@ test('Rust chat retrieves bounded evidence, persists threads, cancels and invali
     const port = probe.address().port;
     await new Promise(resolve => probe.close(resolve));
     const library = path.join(root, 'library');
-    await fs.mkdir(path.join(root, '.alpha-meeting-assistant'));
-    await fs.writeFile(path.join(root, '.alpha-meeting-assistant', 'settings.json'), JSON.stringify({ transcriptionProvider: 'sarvam' }));
+    await fs.mkdir(path.join(root, '.kesami'));
+    await fs.writeFile(path.join(root, '.kesami', 'settings.json'), JSON.stringify({ transcriptionProvider: 'sarvam' }));
     const fixtures = Array.from({ length: 205 }, (_, i) => ({
         id: `m${i}`, title: `Synthetic meeting ${i}`, startedAt: 1000 + i, endedAt: 2000 + i,
         durationSeconds: 1, createdAt: 1000, metadata: {}, summaryMarkdown: '', keyDecisions: [],
@@ -46,7 +47,7 @@ let input = '';
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
   const packet = JSON.parse(input);
-  fs.appendFileSync(process.env.ALPHA_CHAT_CAPTURE, input + '\\n');
+  fs.appendFileSync(process.env.KESAMI_CHAT_CAPTURE, input + '\\n');
   const correcting = args[args.indexOf('--system-prompt') + 1].includes('Your previous response failed validation:');
   let answer = 'Friday [1]';
   let citations = [1];
@@ -58,11 +59,11 @@ process.stdin.on('end', () => {
 });
 `, { mode: 0o700 });
     const capture = path.join(root, 'capture.jsonl');
-    backend = spawn(path.resolve(__dirname, '../apps/core-backend/target/debug/alpha-core-backend'), [], {
+    backend = spawn(path.resolve(__dirname, '../apps/core-backend/target/debug/kesami-core-backend'), [], {
         cwd: root, stdio: ['ignore', 'ignore', 'ignore'],
-        env: { ...process.env, ALPHA_DATA_DIR: root, ALPHA_LIBRARY_DIR: library, CORE_BACKEND_DATA_FILE: path.join(root, 'absent.json'),
-            CORE_BACKEND_PORT: String(port), ALPHA_CLAUDE_BIN: fake,
-            ALPHA_SUMMARY_PROVIDER: 'claude', ALPHA_GEMINI_API_KEY: '', ALPHA_SARVAM_API_KEY: '', ALPHA_CHAT_EMBEDDINGS: 'off', ALPHA_CHAT_CAPTURE: capture },
+        env: { ...process.env, KESAMI_DATA_DIR: root, KESAMI_LIBRARY_DIR: library, CORE_BACKEND_DATA_FILE: path.join(root, 'absent.json'),
+            CORE_BACKEND_PORT: String(port), KESAMI_CLAUDE_BIN: fake,
+            KESAMI_SUMMARY_PROVIDER: 'claude', KESAMI_GEMINI_API_KEY: '', KESAMI_SARVAM_API_KEY: '', KESAMI_CHAT_EMBEDDINGS: 'off', KESAMI_CHAT_CAPTURE: capture },
     });
     let spawnError;
     backend.on('error', error => { spawnError = error; });
@@ -75,12 +76,13 @@ process.stdin.on('end', () => {
         await new Promise(resolve => setTimeout(resolve, 50));
     }
     assert.ok(ready, 'Build the Rust debug backend before this test');
+    let authToken = null;
     const api = async (route, body, method = body === undefined ? 'GET' : 'POST') => {
-        const response = await fetch(`${base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+        const response = await fetch(`${base}${route}`, { method, headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
         return { status: response.status, data: await response.json() };
     };
     const { data: thread } = await api('/api/chat/threads', { scope: { type: 'meetings', meetingIds: ['m204'] } });
-    assert.ok(thread.id);
+    assert.ok(thread.id, JSON.stringify(thread));
     const route = `/api/chat/threads/${thread.id}/messages`;
     const request = { question: 'What is the Zephyr deadline?', requestId: randomUUID() };
     const first = await api(route, request);
@@ -106,6 +108,21 @@ process.stdin.on('end', () => {
     assert.ok(prompts.at(-1).conversation.every(m => m.role === 'user'));
 
     for (const scenario of ['repair missing', 'repair grouped']) {
+        if (scenario === 'repair grouped') {
+            const exhausted = await api(route, { question: 'Zephyr deadline?', requestId: randomUUID() });
+            assert.equal(exhausted.status, 402);
+            assert.equal(exhausted.data.code, 'FREE_AI_LIMIT');
+            assert.equal((await api(route)).data.messages.length >= 2, true, 'history stays readable');
+            const grant = await api('/api/auth/register', { name: 'Asha', email: 'asha@example.test', password: 'test password 123' });
+            assert.equal(grant.status, 200, JSON.stringify(grant.data));
+            const db = new DatabaseSync(path.join(root, 'billing.sqlite3'));
+            try {
+                db.prepare(`INSERT INTO subscriptions(provider_subscription_id,account_id,plan,provider,status,currency,amount_minor,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?)`).run('sub_fixture', grant.data.account.id, 'pro', 'stripe', 'active', 'USD', 1000, Date.now());
+            } finally { db.close(); }
+            authToken = grant.data.token;
+            assert.equal((await api('/api/billing/subscription')).data.tier, 'pro');
+        }
         const repairRequest = { question: `${scenario}: Zephyr deadline?`, requestId: randomUUID() };
         const before = (await fs.readFile(capture, 'utf8')).trim().split('\n').length;
         const repaired = await api(route, repairRequest);

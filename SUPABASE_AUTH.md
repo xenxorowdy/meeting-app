@@ -26,16 +26,27 @@ the backend npm scripts. It does not load `.env`. Set these values in that ignor
 file, or provide them through the process environment, which takes precedence:
 
 ```dotenv
-ALPHA_AUTH_PROVIDER=supabase
-ALPHA_SUPABASE_URL=https://uidcdqlfuugdprjqeprx.supabase.co
-ALPHA_SUPABASE_PUBLISHABLE_KEY=<your-project-publishable-key>
+KESAMI_AUTH_PROVIDER=supabase
+KESAMI_SUPABASE_URL=https://uidcdqlfuugdprjqeprx.supabase.co
+KESAMI_SUPABASE_PUBLISHABLE_KEY=<your-project-publishable-key>
 ```
 
 The Google client secret stays in the Supabase dashboard. No Google Desktop
 client ID, database password, service-role key, or frontend environment variables
 are required for this sign-in flow. The existing Calendar connection remains a
-separate integration. `ALPHA_SUPABASE_JWKS_URL` is not used: the backend verifies
+separate integration. `KESAMI_SUPABASE_JWKS_URL` is not used: the backend verifies
 the Supabase access token through the project's Auth `/user` endpoint.
+
+For a distributable macOS app, copy `apps/ui/.env.example` to the ignored
+`apps/ui/.env` and set those three public sign-in values before running
+`npm run dist:mac`. The packaging step validates them and includes only the
+project URL and publishable key in the app. It does not include the backend's
+development `.env.local` or its unrelated credentials. Recipients can sign in
+without configuring a Google Desktop client ID.
+
+An installation can override the bundled settings by putting the three backend
+settings in `~/Library/Application Support/Kesami/.env.local` and restarting
+Kesami. Keep that local file readable only by its owner.
 
 Rebuild and fully relaunch Electron after changing its main process or backend:
 
@@ -62,16 +73,16 @@ From the repository root, run the explicit backend migration:
 npm run --prefix apps/core-backend migrate:users
 ```
 
-This command needs an owner database connection through `ALPHA_SUPABASE_DB_URL`
-(the Supabase pooler connection string also works), or `ALPHA_SUPABASE_URL` plus
-`ALPHA_SUPABASE_DB_PASSWORD`, in the backend process environment or `.env.local`.
+This command needs an owner database connection through `KESAMI_SUPABASE_DB_URL`
+(the Supabase pooler connection string also works), or `KESAMI_SUPABASE_URL` plus
+`KESAMI_SUPABASE_DB_PASSWORD`, in the backend process environment or `.env.local`.
 The explicit migration command also reads `.env` as a fallback; the normal
 desktop server continues to load only `.env.local`.
 It creates the table, foreign key to `auth.users`, and row-level security rules
 inside one transaction. Re-running it is safe. An existing unrelated
 `public.users` table causes the command to stop without changing it.
 
-After applying the migration, set `ALPHA_SUPABASE_SYNC_USERS=true` in the backend
+After applying the migration, set `KESAMI_SUPABASE_SYNC_USERS=true` in the backend
 `.env.local` and restart the backend. New sign-ins insert a profile; repeat
 sign-ins update its name, email, and `updated_at` using the Supabase user ID.
 The creation timestamp is preserved. Re-running the migration inserts missing
@@ -81,8 +92,9 @@ refreshes the name and email.
 
 Profile requests run in Rust using the signed-in user's access token and the
 publishable key. Users can access only their own row. Profile fields are not
-authorization claims. Database credentials are needed only to run the migration;
-do not distribute them with the desktop app. The profile write must succeed
+authorization claims. Database credentials are needed to run the migrations and,
+on the backend that processes payments, to copy billing into Supabase; do not
+distribute them with the desktop app. The profile write must succeed
 before a local session is issued when synchronization is enabled.
 
 ### Billing tables
@@ -101,9 +113,28 @@ both tables in one transaction and refuses to adopt unrelated existing billing
 tables. Signed-in users can read only their own subscription rows; neither
 anonymous nor signed-in clients can write provider status or webhook events.
 These rows are for verified payment-provider updates, never client-reported
-plan changes. The current Stripe/Razorpay code still stores entitlements in
-the local `billing.sqlite3`; the migration alone does not copy existing
-subscriptions or switch entitlement reads to Supabase.
+plan changes.
+
+When the backend has an owner database connection, it copies billing into
+these tables after each payment event:
+
+- Every verified Stripe or Razorpay webhook is recorded in `public.billing_events`
+  with the time the backend received it.
+- Every subscription change, whether from a webhook or from the Razorpay
+  confirmation the app requests right after Checkout, is upserted into
+  `public.billing` for the payer's Supabase user. That user is found through the
+  account's Google identity in `auth.identities`. A cancelled subscription stays
+  cancelled, and a late pre-activation event never replaces an active one.
+- Subscriptions for accounts without a Supabase Google identity, such as local
+  password accounts, stay local only.
+
+The copy runs in the background, right after each payment event, every five
+minutes, and on startup, so webhook responses never wait for Supabase. If Supabase
+is unreachable or the billing migration is missing, the rows stay pending in
+`billing.sqlite3` and are copied on a later pass; nothing is lost across
+restarts. The first pass after upgrading also copies subscriptions recorded
+before this existed. The local `billing.sqlite3` still decides who has Pro;
+Supabase holds a copy.
 
 ### Local sessions
 

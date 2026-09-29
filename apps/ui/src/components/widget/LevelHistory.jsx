@@ -7,13 +7,11 @@ const DRAIN = 0.82;
 const DRAIN_EPSILON = 0.004;
 const NOISE_FLOOR = 1;
 const GAIN = 1.8;
-const MID_GAP = 1;
 const MAX_BAR_GAP = 2.5;
 const MIN_BAR_WIDTH = 1.5;
 const HAIRLINE = 1.5;
 const MAX_DPR = 3;
-const MIC_FALLBACK = '#ec3013';
-const SYSTEM_FALLBACK = '#5b9bff';
+const LEVEL_FALLBACK = '#e8e8ea';
 const CANVAS_STYLE = { display: 'block', width: '100%', height: '100%' };
 
 function shape(value) {
@@ -31,13 +29,14 @@ function prefersReducedMotion() {
     }
 }
 
-function readColors(canvas) {
+// One neutral colour: the wave answers "is anyone speaking?", not "who", so it must not borrow a speaker colour
+// or the recording red. `--ks-level-color` lets a host override it.
+function readColor(canvas) {
     try {
         const styles = getComputedStyle(canvas);
-        const pick = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
-        return { mic: pick('--ks-accent', MIC_FALLBACK), system: pick('--ks-speaker-1', SYSTEM_FALLBACK) };
+        return styles.getPropertyValue('--ks-level-color').trim() || styles.getPropertyValue('--ks-text').trim() || LEVEL_FALLBACK;
     } catch {
-        return { mic: MIC_FALLBACK, system: SYSTEM_FALLBACK };
+        return LEVEL_FALLBACK;
     }
 }
 
@@ -61,53 +60,41 @@ function addBar(ctx, x, y, width, height, radius) {
     else ctx.rect(x, y, width, height);
 }
 
+// Bars grow symmetrically out of the centre line, so silence reads as a single dotted hairline.
 function paintHistory(ctx, state) {
     const mid = state.height / 2;
-    const span = Math.max(1, mid - MID_GAP - 0.5);
+    const span = Math.max(1, state.height - 1);
     const slot = state.width / SLOTS;
     const barWidth = Math.max(MIN_BAR_WIDTH, slot - Math.min(MAX_BAR_GAP, slot * 0.34));
     const radius = barWidth / 2;
     const floor = state.active ? Math.min(HAIRLINE, span) : 0;
-    const series = [
-        { data: state.system, color: state.colors.system, up: true },
-        { data: state.mic, color: state.colors.mic, up: false },
-    ];
 
-    for (const entry of series) {
-        ctx.fillStyle = entry.color;
-        ctx.beginPath();
-        for (let i = 0; i < SLOTS; i += 1) {
-            const bar = Math.max(floor, Math.min(1, entry.data[(state.head + i) % SLOTS]) * span);
-            if (bar <= 0) continue;
-            const x = i * slot + (slot - barWidth) / 2;
-            const y = entry.up ? mid - MID_GAP - bar : mid + MID_GAP;
-            addBar(ctx, x, y, barWidth, bar, radius);
-        }
-        ctx.fill();
+    ctx.fillStyle = state.color;
+    ctx.beginPath();
+    for (let i = 0; i < SLOTS; i += 1) {
+        const bar = Math.max(floor, Math.min(1, state.levels[(state.head + i) % SLOTS]) * span);
+        if (bar <= 0) continue;
+        const x = i * slot + (slot - barWidth) / 2;
+        addBar(ctx, x, mid - bar / 2, barWidth, bar, radius);
     }
+    ctx.fill();
 }
 
 function paintStatic(ctx, state) {
-    const mid = state.height / 2;
-    const track = Math.max(3, Math.min(6, mid - MID_GAP));
+    const track = Math.max(3, Math.min(6, state.height / 2));
+    const y = (state.height - track) / 2;
     const radius = track / 2;
-    const rows = [
-        { y: mid - MID_GAP - track, level: shape(state.lastSystem), color: state.colors.system },
-        { y: mid + MID_GAP, level: shape(state.lastMic), color: state.colors.mic },
-    ];
 
-    for (const row of rows) {
-        ctx.fillStyle = row.color;
-        ctx.globalAlpha = 0.16;
-        ctx.beginPath();
-        addBar(ctx, 0, row.y, state.width, track, radius);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        if (!state.active) continue;
-        ctx.beginPath();
-        addBar(ctx, 0, row.y, Math.max(track, row.level * state.width), track, radius);
-        ctx.fill();
-    }
+    ctx.fillStyle = state.color;
+    ctx.globalAlpha = 0.16;
+    ctx.beginPath();
+    addBar(ctx, 0, y, state.width, track, radius);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (!state.active) return;
+    ctx.beginPath();
+    addBar(ctx, 0, y, Math.max(track, shape(state.last) * state.width), track, radius);
+    ctx.fill();
 }
 
 function draw(state, canvas) {
@@ -115,7 +102,7 @@ function draw(state, canvas) {
     const ctx = state.ctx;
     if (!ctx || !state.width || !state.height) return;
     if (state.colorsDirty) {
-        state.colors = readColors(canvas);
+        state.color = readColor(canvas);
         state.colorsDirty = false;
     }
     ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
@@ -130,20 +117,17 @@ export function LevelHistory({ subscribe, active = false, className }) {
 
     if (!stateRef.current) {
         stateRef.current = {
-            mic: new Float32Array(SLOTS),
-            system: new Float32Array(SLOTS),
+            levels: new Float32Array(SLOTS),
             head: 0,
-            peakMic: 0,
-            peakSystem: 0,
-            lastMic: 0,
-            lastSystem: 0,
+            peak: 0,
+            last: 0,
             active: false,
             reduced: false,
             width: 0,
             height: 0,
             dpr: 1,
             ctx: null,
-            colors: { mic: MIC_FALLBACK, system: SYSTEM_FALLBACK },
+            color: LEVEL_FALLBACK,
             colorsDirty: true,
             frame: 0,
             timer: 0,
@@ -178,11 +162,9 @@ export function LevelHistory({ subscribe, active = false, className }) {
                 if (!state.commitAt) state.commitAt = now;
                 if (now - state.commitAt >= COMMIT_MS) {
                     state.commitAt = now;
-                    state.mic[state.head] = shape(state.peakMic);
-                    state.system[state.head] = shape(state.peakSystem);
+                    state.levels[state.head] = shape(state.peak);
                     state.head = (state.head + 1) % SLOTS;
-                    state.peakMic = 0;
-                    state.peakSystem = 0;
+                    state.peak = 0;
                     draw(state, canvas);
                 }
                 state.frame = requestAnimationFrame(loop);
@@ -191,13 +173,11 @@ export function LevelHistory({ subscribe, active = false, className }) {
 
             let peak = 0;
             for (let i = 0; i < SLOTS; i += 1) {
-                state.mic[i] *= DRAIN;
-                state.system[i] *= DRAIN;
-                peak = Math.max(peak, state.mic[i], state.system[i]);
+                state.levels[i] *= DRAIN;
+                peak = Math.max(peak, state.levels[i]);
             }
             if (peak <= DRAIN_EPSILON) {
-                state.mic.fill(0);
-                state.system.fill(0);
+                state.levels.fill(0);
                 draw(state, canvas);
                 return;
             }
@@ -219,8 +199,7 @@ export function LevelHistory({ subscribe, active = false, className }) {
             stopFrame();
             stopTimer();
             if (reduced) {
-                state.mic.fill(0);
-                state.system.fill(0);
+                state.levels.fill(0);
                 state.head = 0;
                 state.timer = setInterval(() => draw(state, canvas), REDUCED_MS);
                 draw(state, canvas);
@@ -286,12 +265,12 @@ export function LevelHistory({ subscribe, active = false, className }) {
         if (typeof subscribe !== 'function') return undefined;
 
         const unsubscribe = subscribe(value => {
+            // Mic and meeting audio fold into one "voice detected" level: whichever side is louder wins.
             const mic = Math.max(0, Math.min(100, Number(value?.mic) || 0));
             const system = Math.max(0, Math.min(100, Number(value?.system) || 0));
-            state.lastMic = mic;
-            state.lastSystem = system;
-            if (mic > state.peakMic) state.peakMic = mic;
-            if (system > state.peakSystem) state.peakSystem = system;
+            const level = Math.max(mic, system);
+            state.last = level;
+            if (level > state.peak) state.peak = level;
             if (state.active) state.wake?.();
         });
 
@@ -309,10 +288,8 @@ export function LevelHistory({ subscribe, active = false, className }) {
         state.active = Boolean(active);
         state.commitAt = 0;
         if (!state.active) {
-            state.peakMic = 0;
-            state.peakSystem = 0;
-            state.lastMic = 0;
-            state.lastSystem = 0;
+            state.peak = 0;
+            state.last = 0;
         }
         state.wake?.();
     }, [active]);

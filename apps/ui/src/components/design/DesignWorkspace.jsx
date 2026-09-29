@@ -2,7 +2,7 @@ import { PricingView } from './PricingView';
 import { AccountSecurity } from './AccountSecurity';
 import { PlanBilling } from './PlanBilling';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Plus, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
+import { ArrowUpRight, CalendarDays, ExternalLink, FileText, Home, Library, Mic, Monitor, MoreHorizontal, Moon, Network, Plus, Search, Settings, Sparkles, Star, Sun, X } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { calendarEventLink, countdownLabel, eventsForTodayAndTomorrow } from '@/lib/calendarEvents';
 import { MeetingDetail, Avatar } from './MeetingDetail';
 import { dateLabel, durationLabel, FOLDER_COLORS } from './designHelpers';
+import { ArchitectureView } from './ArchitectureView';
 
 const FOLDER_COLOR_KEY = 'kesami.folder-colors';
 
@@ -33,19 +34,12 @@ function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled }) {
     return (
         <article className="ks-meeting-card">
             <button className="ks-meeting-card-body" disabled={disabled} onClick={onOpen}>
+                <div className="ks-card-kicker">
+                    <span className="ks-card-type" aria-hidden="true">{meeting.recording?.videoPath ? <Monitor /> : <FileText />}</span>
+                    <span>{folder?.name || 'Meeting notes'}</span>
+                </div>
                 <div className="ks-card-title">
                     <h3>{meeting.title || 'Untitled meeting'}</h3>
-                    {meeting.metadata?.noiseLevel && (
-                        <span
-                            className="ks-noise"
-                            style={{
-                                color: { low: 'var(--ks-accent)', medium: 'var(--ks-warn)', high: 'var(--ks-danger)' }[meeting.metadata.noiseLevel],
-                            }}
-                        >
-                            <i />
-                            {meeting.metadata.noiseLevel} noise
-                        </span>
-                    )}
                 </div>
                 <p>{summary || 'Open this meeting to review its transcript and notes.'}</p>
                 <div className="ks-card-meta">
@@ -59,20 +53,10 @@ function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled }) {
                     )}
                     <time>{dateLabel(meeting.startedAt)}</time>
                     <span>{durationLabel(meeting.durationSeconds)}</span>
-                    {folder && (
-                        <span className="ks-folder-label">
-                            <i style={{ background: folder.color }} />
-                            {folder.name}
-                        </span>
-                    )}
+
                 </div>
             </button>
             <div className="ks-card-trailing">
-                {(meeting.metadata?.tags || []).slice(0, 2).map(tag => (
-                    <span className="ks-tag" key={tag}>
-                        {tag}
-                    </span>
-                ))}
                 <button className="ks-card-more" aria-label={`Options for ${meeting.title}`} aria-expanded={menu} onClick={() => setMenu(!menu)}>
                     <MoreHorizontal />
                 </button>
@@ -150,6 +134,7 @@ export function DesignWorkspace({
     workspaceName = 'My workspace',
     noiseSuppression = true,
     onUpdateSettings,
+    onPlanChanged,
 }) {
     const [folders, setFolders] = useState([]);
     const [folderId, setFolderId] = useState('all');
@@ -232,21 +217,24 @@ export function DesignWorkspace({
     };
     const now = new Date();
     const { today, tomorrow } = eventsForTodayAndTomorrow(calendar.events, now.getTime());
-    const agendaDays = [{ label: 'TODAY', events: today }, ...(tomorrow.length ? [{ label: 'TOMORROW', events: tomorrow }] : [])];
+    const agendaDays = [{ label: 'Today', events: today }, ...(tomorrow.length ? [{ label: 'Tomorrow', events: tomorrow }] : [])];
     const visible = history.meetings.filter(
         item =>
             (folderId === 'all' || (item.metadata?.collectionId || 'unfiled') === folderId) &&
             `${item.title} ${item.summaryMarkdown || ''}`.toLowerCase().includes(query.trim().toLowerCase())
     );
-    const list = activeTab === 'home' ? history.meetings.slice(0, 8) : visible;
+    const list = activeTab === 'home' ? history.meetings.slice(0, 6) : visible;
     const folder = coloredFolders.find(item => item.id === folderId);
     const plan = license?.tier ? `${license.tier[0].toUpperCase()}${license.tier.slice(1)} Plan` : 'Meeting workspace';
+    // The backend treats anything short of a paid subscription as free (session_tier), so offer the upgrade
+    // unless the licence says otherwise.
+    const canUpgrade = !['pro', 'enterprise'].includes(license?.tier);
 
     return (
         <div className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}`}>
             <aside className="ks-sidebar" aria-label="Workspace navigation">
-                <div className="ks-traffic drag-region">
-                    {!isDesktop && <span className="ks-sidebar-brand"><LogoMark size={18} /> KESAMI</span>}
+                <div className={`ks-traffic drag-region${isDesktop ? ' ks-traffic-desktop' : ''}`}>
+                    <span className="ks-sidebar-brand"><LogoMark size={24} /> Kesami</span>
                 </div>
                 <div className="ks-new-meeting">
                     <button
@@ -276,6 +264,10 @@ export function DesignWorkspace({
                     <button aria-current={activeTab === 'ask' ? 'page' : undefined} className={activeTab === 'ask' ? 'is-active' : ''} onClick={() => setActiveTab('ask')}>
                         <Sparkles />
                         Ask AI
+                    </button>
+                    <button aria-current={activeTab === 'architecture' ? 'page' : undefined} className={activeTab === 'architecture' ? 'is-active' : ''} onClick={() => setActiveTab('architecture')}>
+                        <Network />
+                        Architecture
                     </button>
                     <div className="ks-folder-heading">
                         <span>FOLDERS</span>
@@ -311,45 +303,6 @@ export function DesignWorkspace({
                     )}
                 </nav>
                 <div className="ks-sidebar-footer">
-                    <button
-                        className="ks-sidebar-control"
-                        role="switch"
-                        aria-label="Noise cancellation"
-                        aria-checked={noiseSuppression}
-                        disabled={!isConnected || updatingNoise || !onUpdateSettings}
-                        title="Reduce background noise in your microphone"
-                        onClick={async () => {
-                            setUpdatingNoise(true);
-                            try {
-                                const result = await onUpdateSettings({ noiseSuppression: !noiseSuppression });
-                                if (!result?.ok || !result.persisted) setError(result?.message || 'Noise cancellation could not be saved.');
-                                else setError('');
-                            } finally {
-                                setUpdatingNoise(false);
-                            }
-                        }}
-                    >
-                        <Mic />
-                        <span>Noise cancel</span>
-                        <span className={`ks-toggle ${noiseSuppression ? '' : 'is-off'}`} aria-hidden="true">
-                            <i />
-                        </span>
-                    </button>
-                    <button
-                        className="ks-sidebar-control"
-                        disabled={!canRecord}
-                        onClick={() => session.onStart()}
-                        title="Choose a screen when starting a recording"
-                    >
-                        <Monitor />
-                        <span>Share screen</span>
-                        <span
-                            className={`ks-toggle ${session.recordingState?.active && session.recordingState.mode !== 'audio' ? '' : 'is-off'}`}
-                            aria-hidden="true"
-                        >
-                            <i />
-                        </span>
-                    </button>
                     <div className="ks-footer-utility">
                         <button onClick={onSettings}>
                             <Settings />
@@ -361,6 +314,31 @@ export function DesignWorkspace({
                     </div>
                     {toolsOpen && (
                         <div className="ks-workspace-tools">
+                            <button
+                                className="ks-sidebar-control"
+                                role="switch"
+                                aria-label="Noise cancellation"
+                                aria-checked={noiseSuppression}
+                                disabled={!isConnected || updatingNoise || !onUpdateSettings}
+                                title="Reduce background noise in your microphone"
+                                onClick={async () => {
+                                    setUpdatingNoise(true);
+                                    try {
+                                        const result = await onUpdateSettings({ noiseSuppression: !noiseSuppression });
+                                        if (!result?.ok || !result.persisted) setError(result?.message || 'Noise cancellation could not be saved.');
+                                        else setError('');
+                                    } finally {
+                                        setUpdatingNoise(false);
+                                    }
+                                }}
+                            >
+                                <Mic />
+                                <span>Noise cancel</span>
+                                <span className={`ks-toggle ${noiseSuppression ? '' : 'is-off'}`} aria-hidden="true">
+                                    <i />
+                                </span>
+                            </button>
+
                             <button onClick={onSettings}>
                                 <Settings />
                                 Settings
@@ -376,6 +354,18 @@ export function DesignWorkspace({
                             </button>
                         </div>
                     )}
+                    {canUpgrade && (
+                        <button
+                            type="button"
+                            className={`ks-sidebar-upgrade ${activeTab === 'pricing' ? 'is-active' : ''}`}
+                            onClick={() => { setActiveTab('pricing'); setToolsOpen(false); }}
+                        >
+                            <Star aria-hidden="true" />
+                            <span>
+                                Upgrade to Pro<small>Explore plans</small>
+                            </span>
+                        </button>
+                    )}
                     <button className={`ks-profile ${activeTab === 'profile' ? 'is-active' : ''}`} onClick={() => setActiveTab('profile')}>
                         <Avatar name={workspaceName} />
                         <span>
@@ -387,10 +377,13 @@ export function DesignWorkspace({
             </aside>
             <main className="ks-main">
                 <div className="ks-main-toolbar">
-                    <span className="ks-toolbar-context">{workspaceName}</span>
-                    <button type="button" className={`ks-service-status ${isConnected ? 'is-connected' : ''}`} onClick={isConnected ? onSettings : onRetry} title={isConnected ? 'Manage service connection' : 'Reconnect to your meeting service'}>
-                        <i aria-hidden="true" />{isConnected ? 'Service connected' : 'Service offline'}
-                    </button>
+                    <label className="ks-global-search">
+                        <Search aria-hidden="true" />
+                        <input aria-label="Search meetings" placeholder="Search your meetings…" value={query}
+                            onChange={event => { setQuery(event.target.value); setFolderId('all'); setActiveTab('history'); }} />
+                        {query && <button type="button" aria-label="Clear search" onClick={() => setQuery('')}><X /></button>}
+                    </label>
+                    {!isConnected && <button type="button" className="ks-service-status" onClick={onRetry}><i aria-hidden="true" />Offline · Retry</button>}
                     <button
                         className="ks-theme-toggle"
                         type="button"
@@ -426,23 +419,29 @@ export function DesignWorkspace({
                 )}
                 {(activeTab === 'home' || activeTab === 'history') && (
                     <div className="ks-home-scroll">
-                        <div className="ks-home">
+                        <div className={`ks-home${activeTab === 'home' ? ' ks-dashboard' : ''}`}>
                             {activeTab === 'home' ? (
                                 <>
                                     <header className="ks-home-heading">
                                         <div className="ks-home-heading-text">
-                                            <h1>Good {now.getHours() < 12 ? 'morning' : now.getHours() < 18 ? 'afternoon' : 'evening'}</h1>
+                                            <span className="ks-home-eyebrow">{now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+                                            <h1>Good {now.getHours() < 12 ? 'morning' : now.getHours() < 18 ? 'afternoon' : 'evening'}{account?.name ? `, ${account.name.split(' ')[0]}` : ''}.</h1>
                                             <p>
-                                                {now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })} · {today.length}{' '}
-                                                meetings today
+                                                Your conversations, brought together.
                                             </p>
                                         </div>
                                         <button type="button" className="ks-home-schedule" onClick={onNewMeeting}>
                                             <Plus size={14} />
-                                            New meeting
+                                            Schedule meeting
                                         </button>
                                     </header>
-                                    <section className="ks-agenda">
+                                    <button className="ks-home-ask" onClick={() => setActiveTab('ask')}>
+                                        <span className="ks-home-ask-icon"><Sparkles /></span>
+                                        <span><strong>A little clarity, on demand.</strong><small>Ask anything across your meetings</small></span>
+                                        <ArrowUpRight />
+                                    </button>
+                                    <section className="ks-agenda" aria-label="Upcoming meetings">
+                                        <div className="ks-agenda-heading"><h2>Your schedule</h2><CalendarDays /></div>
                                         {agendaDays.map(day => (
                                             <div className="ks-agenda-day" key={day.label}>
                                                 <div className="ks-section-label">
@@ -493,6 +492,7 @@ export function DesignWorkspace({
                                         ))}
                                         {!today.length && !tomorrow.length && (
                                             <div className="ks-empty-card">
+                                                <CalendarDays className="ks-empty-icon" aria-hidden="true" />
                                                 <h3>
                                                     {calendar.providers.some(provider => provider.connected)
                                                         ? 'Nothing scheduled today'
@@ -509,8 +509,8 @@ export function DesignWorkspace({
                                             </div>
                                         )}
                                     </section>
-                                    <div className="ks-section-label">
-                                        <span>RECENT</span>
+                                    <div className="ks-section-label ks-recent-heading">
+                                        <h2>Recent meetings</h2>
                                         <button className="ks-view-all" onClick={() => openFolder('all')}>
                                             View all
                                         </button>
@@ -524,12 +524,6 @@ export function DesignWorkspace({
                                         <span>{visible.length} meetings</span>
                                     </header>
                                     <div className="ks-library-search">
-                                        <input
-                                            aria-label="Search meetings"
-                                            placeholder="Search meetings…"
-                                            value={query}
-                                            onChange={event => setQuery(event.target.value)}
-                                        />
                                         <button className="ks-button" onClick={history.reload}>
                                             Refresh
                                         </button>
@@ -551,6 +545,7 @@ export function DesignWorkspace({
                             </div>
                             {!list.length && (
                                 <div className="ks-empty-card">
+                                    <Library className="ks-empty-icon" aria-hidden="true" />
                                     <h3>{history.isLoading ? 'Loading meetings…' : query ? 'No matching meetings' : folderId !== 'all' ? 'This folder is ready for meetings' : 'Your next conversation starts here'}</h3>
                                     <p>{query ? 'Try a different title or a phrase from your meeting notes.' : 'Record a conversation to build a searchable collection of notes, decisions, and next steps.'}</p>
                                     {!history.isLoading && !query && <button type="button" className="ks-button ks-primary" disabled={!canRecord} onClick={() => session.onStart()}>
@@ -564,6 +559,7 @@ export function DesignWorkspace({
                 {isMeeting && (
                     <MeetingDetail
                         key={meeting?.id || 'new'}
+                        onUpgrade={() => setActiveTab('pricing')}
                         meeting={meeting}
                         turns={turns}
                         interimTurns={interimTurns}
@@ -586,6 +582,7 @@ export function DesignWorkspace({
                         <MeetingChatPanel
                             scope={scope === 'all' ? { type: 'all' } : { type: 'folder', folderId: scope }}
                             scopeLabel="Answers from your conversations"
+                            onUpgrade={() => setActiveTab('pricing')}
                             scopeControl={
                                 <label className="ks-chat-scope">
                                     Search in
@@ -604,6 +601,7 @@ export function DesignWorkspace({
                         />
                     </div>
                 )}
+                {activeTab === 'architecture' && <ArchitectureView />}
                 {activeTab === 'profile' && (
                     <div className="ks-home-scroll">
                         <div className="ks-account">
@@ -637,7 +635,7 @@ export function DesignWorkspace({
                 )}
                 {activeTab === 'pricing' && (
                     <div className="ks-home-scroll">
-                        <PricingView onSettings={onSettings} onLocal={() => setActiveTab('home')} />
+                        <PricingView account={account} canSignIn={!locked} onSettings={onSettings} onLocal={() => setActiveTab('home')} onSignIn={onSignOut} onSubscribed={onPlanChanged} />
                     </div>
                 )}
             </main>
