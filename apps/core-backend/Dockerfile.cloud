@@ -1,0 +1,9 @@
+FROM node:22-alpine
+WORKDIR /app
+COPY apps/core-backend/package.json ./package.json
+RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund
+COPY apps/core-backend/cloud-proxy.js ./cloud-proxy.js
+USER node
+ENV HOST=0.0.0.0
+EXPOSE 48901
+CMD ["node", "cloud-proxy.js"]

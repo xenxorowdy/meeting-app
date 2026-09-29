@@ -35,6 +35,7 @@ pub struct LiveConfig {
     pub language: String,
     pub mode: String,
     pub endpoint: String,
+    pub cloud: bool,
 }
 
 impl Default for LiveConfig {
@@ -43,6 +44,7 @@ impl Default for LiveConfig {
             language: "auto".into(),
             mode: "transcribe".into(),
             endpoint: kesami_core_backend::env_compat::var("KESAMI_SARVAM_REALTIME_URL").unwrap_or_else(|_| DEFAULT_URL.into()),
+            cloud: false,
         }
     }
 }
@@ -321,11 +323,14 @@ async fn connect(key: &str, config: &LiveConfig) -> Result<Socket, String> {
         .url()
         .into_client_request()
         .map_err(|cause| format!("Sarvam realtime URL is not usable: {cause}"))?;
-    let header = HeaderValue::from_str(key)
-        .map_err(|_| "the Sarvam API key contains characters a header cannot carry".to_string())?;
-    request
-        .headers_mut()
-        .insert("api-subscription-key", header);
+    if config.cloud {
+        request.headers_mut().insert("authorization", HeaderValue::from_str(&format!("Bearer {key}"))
+            .map_err(|_| "the cloud sign-in token is invalid".to_string())?);
+    } else {
+        let header = HeaderValue::from_str(key)
+            .map_err(|_| "the Sarvam API key contains characters a header cannot carry".to_string())?;
+        request.headers_mut().insert("api-subscription-key", header);
+    }
     let (socket, _) = timeout(CONNECT_TIMEOUT, connect_async(request))
         .await
         .map_err(|_| "the Sarvam realtime connection timed out".to_string())?
@@ -406,7 +411,7 @@ async fn pump(
 // invalid configuration; retrying these indefinitely cannot recover them.
 fn close_outcome(code: Option<u16>) -> Pump {
     match code {
-        Some(1003) => Pump::Fatal("Sarvam rejected the subscription or usage limit. Check the API key and account quota in Settings.".into()),
+        Some(1003) => Pump::Fatal("Transcription is unavailable because the provider rejected this session or its usage limit.".into()),
         Some(4000) => Pump::Fatal("Sarvam rejected the transcription configuration. Check the model, language and account access.".into()),
         _ => Pump::Dropped("the Sarvam realtime socket closed; reconnecting".into()),
     }

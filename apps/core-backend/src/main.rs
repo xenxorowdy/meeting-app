@@ -612,9 +612,12 @@ impl AppState {
                 .await
                 .unwrap_or_else(|| "sarvam-realtime".into()),
         };
+        let cloud_ready = supabase_auth::cloud_realtime_url().is_some()
+            && self.settings.credential("supabaseCloudSession").await.is_some();
+        let available = self.sarvam.has_key().await || cloud_ready;
         let mut status = json!({
-            "engine": "sarvam", "status": if self.sarvam.has_key().await { "ready" } else { "unavailable" },
-            "available": self.sarvam.has_key().await, "model": sarvam_live::model_name(),
+            "engine": "sarvam", "status": if available { "ready" } else { "unavailable" },
+            "available": available, "model": sarvam_live::model_name(),
             "language": self.settings.get_str("sarvamLanguage").await.unwrap_or_else(|| "unknown".into()),
             "pending": 0,
         });
@@ -720,7 +723,7 @@ impl AppState {
             / 60
     }
 
-    async fn start(&self, payload: &Value, tier: &'static str) -> Result<Meeting, String> {
+    async fn start(&self, payload: &Value, tier: &'static str, account_id: Option<&str>) -> Result<Meeting, String> {
         let provider = self
             .settings
             .get_str("transcriptionProvider")
@@ -734,15 +737,20 @@ impl AppState {
         if self.security.hosted && provider == "sarvam" {
             return Err("Hosted meetings require Sarvam realtime; batch transcription needs a recording on the backend machine.".into());
         }
-        if provider.starts_with("sarvam") && !self.sarvam.has_key().await {
+        let local_sarvam_key = self.sarvam.api_key().await;
+        let cloud_url = supabase_auth::cloud_realtime_url();
+        if provider == "sarvam" && local_sarvam_key.is_none() {
+            return Err("Batch transcription needs a locally configured Sarvam key. Choose realtime transcription instead.".into());
+        }
+        if provider.starts_with("sarvam") && local_sarvam_key.is_none() && cloud_url.is_none() {
             return Err(if self.security.hosted {
                 "Transcription is unavailable because this Kesami service has no Sarvam API key. Contact the workspace administrator."
             } else {
-                "Transcription is unavailable because this Mac's Kesami backend has no Sarvam API key. Configure KESAMI_SARVAM_API_KEY in the backend's .env.local and restart Kesami."
+                "Transcription is unavailable in this Kesami build. Contact Kesami support."
             }
             .into());
         }
-        let live_config = match provider.as_str() {
+        let mut live_config = match provider.as_str() {
             "sarvam-realtime" => Some(
                 LiveConfig {
                     language: self
@@ -761,6 +769,22 @@ impl AppState {
             ),
             _ => None,
         };
+        let live_key = if provider == "sarvam-realtime" {
+            if let Some(key) = local_sarvam_key {
+                key
+            } else {
+                let account_id = account_id.ok_or("Sign in with Google to start transcription.")?;
+                let token = self.supabase_auth.cloud_access_token(&self.settings, account_id).await?;
+                self.supabase_auth.cloud_transcription_ready(&token).await?;
+                token
+            }
+        } else { String::new() };
+        if self.sarvam.api_key().await.is_none() {
+            if let (Some(config), Some(url)) = (&mut live_config, cloud_url) {
+                config.endpoint = url;
+                config.cloud = true;
+            }
+        }
 
         let noise_suppression = self.settings.get_bool("noiseSuppression").await != Some(false);
         let echo_suppression = self.settings.get_bool("echoSuppression").await != Some(false);
@@ -838,9 +862,8 @@ impl AppState {
         session.current = Some(meeting.clone());
         if let Some(config) = live_config {
             let (sender, receiver) = mpsc::unbounded_channel();
-            let key = self.sarvam.api_key().await.unwrap_or_default();
             session.live = Some(LiveTranscriber::start(
-                key,
+                live_key,
                 config,
                 &[STREAM_MIC, STREAM_SYSTEM],
                 sender,
@@ -2061,6 +2084,7 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
     }
     if websocket {
         let tier = state.session_tier(&request).await;
+        let account_id = state.session_account(&request).await.map(|account| account.id);
         return websocket_session(
             stream,
             request
@@ -2071,6 +2095,7 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
             offered_protocol(request.headers.get("sec-websocket-protocol").map(String::as_str)),
             state,
             tier,
+            account_id,
         )
         .await;
     }
@@ -2398,7 +2423,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 )
                 .await
             {
-                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Ok(grant) => {
+                    state.supabase_auth.clear_cloud_grant(&state.settings).await;
+                    json_response(200, auth_grant_json(grant))
+                },
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
@@ -2415,7 +2443,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 )
                 .await
             {
-                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Ok(grant) => {
+                    state.supabase_auth.clear_cloud_grant(&state.settings).await;
+                    json_response(200, auth_grant_json(grant))
+                },
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
@@ -2478,7 +2509,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 )
                 .await
             {
-                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Ok(grant) => {
+                    state.supabase_auth.clear_cloud_grant(&state.settings).await;
+                    json_response(200, auth_grant_json(grant))
+                },
                 Err((status, error)) => json_response(status, json!({"error":error})),
             }
         }
@@ -2511,7 +2545,14 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 )
                 .await
             {
-                Ok(grant) => json_response(200, auth_grant_json(grant)),
+                Ok(grant) => {
+                    if supabase_auth::cloud_realtime_url().is_some() {
+                        if let Err(error) = state.supabase_auth.store_cloud_grant(&state.settings, &identity, &grant.account.id).await {
+                            return json_response(503, json!({"error": error}));
+                        }
+                    }
+                    json_response(200, auth_grant_json(grant))
+                },
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
@@ -2521,6 +2562,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     return json_response(status, json!({"error": error}));
                 }
             }
+            state.supabase_auth.clear_cloud_grant(&state.settings).await;
             json_response(200, json!({"success": true}))
         }
         ("GET", "/api/auth/config") => {
@@ -2810,7 +2852,8 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     );
                 }
             }
-            match state.start(&body, tier).await {
+            let account_id = state.session_account(&req).await.map(|account| account.id);
+            match state.start(&body, tier, account_id.as_deref()).await {
                 Ok(m) => json_response(200, json!({"success":true,"meeting":m})),
                 Err(e) => json_response(409, json!({"error":e})),
             }
@@ -2870,7 +2913,9 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             settings["calendarConnectSupported"] = json!(!state.security.hosted);
             settings["geminiApiKeySet"] =
                 state.summarizer.status_value().await["geminiKeySet"].clone();
-            settings["sarvamApiKeySet"] = json!(state.sarvam.has_key().await);
+            settings["sarvamApiKeySet"] = json!(state.sarvam.has_key().await || (
+                supabase_auth::cloud_realtime_url().is_some()
+                    && state.settings.credential("supabaseCloudSession").await.is_some()));
             if state.security.hosted {
                 settings["sarvamDiarizeAfterMeeting"] = json!(false);
             }
@@ -3547,6 +3592,7 @@ async fn websocket_session(
     app_protocol: Option<&'static str>,
     state: AppState,
     tier: &'static str,
+    account_id: Option<String>,
 ) -> io::Result<()> {
     let (mut reader, mut writer) = stream.into_split();
     let accept = websocket_accept(key);
@@ -3585,7 +3631,7 @@ async fn websocket_session(
     loop {
         match read_ws_frame(&mut reader).await {
             Ok(Some(WsFrame::Binary(bytes))) => state.feed_audio(&bytes).await,
-            Ok(Some(WsFrame::Text(text))) => handle_ws_message(&state, &text, tier).await,
+            Ok(Some(WsFrame::Text(text))) => handle_ws_message(&state, &text, tier, account_id.as_deref()).await,
             Ok(Some(WsFrame::Ping(payload))) => {
                 if pongs.send(payload).is_err() {
                     break;
@@ -3601,7 +3647,7 @@ async fn websocket_session(
     Ok(())
 }
 
-async fn handle_ws_message(state: &AppState, text: &str, tier: &'static str) {
+async fn handle_ws_message(state: &AppState, text: &str, tier: &'static str, account_id: Option<&str>) {
     if let Ok(mut msg) = serde_json::from_str::<Value>(text) {
         let action = msg
             .get("action")
@@ -3615,7 +3661,7 @@ async fn handle_ws_message(state: &AppState, text: &str, tier: &'static str) {
             .unwrap_or_else(|| msg.clone());
         match action.as_str() {
             "start_meeting" => {
-                let _ = state.start(&payload, tier).await;
+                let _ = state.start(&payload, tier, account_id).await;
             }
             "pause_meeting" => {
                 let mut s = state.session.lock().await;

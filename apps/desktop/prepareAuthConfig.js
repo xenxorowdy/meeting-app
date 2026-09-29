@@ -23,13 +23,21 @@ try {
     const provider = settings.KESAMI_AUTH_PROVIDER;
     const url = settings.KESAMI_SUPABASE_URL;
     const publishableKey = settings.KESAMI_SUPABASE_PUBLISHABLE_KEY;
+    const cloudUrl = process.env.KESAMI_CLOUD_URL || settings.KESAMI_CLOUD_URL || '';
     const parsed = new URL(url);
     if (provider !== 'supabase' || parsed.protocol !== 'https:' || parsed.username || parsed.password
         || parsed.pathname !== '/' || parsed.search || parsed.hash || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishableKey)) {
         throw new Error('apps/ui/.env needs a Supabase provider, bare HTTPS project URL, and sb_publishable_ key');
     }
+    let publicCloudUrl = null;
+    if (cloudUrl) {
+        const cloud = new URL(cloudUrl);
+        if (cloud.protocol !== 'https:' || cloud.username || cloud.password || cloud.pathname !== '/'
+            || cloud.search || cloud.hash) throw new Error('KESAMI_CLOUD_URL must be a bare HTTPS origin');
+        publicCloudUrl = cloud.origin;
+    }
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, JSON.stringify({ provider, url: parsed.origin, publishableKey }), { mode: 0o600 });
+    fs.writeFileSync(output, JSON.stringify({ provider, url: parsed.origin, publishableKey, cloudUrl: publicCloudUrl }), { mode: 0o600 });
     fs.chmodSync(output, 0o600);
     console.log('Prepared public Supabase sign-in settings for the desktop package.');
 } catch (cause) {

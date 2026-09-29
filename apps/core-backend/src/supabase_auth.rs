@@ -1,9 +1,40 @@
 //! Supabase brokers Google sign-in; the desktop keeps its existing local session.
 //! Provider tokens never reach the renderer or the on-disk account store.
 use crate::google_auth::GoogleIdentity;
+use crate::settings::SettingsStore;
 use reqwest::Url;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
+use tokio::sync::Mutex;
+
+const CLOUD_SESSION: &str = "supabaseCloudSession";
+static REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+pub struct SupabaseGrant {
+    pub identity: GoogleIdentity,
+    access_token: String,
+    refresh_token: String,
+    expires_at: i64,
+}
+
+pub fn cloud_origin() -> Option<String> {
+    let raw = kesami_core_backend::env_compat::var("KESAMI_CLOUD_URL").ok()?;
+    let url = Url::parse(raw.trim()).ok()?;
+    if url.scheme() != "https" || url.host_str().is_none() || !url.username().is_empty()
+        || url.password().is_some() || url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+        return None;
+    }
+    Some(url.origin().ascii_serialization())
+}
+
+pub fn cloud_realtime_url() -> Option<String> {
+    Some(format!("{}/v1/transcription/realtime", cloud_origin()?.replacen("https://", "wss://", 1)))
+}
+
+impl std::ops::Deref for SupabaseGrant {
+    type Target = GoogleIdentity;
+    fn deref(&self) -> &Self::Target { &self.identity }
+}
 
 pub struct SupabaseAuth {
     enabled: bool,
@@ -37,7 +68,7 @@ impl SupabaseAuth {
         })
     }
 
-    pub async fn exchange_google_code(&self, code: &str, verifier: &str) -> Result<GoogleIdentity, (u16, String)> {
+    pub async fn exchange_google_code(&self, code: &str, verifier: &str) -> Result<SupabaseGrant, (u16, String)> {
         let config = self.config.as_ref().filter(|_| self.enabled).ok_or((503,
             "Supabase Google sign-in needs KESAMI_AUTH_PROVIDER=supabase, KESAMI_SUPABASE_URL, and KESAMI_SUPABASE_PUBLISHABLE_KEY in the backend configuration.".into()))?;
         if code.is_empty() || code.len() > 2_048 || !(43..=128).contains(&verifier.len())
@@ -84,7 +115,65 @@ impl SupabaseAuth {
                 .send().await.map_err(|_| profile_unavailable())?;
             if !response.status().is_success() { return Err(profile_unavailable()); }
         }
-        Ok(identity)
+        Ok(SupabaseGrant {
+            identity,
+            access_token: token.to_string(),
+            refresh_token: tokens.get("refresh_token").and_then(Value::as_str).unwrap_or_default().to_string(),
+            expires_at: chrono::Utc::now().timestamp() + tokens.get("expires_in").and_then(Value::as_i64).unwrap_or(3600),
+        })
+    }
+
+    pub async fn store_cloud_grant(&self, settings: &SettingsStore, grant: &SupabaseGrant, account_id: &str) -> Result<(), String> {
+        if grant.refresh_token.is_empty() { return Err("Google sign-in did not return a renewable session.".into()); }
+        let value = json!({"accountId": account_id, "accessToken": grant.access_token,
+            "refreshToken": grant.refresh_token, "expiresAt": grant.expires_at});
+        settings.set_credential(CLOUD_SESSION, Some(&value.to_string())).await
+            .map(|_| ()).map_err(|_| "Could not save the sign-in session on this Mac.".to_string())
+    }
+
+    pub async fn clear_cloud_grant(&self, settings: &SettingsStore) {
+        let _ = settings.set_credential(CLOUD_SESSION, None).await;
+    }
+
+    pub async fn cloud_access_token(&self, settings: &SettingsStore, account_id: &str) -> Result<String, String> {
+        let _guard = REFRESH_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+        let saved = settings.credential(CLOUD_SESSION).await.ok_or("Sign in with Google to use hosted transcription.")?;
+        let session: Value = serde_json::from_str(&saved).map_err(|_| "Sign in with Google again to use hosted transcription.")?;
+        if session["accountId"].as_str() != Some(account_id) {
+            return Err("Sign in with Google to use hosted transcription.".into());
+        }
+        if session["expiresAt"].as_i64().unwrap_or(0) > chrono::Utc::now().timestamp() + 120 {
+            return session["accessToken"].as_str().map(str::to_string).ok_or("Sign in with Google again.".into());
+        }
+        let config = self.config.as_ref().filter(|_| self.enabled).ok_or("Google sign-in is unavailable.".to_string())?;
+        let refresh = session["refreshToken"].as_str().ok_or("Sign in with Google again.".to_string())?;
+        let response = reqwest::Client::builder().timeout(Duration::from_secs(15)).build()
+            .map_err(|_| "Google sign-in is unavailable.".to_string())?
+            .post(config.url.join("auth/v1/token?grant_type=refresh_token").map_err(|_| "Google sign-in is unavailable.")?)
+            .header("apikey", &config.key).json(&json!({"refresh_token": refresh}))
+            .send().await.map_err(|_| "Could not renew Google sign-in. Try again.")?;
+        if !response.status().is_success() { return Err("Google sign-in expired. Sign in again.".into()); }
+        let tokens: Value = response.json().await.map_err(|_| "Could not renew Google sign-in.")?;
+        let access = tokens["access_token"].as_str().filter(|value| !value.is_empty()).ok_or("Could not renew Google sign-in.")?.to_string();
+        let next_refresh = tokens["refresh_token"].as_str().filter(|value| !value.is_empty()).ok_or("Could not renew Google sign-in.")?;
+        let next = json!({"accountId": account_id, "accessToken": access,
+            "refreshToken": next_refresh, "expiresAt": chrono::Utc::now().timestamp() + tokens["expires_in"].as_i64().unwrap_or(3600)});
+        settings.set_credential(CLOUD_SESSION, Some(&next.to_string())).await.map_err(|_| "Could not save renewed Google sign-in.")?;
+        Ok(access)
+    }
+
+    pub async fn cloud_transcription_ready(&self, token: &str) -> Result<(), String> {
+        let origin = cloud_origin().ok_or("This Kesami build has no transcription service.")?;
+        let response = reqwest::Client::builder().timeout(Duration::from_secs(8)).build()
+            .map_err(|_| "Transcription service is unavailable. Try again.")?
+            .get(format!("{origin}/v1/capabilities")).bearer_auth(token)
+            .send().await.map_err(|_| "Transcription service is offline. Try again.")?;
+        match response.status().as_u16() {
+            200 => Ok(()),
+            401 | 403 => Err("Google sign-in expired. Sign in again.".into()),
+            429 => Err("Your transcription limit is currently reached. Try again later.".into()),
+            _ => Err("Transcription service is unavailable. Try again.".into()),
+        }
     }
 }
 

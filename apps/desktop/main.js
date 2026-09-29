@@ -34,13 +34,18 @@ const UI_DIST_WIDGET = path.join(UI_DIST_DIR, 'widget.html');
 const DEV_UI_URL = process.env.MEETING_UI_URL || 'http://localhost:5173/';
 
 function packagedAuthConfig() {
-    if (!app.isPackaged || fs.existsSync(path.join(CORE_BACKEND_DIR, '.env.local'))) return null;
+    if (!app.isPackaged) return null;
     try {
         const config = JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'auth-config.json'), 'utf8'));
         const url = new URL(config.url);
         if (config.provider !== 'supabase' || url.protocol !== 'https:' || url.username || url.password
             || url.pathname !== '/' || url.search || url.hash || !config.publishableKey?.startsWith('sb_publishable_')) {
             throw new Error('invalid public auth settings');
+        }
+        if (config.cloudUrl) {
+            const cloud = new URL(config.cloudUrl);
+            if (cloud.protocol !== 'https:' || cloud.username || cloud.password || cloud.pathname !== '/'
+                || cloud.search || cloud.hash) throw new Error('invalid cloud service address');
         }
         return config;
     } catch (cause) {
@@ -122,6 +127,7 @@ async function startBackend() {
         if (!env.KESAMI_SUPABASE_PUBLISHABLE_KEY && !env.ALPHA_SUPABASE_PUBLISHABLE_KEY) {
             env.KESAMI_SUPABASE_PUBLISHABLE_KEY = auth.publishableKey;
         }
+        if (auth.cloudUrl && !env.KESAMI_CLOUD_URL && !env.ALPHA_CLOUD_URL) env.KESAMI_CLOUD_URL = auth.cloudUrl;
     }
 
     if (fs.existsSync(CORE_BACKEND_BINARY)) {
