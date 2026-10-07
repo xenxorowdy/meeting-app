@@ -9,6 +9,7 @@ const systemAudio = require('./systemAudio');
 const micUsage = require('./micUsage');
 const googleSignIn = require('./googleSignIn');
 const connection = require('./connection');
+const updater = require('./updater');
 const { showDockIcon } = require('./dock');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -200,7 +201,25 @@ function buildMenu() {
     // Without an explicit menu macOS loses Cut/Copy/Paste and the standard
     // window shortcuts, which a text-heavy app cannot do without.
     const template = [
-        ...(isMac ? [{ role: 'appMenu' }] : []),
+        ...(isMac
+            ? [
+                  {
+                      role: 'appMenu',
+                      submenu: [
+                          { role: 'about' },
+                          { label: 'Check for Updates…', click: () => updater.checkNow() },
+                          { type: 'separator' },
+                          { role: 'services' },
+                          { type: 'separator' },
+                          { role: 'hide' },
+                          { role: 'hideOthers' },
+                          { role: 'unhide' },
+                          { type: 'separator' },
+                          { role: 'quit' },
+                      ],
+                  },
+              ]
+            : []),
         {
             label: 'File',
             submenu: [
@@ -210,6 +229,7 @@ function buildMenu() {
                     click: () => mainWindow?.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'e', modifiers: ['cmd'] }),
                 },
                 { type: 'separator' },
+                ...(isMac ? [] : [{ label: 'Check for Updates…', click: () => updater.checkNow() }, { type: 'separator' }]),
                 isMac ? { role: 'close' } : { role: 'quit' },
             ],
         },
@@ -351,6 +371,7 @@ if (!app.requestSingleInstanceLock()) {
 
         createWindow();
         createWidget();
+        updater.start({ getWindow: () => mainWindow });
 
         // Counting every window would include the floating widget, which is
         // always open — the dock icon would then never bring the app back.
@@ -372,6 +393,7 @@ if (!app.requestSingleInstanceLock()) {
         event.preventDefault();
         if (quitting) return;
         quitting = true;
+        updater.stop();
         // Close the recording file before the backend goes away, so quitting
         // mid-meeting still leaves something playable on disk.
         widget.destroy();

@@ -24,7 +24,7 @@
         "test:release": "npm run build:all && npm run test:backend && npm run test:node && npm run test:desktop && npm run test:extension:browser",
         "test:auth": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/auth-flow.test.js test/auth-client.test.js test/google-desktop-auth.test.js test/plans-client.test.js",
         "test:podcast": "node --test test/podcast-projects.test.js test/recorder-paths.test.js",
-        "test:shell": "node --test test/widget-window.test.js test/menubar-tray.test.js test/dock-icon.test.js test/system-audio.test.js test/mic-usage.test.js",
+        "test:shell": "node --test test/updater.test.js test/widget-window.test.js test/menubar-tray.test.js test/dock-icon.test.js test/system-audio.test.js test/mic-usage.test.js",
         "test:ui": "node --test test/calendar-events.test.js test/call-prompt.test.js test/meeting-chat.test.js test/live-transcript.test.js test/audio-levels.test.js test/meeting-audio-source.test.js test/print-document.test.js test/speaker-suggestions.test.js",
         "test:chat": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/meeting-chat.test.js test/meeting-chat-integration.test.js",
         "test:actions": "cargo test --manifest-path apps/core-backend/Cargo.toml --bin kesami-core-backend action && cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/post-meeting-actions-integration.test.js",

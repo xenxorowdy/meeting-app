@@ -11,6 +11,9 @@
         "dist:mac": "node prepareAuthConfig.js && electron-builder --mac",
         "dist:win": "node prepareAuthConfig.js && electron-builder --win"
     },
+    "dependencies": {
+        "electron-updater": "^6.8.9"
+    },
     "devDependencies": {
         "electron": "44.5.1",
         "electron-builder": "^26.15.3"
@@ -21,6 +24,12 @@
         "compression": "maximum",
         "appId": "com.kesami.meetings",
         "productName": "Kesami",
+        "publish": {
+            "provider": "github",
+            "owner": "xenxorowdy",
+            "repo": "kesami-releases",
+            "releaseType": "release"
+        },
         "directories": {
             "output": "release",
             "buildResources": "packaging"

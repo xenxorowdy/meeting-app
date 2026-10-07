@@ -68,6 +68,8 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
           if-no-files-found: error
           compression-level: 0
 
@@ -131,7 +133,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: apps/desktop/release/Kesami-Setup-x64.exe
+          path: |
+            apps/desktop/release/Kesami-Setup-x64.exe
+            apps/desktop/release/Kesami-Setup-x64.exe.blockmap
+            apps/desktop/release/latest.yml
           if-no-files-found: error
           compression-level: 0
 
@@ -165,7 +170,7 @@ jobs:
             "Download **Kesami-Setup-x64.exe** and run it. It installs Kesami for your user account, with no administrator prompt. Requires 64-bit Windows 10 or 11." \
             "" \
             "This installer is not code-signed, so Microsoft Defender SmartScreen may show **Windows protected your PC**. If you trust Kesami, click **More info**, then **Run anyway**.")
-          FILES=(dist/*.dmg dist/*.zip dist/Kesami-Setup-x64.exe)
+          FILES=(dist/*.dmg dist/*.zip dist/*.blockmap dist/Kesami-Setup-x64.exe dist/latest-mac.yml dist/latest.yml)
           if gh release view "$TAG" -R "$RELEASES_REPO" >/dev/null 2>&1; then
             gh release upload "$TAG" -R "$RELEASES_REPO" "${FILES[@]}" --clobber
             gh release edit "$TAG" -R "$RELEASES_REPO" --notes "$NOTES"
