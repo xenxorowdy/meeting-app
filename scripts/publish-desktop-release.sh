@@ -53,7 +53,11 @@ files=(
     "$artifact_dir/windows/latest.yml"
 )
 mac_zip=$(find "$artifact_dir/mac" -maxdepth 1 -type f -name 'Kesami-*-arm64-mac.zip' -print -quit)
-if [[ -n $mac_zip ]]; then files+=("$mac_zip"); fi
+if [[ -z $mac_zip ]]; then
+    echo "Expected macOS updater ZIP is missing from $artifact_dir/mac" >&2
+    exit 1
+fi
+files+=("$mac_zip")
 for required in "${files[@]}"; do
     if [[ ! -f $required ]]; then
         echo "Expected release artifact is missing: $required" >&2
