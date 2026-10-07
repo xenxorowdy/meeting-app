@@ -12,10 +12,28 @@ page content, no message text — just names and who is talking right now.
 ## Install
 
 1. Start Kesami (the backend must be listening; the extension talks to port 48900 by default).
-2. Open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select
-   this `apps/extension` directory. Chrome, Edge, Brave and Arc all take it as-is.
-3. Join a Google Meet or Zoom call. The toolbar badge turns green once Kesami is recording and
-   accepting names.
+2. Open the browser's extensions page (`brave://extensions` in Brave, `chrome://extensions` in
+   Chrome or Arc, `edge://extensions` in Edge), turn on **Developer mode**, choose
+   **Load unpacked**, and select this `apps/extension` directory. Brave needs no Shields change:
+   only the extension's background worker talks to Kesami, never the meeting page.
+3. Pin the extension and join a Google Meet or Zoom call. The toolbar badge turns green once
+   Kesami is recording and accepting names.
+
+To check from Kesami's side, open **Settings → Calendar → Browser extension**. It shows
+**Connected** while a call tab is reporting, even before a meeting is recording.
+
+Kesami accepts the extension's `chrome-extension://` origin only for `GET /api/status` and JSON
+`POST /api/session/participants`, and only on the local backend. If the popup says
+**backend replied 403**, the Kesami build predates that and must be updated.
+
+## Test it end to end
+
+`npm run test:extension:browser` loads this directory into Brave (or Chrome, Chromium or Edge;
+set `KESAMI_TEST_BROWSER` to choose) with a throwaway profile and a stand-in Google Meet page,
+against a scratch Kesami backend. It checks that the roster, the active speaker, your own name
+and your mute state arrive, that leaving the call ends the meeting, and that the names and
+speaking spans are saved with it. It never talks to the Kesami you are running on port 48900.
+Append `-- --headed` to watch the browser.
 
 Open the popup to see what the extension currently sees: the roster, who it thinks is speaking,
 which signal it used, and whether the backend answered. That view is the fastest way to tell a
@@ -54,6 +72,8 @@ meeting clock, and uses them three ways:
 - **Diarized turns.** After a Sarvam batch pass, each diarized speaker is matched to the name
   whose intervals it overlaps, one name per speaker.
 - **The summary.** The roster joins the calendar attendees the summary is written against.
+- **Speaker suggestions.** The roster, your name and who spoke when are saved with the meeting.
+  When you change who said a line, Kesami recommends the person the page showed talking.
 
 A name is only attached when one name covers at least half the turn and no other name comes
 close, so cross-talk leaves the generic label in place rather than guessing. The microphone

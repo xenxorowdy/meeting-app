@@ -23,13 +23,14 @@ async function freePort() {
     return port;
 }
 
-async function spawnBackend(root, { local = false, supabase = false } = {}) {
+async function spawnBackend(root, { local = false, supabase = false, cloud = false } = {}) {
     const port = await freePort();
     const backend = spawn(BINARY, [], {
         cwd: root,
         stdio: ['ignore', 'ignore', 'ignore'],
         env: {
             ...process.env,
+            KESAMI_CLOUD_URL: cloud ? 'https://cloud.example.invalid' : '',
             KESAMI_DATA_DIR: root,
             CORE_BACKEND_DATA_FILE: path.join(root, 'absent-settings.json'),
             CORE_BACKEND_PORT: String(port),
@@ -39,6 +40,7 @@ async function spawnBackend(root, { local = false, supabase = false } = {}) {
             KESAMI_PBKDF2_ITERATIONS: '1000',
             KESAMI_SUMMARY_PROVIDER: 'claude',
             KESAMI_GEMINI_API_KEY: '',
+            KESAMI_OPENAI_API_KEY: '',
             KESAMI_SARVAM_API_KEY: '',
             KESAMI_GOOGLE_OAUTH_CLIENT_ID: 'test-only.apps.googleusercontent.com',
             KESAMI_AUTH_PROVIDER: supabase ? 'supabase' : 'google',
@@ -89,6 +91,7 @@ test('accounts register, sign in, authorize the API, and die at logout', { timeo
     assert.equal((await api('/api/auth/config')).data.googleClientId, 'test-only.apps.googleusercontent.com');
     assert.equal((await api('/api/auth/config')).data.googleAuth, null);
     assert.equal((await api('/api/auth/config')).data.googleCalendar, false);
+    assert.equal((await api('/api/auth/config')).data.cloudManaged, false);
     assert.equal((await api('/api/auth/supabase/google', { code: 'code', verifier: 'v'.repeat(64) })).status, 503);
     assert.equal((await api('/api/auth/google', { code: '', verifier: '', redirectUri: '', nonce: 'test-nonce' })).status, 401);
     assert.equal((await api('/api/auth/register', {name: 'Intruder', email: 'intruder@work.com', password: 'first password'})).status, 403);
@@ -223,4 +226,34 @@ test('local use needs no account and paid checkout cannot pretend to succeed', {
     assert.equal((await api('/api/auth/login', { email: 'local@work.com', password: 'first password' })).status, 401);
     assert.equal((await api('/api/auth/login', { email: 'local@work.com', password: 'second password' })).status, 200);
     assert.ok((await fs.stat(path.join(root, 'accounts.sqlite3'))).size > 0);
+});
+
+
+test('cloud clients use realtime with server-managed providers despite saved local preferences', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-cloud-client-'));
+    const { backend, api } = await spawnBackend(root, { local: true, cloud: true, supabase: true });
+    t.after(async () => {
+        backend.kill();
+        await once(backend, 'exit');
+        await fs.rm(root, { recursive: true, force: true });
+    });
+    assert.equal((await api('/api/settings', { transcriptionProvider: 'sarvam', sarvamDiarizeAfterMeeting: true })).status, 200);
+    const { data } = await api('/api/settings');
+    assert.equal(data.settings.cloudManaged, true);
+    assert.equal((await api('/api/auth/config')).data.cloudManaged, true, 'the welcome screen can tell a release build apart');
+    assert.equal(data.settings.supportsLocalRecording, true);
+    assert.equal(data.settings.transcriptionProvider, 'sarvam-realtime');
+    assert.equal(data.settings.sarvamDiarizeAfterMeeting, false);
+    const status = await api('/api/status');
+    assert.equal(status.data.stt.provider, 'sarvam-realtime');
+    assert.equal(status.data.summary.cloudManaged, true);
+    assert.equal(status.data.summary.provider, 'gemini');
+    for (const key of ['geminiApiKey', 'openaiApiKey', 'sarvamApiKey']) {
+        const response = await api('/api/settings', { [key]: 'must-not-be-stored' });
+        assert.equal(response.status, 403);
+        assert.match(response.data.error, /managed by the Kesami service/);
+    }
+    const start = await api('/api/meetings/start', { title: 'Cloud meeting' });
+    assert.match(start.data.error, /Sign in with Google/);
+    assert(!start.data.error.includes('API key'));
 });

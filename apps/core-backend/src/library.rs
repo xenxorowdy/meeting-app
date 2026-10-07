@@ -322,6 +322,11 @@ impl Library {
                 let from = self.root.join(&name);
                 let to = self.root.join(&desired);
                 if from.exists() && !to.exists() && tokio::fs::rename(&from, &to).await.is_ok() {
+                    if let Some(recording) = meeting.recording.as_mut() {
+                        if let Some(relative) = recording.get("videoPath").and_then(Value::as_str).and_then(|path| path.strip_prefix(&format!("{name}/"))).map(str::to_string) {
+                            recording["videoPath"] = json!(format!("{desired}/{relative}"));
+                        }
+                    }
                     desired
                 } else {
                     name
@@ -391,7 +396,21 @@ impl Library {
             return Ok(false);
         };
 
-        let source = recordings_root.join(&relative);
+        // The recording descriptor comes from an API client. Resolve symlinks
+        // before moving anything so it cannot move or delete an unrelated file.
+        let relative = Path::new(&relative);
+        if relative.is_absolute() || relative.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "recording path must stay inside the recording directory"));
+        }
+        let canonical_root = tokio::fs::canonicalize(&recordings_root).await?;
+        let source = match tokio::fs::canonicalize(recordings_root.join(relative)).await {
+            Ok(path) => path,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        if !source.starts_with(&canonical_root) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "recording path must stay inside the recording directory"));
+        }
         if !source.is_file() {
             return Ok(false);
         }
@@ -453,6 +472,49 @@ async fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn recording_adoption_rejects_paths_outside_the_library() {
+        let root = scratch("recording-boundary");
+        let outside = scratch("private-recording");
+        let secret = outside.join("private.webm");
+        std::fs::write(&secret, b"private recording").unwrap();
+        let mut library = Library::new(root.clone());
+        let mut record = meeting("safe-id", "Review", 1_757_030_400_000);
+        library.save(&mut record).await.unwrap();
+        for path in [secret.to_string_lossy().into_owned(), format!("../{}/private.webm", outside.file_name().unwrap().to_string_lossy())] {
+            record.recording = Some(json!({"videoPath": path}));
+            assert!(library.adopt_recording(&mut record, Some(&root)).await.is_err());
+            assert_eq!(std::fs::read(&secret).unwrap(), b"private recording");
+        }
+        #[cfg(unix)] {
+            std::os::unix::fs::symlink(&secret, root.join("linked.webm")).unwrap();
+            record.recording = Some(json!({"videoPath":"linked.webm"}));
+            assert!(library.adopt_recording(&mut record, Some(&root)).await.is_err());
+            assert!(secret.exists());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[tokio::test]
+    async fn renaming_a_meeting_keeps_its_recording_playable_after_reload() {
+        let root = scratch("rename-recording");
+        let mut library = Library::new(root.clone());
+        let mut record = meeting("recording-title", "Original title", 1_757_030_400_000);
+        library.save(&mut record).await.unwrap();
+        let video = format!("{}/recording.webm", record.folder.as_ref().unwrap());
+        std::fs::write(root.join(&video), b"video").unwrap();
+        record.recording = Some(json!({"videoPath": video}));
+        record.title = "Edited title".into();
+        library.save(&mut record).await.unwrap();
+        let mut reopened = Library::new(root.clone());
+        let records = reopened.load().await;
+        assert_eq!(records[0].title, "Edited title");
+        let path = records[0].recording.as_ref().unwrap()["videoPath"].as_str().unwrap();
+        assert_eq!(std::fs::read(root.join(path)).unwrap(), b"video");
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn meeting(id: &str, title: &str, started_at: i64) -> Meeting {
         serde_json::from_value(json!({

@@ -230,6 +230,11 @@ async function openSocket(port, onEvent) {
 
     let upgraded = false;
     let buffer = Buffer.alloc(0);
+    let answered;
+    const handshake = new Promise(resolve => {
+        answered = resolve;
+    });
+    socket.once('close', () => answered(''));
     const frames = readFrames((opcode, payload) => {
         if (opcode === 1) {
             try {
@@ -243,11 +248,13 @@ async function openSocket(port, onEvent) {
             const end = buffer.indexOf('\r\n\r\n');
             if (end === -1) return;
             upgraded = true;
+            answered(buffer.subarray(0, end).toString('latin1'));
             chunk = buffer.subarray(end + 4);
         }
         frames(chunk);
     });
 
+    assert.match(await handshake, /^HTTP\/1\.1 101 /, 'the backend must accept the WebSocket upgrade');
     return {
         send: value => socket.write(maskedFrame(1, Buffer.from(JSON.stringify(value)))),
         sendAudio: packet => socket.write(maskedFrame(2, packet)),
@@ -301,6 +308,7 @@ async function runMeeting(t, { meetingAudio, microphone }) {
             KESAMI_SARVAM_API_KEY: 'test-key',
             KESAMI_SARVAM_REALTIME_URL: `ws://127.0.0.1:${recogniserPort}/ws`,
             KESAMI_GEMINI_API_KEY: '',
+            KESAMI_OPENAI_API_KEY: '',
             KESAMI_CHAT_EMBEDDINGS: 'off',
         },
     });

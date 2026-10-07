@@ -3,6 +3,9 @@
     "version": "1.0.0",
     "description": "Commercial Desktop Meeting Assistant - Decoupled UI & Backend",
     "private": true,
+    "engines": {
+        "node": ">=22.12.0"
+    },
     "workspaces": [
         "apps/*"
     ],
@@ -13,14 +16,23 @@
         "start:ui": "npm run --prefix apps/ui dev",
         "start:backend": "npm run --prefix apps/core-backend start",
         "test:backend": "npm run --prefix apps/core-backend test",
+        "test:billing": "npm run build:ui && cargo test --manifest-path apps/core-backend/Cargo.toml --lib billing && node --test test/plans-client.test.js test/client-release-config.test.js && electron test/payment-ui/render.cjs",
+        "test:billing:db": "cargo test --manifest-path apps/core-backend/Cargo.toml --bin kesami-core-backend paid_subscriptions_reach_supabase -- --ignored && cargo test --manifest-path apps/core-backend/Cargo.toml --no-default-features --bin kesami-cloud-relay hosted_payment_confirms -- --ignored",
+        "test:node": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/*.test.js",
+        "test:cloud": "cargo test --manifest-path apps/core-backend/Cargo.toml --no-default-features --bin kesami-cloud-relay && node --test test/client-release-config.test.js",
+        "test:desktop": "electron test/capture-flow/render.cjs && electron test/ui-design/render.cjs",
+        "test:release": "npm run build:all && npm run test:backend && npm run test:node && npm run test:desktop && npm run test:extension:browser",
         "test:auth": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/auth-flow.test.js test/auth-client.test.js test/google-desktop-auth.test.js test/plans-client.test.js",
         "test:podcast": "node --test test/podcast-projects.test.js test/recorder-paths.test.js",
         "test:shell": "node --test test/widget-window.test.js test/menubar-tray.test.js test/dock-icon.test.js test/system-audio.test.js test/mic-usage.test.js",
-        "test:ui": "node --test test/calendar-events.test.js test/meeting-chat.test.js test/live-transcript.test.js test/audio-levels.test.js test/meeting-audio-source.test.js",
+        "test:ui": "node --test test/calendar-events.test.js test/call-prompt.test.js test/meeting-chat.test.js test/live-transcript.test.js test/audio-levels.test.js test/meeting-audio-source.test.js test/print-document.test.js test/speaker-suggestions.test.js",
         "test:chat": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/meeting-chat.test.js test/meeting-chat-integration.test.js",
+        "test:actions": "cargo test --manifest-path apps/core-backend/Cargo.toml --bin kesami-core-backend action && cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/post-meeting-actions-integration.test.js",
+        "test:commitments": "cargo test --manifest-path apps/core-backend/Cargo.toml --bin kesami-core-backend commitments && cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/meeting-commitments-integration.test.js",
         "test:audio": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/live-speakers.test.js test/live-echo.test.js",
         "test:meeting-end": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/meeting-end.test.js",
         "test:extension": "node --test test/extension-names.test.js",
+        "test:extension:browser": "cargo build --manifest-path apps/core-backend/Cargo.toml && node test/extension-browser/run.cjs",
         "test:supabase": "cargo build --manifest-path apps/core-backend/Cargo.toml && node --test test/supabase-connection.test.js",
         "build:ui": "npm run --prefix apps/ui build",
         "build:backend": "npm run --prefix apps/core-backend build",
@@ -28,7 +40,8 @@
         "build:all": "npm run build:ui && npm run build:backend",
         "package": "npm run --prefix ../.. package",
         "make": "npm run --prefix ../.. make",
-        "dist:mac": "npm run build:all && npm run build:mic-watch && npm run --prefix apps/desktop dist:mac"
+        "dist:mac": "npm run build:all && npm run build:mic-watch && npm run --prefix apps/desktop dist:mac",
+        "dist:win": "npm run build:all && npm run --prefix apps/desktop dist:win"
     },
     "keywords": [
         "meeting assistant",

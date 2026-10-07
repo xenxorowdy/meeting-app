@@ -145,12 +145,18 @@ async function openSocket(port, onEvent) {
 
     let buffer = Buffer.alloc(0);
     let upgraded = false;
+    let answered;
+    const handshake = new Promise(resolve => {
+        answered = resolve;
+    });
+    socket.once('close', () => answered(''));
     socket.on('data', chunk => {
         buffer = Buffer.concat([buffer, chunk]);
         if (!upgraded) {
             const end = buffer.indexOf('\r\n\r\n');
             if (end === -1) return;
             upgraded = true;
+            answered(buffer.subarray(0, end).toString('latin1'));
             buffer = buffer.subarray(end + 4);
         }
         for (;;) {
@@ -177,6 +183,7 @@ async function openSocket(port, onEvent) {
         }
     });
 
+    assert.match(await handshake, /^HTTP\/1\.1 101 /, 'the backend must accept the WebSocket upgrade');
     return {
         send: value => socket.write(maskedFrame(1, Buffer.from(JSON.stringify(value)))),
         sendAudio: packet => socket.write(maskedFrame(2, packet)),
@@ -206,6 +213,7 @@ function recogniserStub() {
         const QUIET_CHUNKS_TO_CLOSE = 5;
         const connection = { wasLoud: false, speaking: false, quietRun: 0 };
         socket.on('error', () => {});
+        socket.on('end', () => socket.end());
         socket.on(
             'data',
             readFrames((opcode, payload) => {
@@ -284,6 +292,7 @@ async function harness(t, settings = {}) {
             KESAMI_SARVAM_API_KEY: 'test-key',
             KESAMI_SARVAM_REALTIME_URL: `ws://127.0.0.1:${recogniserPort}/ws`,
             KESAMI_GEMINI_API_KEY: '',
+            KESAMI_OPENAI_API_KEY: '',
             KESAMI_CHAT_EMBEDDINGS: 'off',
         },
     });
@@ -367,6 +376,7 @@ test('a muted meeting client silences the microphone until it unmutes', { timeou
     // observation still counts as accepted.
     const first = await observe({ participants: ['Aditi'], speaking: ['Aditi'], micMuted: true });
     assert.equal(first.accepted, true);
+    await waitFor(() => events.some(event => event.type === 'mic_muted'), 5000, 'mute event');
     const mutedEvents = events.filter(event => event.type === 'mic_muted').map(event => event.data);
     assert.equal(mutedEvents.length, 1, `expected exactly one mic_muted event: ${JSON.stringify(mutedEvents)}`);
     assert.equal(mutedEvents[0].muted, true);
@@ -377,8 +387,8 @@ test('a muted meeting client silences the microphone until it unmutes', { timeou
     const speech = vowel(3000, 150, [640, 1500, 2700]);
     const others = vowel(3000, 215, [780, 1900, 3100]);
     const startedAt = Date.now();
-    await speak(STREAM_SYSTEM, Buffer.concat([others, quiet(1500)]), startedAt);
     await speak(STREAM_MIC, Buffer.concat([speech, quiet(1500)]), startedAt);
+    await speak(STREAM_SYSTEM, Buffer.concat([others, quiet(1500)]), startedAt);
 
     await waitFor(() => turns().some(turn => turn.channel === 'system'), 20000, 'system turn despite client mute');
     assert.equal(turns().filter(turn => turn.channel === 'mic').length, 0, 'muted microphone must produce no mic turns');
@@ -387,9 +397,11 @@ test('a muted meeting client silences the microphone until it unmutes', { timeou
     await observe({ participants: ['Aditi'], speaking: ['Aditi'], micMuted: false });
     await waitFor(() => events.filter(event => event.type === 'mic_muted').length === 2, 5000, 'unmute event');
 
-    await speak(STREAM_MIC, Buffer.concat([speech, quiet(1500)]), startedAt + 10000);
-    await waitFor(() => turns().some(turn => turn.channel === 'mic' && turn.startMs > 9000), 20000, 'mic turn after unmute');
-    assert.ok(turns().filter(turn => turn.channel === 'mic' && turn.startMs > 9000).every(turn => turn.speaker === 'You'));
+    await speak(STREAM_MIC, Buffer.concat([speech, quiet(3000)]), startedAt + 10000);
+    await waitFor(() => turns().some(turn => turn.channel === 'mic'), 20000, 'mic turn after unmute');
+    const micTurns = turns().filter(turn => turn.channel === 'mic');
+    assert.ok(micTurns.every(turn => turn.speaker === 'You'));
+    assert.ok(micTurns[0].endMs > 7000, `the muted stretch must stay on the mic timeline: ${JSON.stringify(micTurns[0])}`);
 
     socket.close();
 });

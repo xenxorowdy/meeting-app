@@ -11,11 +11,15 @@ mistaken for a public multi-tenant SaaS release.
 | Desktop meeting capture    | Ready to validate on target devices   | Requires macOS/Windows recording and microphone permissions.          |
 | Hosted Rust backend        | Deployable                            | Fly configuration and a persistent `/data` volume are included.       |
 | Browser UI                 | Deployable                            | Build it with the HTTPS backend URL.                                  |
-| Password sign-in           | Implemented for one private workspace | SQLite stores PBKDF2 password hashes and hashed sessions.             |
-| Calendar strip             | Implemented for local desktop use     | Google can read/write events; Outlook is read-only.                   |
-| Sarvam transcription       | Configurable                          | Hosted mode supports realtime only; batch needs a local recording.    |
-| Supabase Postgres          | Connection only                       | The backend connects and reports health; no data is stored there yet. |
-| Payments and subscriptions | Not implemented                       | The displayed Pro price is informational; checkout is disabled.       |
+| Release sign-in            | Google only (Supabase)                | Builds with `KESAMI_CLOUD_URL` hide email/password and local entry.   |
+| Password sign-in           | Development builds only               | SQLite stores PBKDF2 password hashes and hashed sessions.             |
+| Calendar strip             | Needs OAuth client configuration      | Release builds ship no calendar client ID; the UI hides the agenda.   |
+| Transcription and meeting AI | Hosted relay in release builds      | Sarvam realtime and Gemini through the Rust `kesami-cloud-relay`; see `CLOUD_TRANSCRIPTION.md`. |
+| Supabase Postgres          | Profiles and billing copy             | Optional `public.users` sync; billing mirrored in the background.     |
+| Payments and subscriptions | Implemented, not live-validated       | Razorpay (INR) and Stripe (USD) checkout with verified webhooks.      |
+| Browser extension          | Load unpacked; not in a store yet     | Verified in Brave with `npm run test:extension:browser`; see `apps/extension/README.md`. |
+| Speaker editing            | Ready                                 | Rename a speaker everywhere or change one line, with suggestions from the call. |
+| Code signing               | Unsigned                              | Releases are unsigned and not notarized; macOS asks users to allow them. |
 | Multi-tenant SaaS          | Not implemented                       | Accounts on one backend share meetings and settings.                  |
 
 ## 1. Install and build

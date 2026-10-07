@@ -185,7 +185,8 @@ export async function startScreenRecording({
     };
 
     recorder.onerror = event => {
-        if (onError) onError(event.error?.message || 'The recorder failed.');
+        writeFailed = event.error?.message || 'The recorder failed.';
+        if (onError) onError(writeFailed);
     };
 
     // The user can stop sharing from the OS overlay, which ends the video track
@@ -248,11 +249,18 @@ export async function startScreenRecording({
             // the recording.
             await writeChain;
 
-            if (systemCapture) await systemCapture.stop();
+            if (systemCapture) await systemCapture.stop().catch(cause => {
+                writeFailed ||= cause.message || 'Could not close the recording audio source.';
+                onError?.(writeFailed);
+            });
             if (mixContext) await mixContext.close().catch(() => {});
             stream.getTracks().forEach(track => track.stop());
 
-            const finished = await bridge.stop(handle.id).catch(() => null);
+            const finished = await bridge.stop(handle.id).catch(cause => {
+                writeFailed ||= cause.message || 'Could not finish saving the recording.';
+                onError?.(writeFailed);
+                return null;
+            });
 
             return {
                 // Keep the existing descriptor key for backend and old-client compatibility.

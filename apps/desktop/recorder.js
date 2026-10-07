@@ -26,17 +26,20 @@ const LEGACY_ROOT = path.join(app.getPath('userData'), 'recordings');
 const MEDIA_SCHEME = 'kesami-media';
 
 const streams = new Map();
+const MAX_CHUNK_BYTES = 32 * 1024 * 1024;
+const MAX_PENDING_BYTES = 64 * 1024 * 1024;
 let nextId = 1;
 let selectedSourceId = null;
 
 const toPosix = value => value.split(path.sep).join('/');
 
 function meetingDir(meetingId) {
-    // The id comes from the backend (a UUID), but it reaches us through the
-    // renderer, so it is treated as untrusted input and stripped to a safe name.
-    const safe = String(meetingId || '').replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!safe) throw new Error('a recording needs a meeting id');
-    return path.join(IN_PROGRESS, safe);
+    // Reject invalid ids instead of silently mapping different values to the
+    // same recording, which could overwrite or remove another meeting's data.
+    if (typeof meetingId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(meetingId)) {
+        throw new Error('a recording needs a valid meeting id');
+    }
+    return path.join(IN_PROGRESS, meetingId);
 }
 
 /** Resolve a path from the media scheme, refusing anything outside the root. */
@@ -55,6 +58,18 @@ function resolveMedia(relativePath) {
 
 function resolveLegacyMedia(relativePath) {
     return resolveUnder(LEGACY_ROOT, relativePath);
+}
+
+function existingMedia(root, relativePath) {
+    const candidate = resolveUnder(root, relativePath);
+    if (!candidate) return null;
+    try {
+        const base = fs.realpathSync(root);
+        const resolved = fs.realpathSync(candidate);
+        return resolveUnder(base, resolved) && fs.statSync(resolved).isFile() ? resolved : null;
+    } catch {
+        return null;
+    }
 }
 
 async function directorySize(dir) {
@@ -87,7 +102,7 @@ function registerMediaScheme() {
     protocol.registerSchemesAsPrivileged([
         {
             scheme: MEDIA_SCHEME,
-            privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true },
+            privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
         },
     ]);
 }
@@ -109,11 +124,8 @@ function serveMediaScheme() {
             return new Response('Bad request', { status: 400 });
         }
 
-        let resolved = resolveMedia(withoutHost);
-        if (!resolved || !fs.existsSync(resolved)) {
-            resolved = resolveLegacyMedia(withoutHost);
-        }
-        if (!resolved || !fs.existsSync(resolved)) {
+        const resolved = existingMedia(LIBRARY_ROOT, withoutHost) || existingMedia(LEGACY_ROOT, withoutHost);
+        if (!resolved) {
             return new Response('Not found', { status: 404 });
         }
         // net.fetch honours the Range header, which is what makes seeking work.
@@ -121,12 +133,12 @@ function serveMediaScheme() {
     });
 }
 
-function registerHandlers() {
-    ipcMain.handle('recorder:screen-permission', () =>
+function registerHandlers(ipc = ipcMain) {
+    ipc.handle('recorder:screen-permission', () =>
         process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'granted'
     );
 
-    ipcMain.handle('recorder:list-sources', async () => {
+    ipc.handle('recorder:list-sources', async () => {
         const sources = await desktopCapturer.getSources({
             types: ['screen', 'window'],
             thumbnailSize: { width: 320, height: 200 },
@@ -141,30 +153,34 @@ function registerHandlers() {
         }));
     });
 
-    ipcMain.handle('recorder:select-source', (_event, sourceId) => {
+    ipc.handle('recorder:select-source', (_event, sourceId) => {
         selectedSourceId = typeof sourceId === 'string' && sourceId ? sourceId : null;
         return { selected: selectedSourceId };
     });
 
-    ipcMain.handle('recorder:start', async (_event, options = {}) => {
+    ipc.handle('recorder:start', async (_event, options = {}) => {
         const dir = meetingDir(options.meetingId);
         await fsp.mkdir(dir, { recursive: true });
+        const base = await fsp.realpath(LIBRARY_ROOT);
+        if (!resolveUnder(base, await fsp.realpath(dir))) throw new Error('recording directory is outside the library');
 
         const file = path.join(dir, 'screen.webm');
+        // Exclusive creation preserves recoverable recordings after a crash or
+        // a duplicate start request. Await opening so disk errors reach the UI.
+        const descriptor = await fsp.open(file, 'wx', 0o600);
+        try {
+            await fsp.writeFile(
+                path.join(dir, 'recording.json'),
+                JSON.stringify({ meetingId: options.meetingId, mimeType: options.mimeType, startedAtMs: options.startedAtMs }, null, 2),
+                { flag: 'wx', mode: 0o600 }
+            );
+        } catch (cause) {
+            await descriptor.close();
+            await fsp.rm(file, { force: true });
+            throw cause;
+        }
         const id = String(nextId++);
-        const handle = {
-            id,
-            file,
-            bytes: 0,
-            stream: fs.createWriteStream(file),
-            meetingId: options.meetingId,
-        };
-        streams.set(id, handle);
-
-        await fsp.writeFile(
-            path.join(dir, 'recording.json'),
-            JSON.stringify({ meetingId: options.meetingId, mimeType: options.mimeType, startedAtMs: options.startedAtMs }, null, 2)
-        );
+        streams.set(id, { id, file, bytes: 0, descriptor, pending: Promise.resolve(), pendingBytes: 0, error: null, closing: false });
 
         // Always report a URL-shaped path: `path.relative` yields backslashes on
         // Windows, and the media scheme these become part of is not a filesystem
@@ -172,38 +188,50 @@ function registerHandlers() {
         return { id, path: toPosix(path.relative(LIBRARY_ROOT, file)) };
     });
 
-    ipcMain.handle('recorder:write-chunk', async (_event, id, chunk) => {
+    ipc.handle('recorder:write-chunk', async (_event, id, chunk) => {
         const handle = streams.get(String(id));
-        if (!handle) throw new Error('that recording is not open');
-
-        const buffer = Buffer.from(chunk);
-        handle.bytes += buffer.byteLength;
-
-        // Respect backpressure: a slow disk must not let the queue grow without
-        // bound while a long meeting keeps producing a chunk every second.
-        if (!handle.stream.write(buffer)) {
-            await new Promise(resolve => handle.stream.once('drain', resolve));
+        if (!handle || handle.closing) throw new Error('that recording is not open');
+        if (!(chunk instanceof ArrayBuffer) && !ArrayBuffer.isView(chunk)) throw new Error('recording chunk must contain binary data');
+        if (chunk.byteLength > MAX_CHUNK_BYTES || handle.pendingBytes + chunk.byteLength > MAX_PENDING_BYTES) {
+            throw new Error('recording data exceeded the write buffer limit');
         }
-        return { bytes: handle.bytes };
+        const buffer = ArrayBuffer.isView(chunk) ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength) : Buffer.from(chunk);
+        handle.pendingBytes += buffer.byteLength;
+        const write = handle.pending.then(async () => {
+            if (handle.error) throw handle.error;
+            let offset = 0;
+            while (offset < buffer.byteLength) {
+                const { bytesWritten } = await handle.descriptor.write(buffer, offset, buffer.byteLength - offset);
+                if (bytesWritten <= 0) throw new Error('could not write the recording to disk');
+                offset += bytesWritten;
+                handle.bytes += bytesWritten;
+            }
+            return { bytes: handle.bytes };
+        }).catch(cause => {
+            handle.error = cause;
+            throw cause;
+        }).finally(() => { handle.pendingBytes -= buffer.byteLength; });
+        // Keep serialization alive after rejection; every subsequent operation
+        // reports the original disk failure instead of waiting forever on drain.
+        handle.pending = write.catch(() => {});
+        return write;
     });
 
-    ipcMain.handle('recorder:stop', async (_event, id) => {
+    ipc.handle('recorder:stop', async (_event, id) => {
         const handle = streams.get(String(id));
         if (!handle) return null;
-        streams.delete(String(id));
-
-        await new Promise(resolve => handle.stream.end(resolve));
-        return { path: toPosix(path.relative(LIBRARY_ROOT, handle.file)), bytes: handle.bytes };
+        return closeRecording(handle);
     });
 
-    ipcMain.handle('recorder:remove', async (_event, meetingId) => {
+    ipc.handle('recorder:remove', async (_event, meetingId) => {
         const partial = meetingDir(meetingId);
+        if ([...streams.values()].some(handle => path.dirname(handle.file) === partial)) throw new Error('cannot remove an open recording');
         await fsp.rm(partial, { recursive: true, force: true });
         await fsp.rm(path.join(LEGACY_ROOT, path.basename(partial)), { recursive: true, force: true });
         return { removed: true };
     });
 
-    ipcMain.handle('recorder:usage', async () => ({ bytes: await directorySize(LIBRARY_ROOT) }));
+    ipc.handle('recorder:usage', async () => ({ bytes: await directorySize(LIBRARY_ROOT) }));
 }
 
 /**
@@ -214,9 +242,13 @@ function registerHandlers() {
  * or build cannot do it the stream simply comes back without an audio track, and
  * the renderer reports that rather than pretending both sides were recorded.
  */
-function installDisplayMediaHandler(targetSession = session.defaultSession) {
+function installDisplayMediaHandler(targetSession = session.defaultSession, isTrustedRequest = () => false) {
     targetSession.setDisplayMediaRequestHandler(
-        async (_request, callback) => {
+        async (request, callback) => {
+            if (!isTrustedRequest(request)) {
+                callback({});
+                return;
+            }
             try {
                 const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
                 const chosen =
@@ -239,10 +271,23 @@ function installDisplayMediaHandler(targetSession = session.defaultSession) {
 
 /** Close any file still open, so a quit mid-meeting leaves a playable recording. */
 async function shutdown() {
-    for (const [, handle] of streams) {
-        await new Promise(resolve => handle.stream.end(resolve)).catch(() => {});
-    }
-    streams.clear();
+    await Promise.allSettled([...streams.values()].map(closeRecording));
+}
+
+function closeRecording(handle) {
+    if (handle.closed) return handle.closed;
+    handle.closing = true;
+    handle.closed = (async () => {
+        await handle.pending;
+        try {
+            await handle.descriptor.close();
+            if (handle.error) throw handle.error;
+            return { path: toPosix(path.relative(LIBRARY_ROOT, handle.file)), bytes: handle.bytes };
+        } finally {
+            streams.delete(handle.id);
+        }
+    })();
+    return handle.closed;
 }
 
 module.exports = {

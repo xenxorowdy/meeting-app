@@ -164,15 +164,15 @@ test('sign-out still drops the local token when the backend is unreachable', asy
     }
 });
 
-test('a failed or empty session check reads as signed out', async () => {
-    const { fetchSession } = await import(MODULE_URL);
+test('an empty session check reads as signed out', async () => {
+    const { restoreSession } = await import(MODULE_URL);
     const fetches = [];
     const saved = [];
     const restore = withStubs(fetches, saved, {
         responses: [{ ok: true, status: 200, text: async () => JSON.stringify({ account: null }) }],
     });
     try {
-        assert.equal(await fetchSession(), null);
+        assert.deepEqual(await restoreSession(), { account: null, reachable: true });
         assert.equal(fetches[0].url, 'http://127.0.0.1:48900/api/auth/session');
     } finally {
         restore();
@@ -224,4 +224,54 @@ test('password changes rotate the locally saved session', async () => {
         assert.equal(fetches[0].url, 'http://127.0.0.1:48900/api/auth/password');
         assert.equal(saved[0].token, 'rotated');
     } finally { restore(); }
+});
+
+test('session restore retries while the engine starts, then returns the account', async () => {
+    const { restoreSession } = await import(MODULE_URL);
+    const saved = [];
+    const restore = withStubs([], saved, { storedToken: 'tok-123' });
+    let calls = 0;
+    globalThis.fetch = async url => {
+        calls += 1;
+        assert.equal(String(url), 'http://127.0.0.1:48900/api/auth/session');
+        if (calls < 3) throw new TypeError('fetch failed');
+        return { ok: true, status: 200, text: async () => JSON.stringify({ account: { id: 'a1', email: 'asha@work.com' } }) };
+    };
+    try {
+        assert.deepEqual(await restoreSession({ attempts: 5, delayMs: 1 }), { account: { id: 'a1', email: 'asha@work.com' }, reachable: true });
+        assert.equal(calls, 3);
+        assert.equal(saved.length, 0);
+    } finally {
+        restore();
+    }
+});
+
+test('session restore reports an engine that never answers as unreachable and keeps the token', async () => {
+    const { restoreSession } = await import(MODULE_URL);
+    const saved = [];
+    const restore = withStubs([], saved, { storedToken: 'tok-123' });
+    let calls = 0;
+    globalThis.fetch = async () => {
+        calls += 1;
+        throw new TypeError('fetch failed');
+    };
+    try {
+        assert.deepEqual(await restoreSession({ attempts: 3, delayMs: 1 }), { account: null, reachable: false });
+        assert.equal(calls, 3);
+        assert.equal(saved.length, 0);
+    } finally {
+        restore();
+    }
+});
+
+test('session restore accepts a rejected session without retrying', async () => {
+    const { restoreSession } = await import(MODULE_URL);
+    const fetches = [];
+    const restore = withStubs(fetches, [], { responses: [{ ok: false, status: 401, text: async () => '{"error":"Session expired"}' }] });
+    try {
+        assert.deepEqual(await restoreSession({ attempts: 5, delayMs: 1 }), { account: null, reachable: true });
+        assert.equal(fetches.length, 1);
+    } finally {
+        restore();
+    }
 });

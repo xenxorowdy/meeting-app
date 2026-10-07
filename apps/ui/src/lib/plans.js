@@ -23,19 +23,36 @@ export async function fetchSubscription({ signal } = {}) {
     return apiRequest('/api/billing/subscription', { signal });
 }
 
-export async function syncRazorpaySubscription(subscriptionId) {
-    return apiRequest('/api/billing/razorpay/sync', { method: 'POST', body: { subscriptionId } });
+export async function syncRazorpaySubscription(subscriptionId, { signal } = {}) {
+    return apiRequest('/api/billing/razorpay/sync', { method: 'POST', body: { subscriptionId }, signal });
 }
 
-export async function waitForPro(subscriptionId, { attempts = 20, intervalMs = 3000 } = {}) {
+export async function confirmRazorpayPayment(subscriptionId, response, { signal } = {}) {
+    if (response?.razorpay_subscription_id !== subscriptionId || !response?.razorpay_payment_id || !response?.razorpay_signature) {
+        throw new Error('The payment confirmation is incomplete. Check payment status before trying another checkout.');
+    }
+    return apiRequest('/api/billing/razorpay/confirm', {
+        method: 'POST', signal,
+        body: { subscriptionId, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature },
+    });
+}
+
+export async function waitForPro(subscriptionId, { attempts = 20, intervalMs = 3000, signal } = {}) {
     for (let attempt = 1; attempt <= attempts; attempt++) {
+        signal?.throwIfAborted();
         try {
-            const result = await syncRazorpaySubscription(subscriptionId);
+            const result = await syncRazorpaySubscription(subscriptionId, { signal });
             if (result.tier === 'pro') return true;
         } catch (cause) {
+            signal?.throwIfAborted();
             if (cause.status >= 400 && cause.status < 500) throw cause;
         }
-        if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, intervalMs));
+        if (attempt < attempts) await new Promise((resolve, reject) => {
+            const stop = () => { clearTimeout(timer); reject(signal.reason); };
+            const timer = setTimeout(() => { signal?.removeEventListener('abort', stop); resolve(); }, intervalMs);
+            signal?.addEventListener('abort', stop, { once: true });
+            if (signal?.aborted) stop();
+        });
     }
     return false;
 }
@@ -60,6 +77,11 @@ function loadRazorpay() {
             script.async = true;
             script.onload = () => globalThis.Razorpay ? resolve(globalThis.Razorpay) : reject(new Error('Razorpay checkout did not load. Please try again.'));
             script.onerror = () => reject(new Error('Could not load Razorpay checkout. Check your connection and try again.'));
+            const timer = setTimeout(() => { script.remove(); reject(new Error('Razorpay checkout took too long to load. Check your connection and try again.')); }, 15000);
+            const loaded = script.onload;
+            const failed = script.onerror;
+            script.onload = () => { clearTimeout(timer); loaded(); };
+            script.onerror = () => { clearTimeout(timer); script.remove(); failed(); };
             document.head.appendChild(script);
         }).catch(error => {
             razorpayScriptPromise = undefined;
@@ -73,16 +95,18 @@ export async function prepareRazorpayCheckout() {
     await loadRazorpay();
 }
 
-export async function openRazorpayCheckout(checkout, { email, onAuthorized, onDismiss } = {}) {
+export async function openRazorpayCheckout(checkout, { email, onAuthorized, onDismiss, onFailed } = {}) {
     const Razorpay = await loadRazorpay();
+    let authorized = false;
     const payment = new Razorpay({
         key: checkout.keyId,
         subscription_id: checkout.subscriptionId,
         name: 'Kesami Pro',
         prefill: { email },
-        handler: onAuthorized,
-        modal: { ondismiss: onDismiss },
+        handler: response => { authorized = true; onAuthorized?.(response); },
+        modal: { ondismiss: () => { if (!authorized) onDismiss?.(); } },
     });
+    payment.on?.('payment.failed', () => onFailed?.('Payment failed. Retry in checkout or close it and try again.'));
     payment.open();
 }
 

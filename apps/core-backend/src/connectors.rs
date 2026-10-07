@@ -62,7 +62,10 @@ pub const SPECS: [Spec; 7] = [
         label: "Slack",
         kind: "notes",
         help: "Create an incoming webhook for the channel at api.slack.com/apps → Incoming Webhooks, then paste its URL.",
-        fields: &[field("webhookUrl", "Webhook URL", true, true, "https://hooks.slack.com/services/…")],
+        fields: &[
+            field("webhookUrl", "Webhook URL", true, true, "https://hooks.slack.com/services/…"),
+            field("channelLabel", "Channel label (display only)", false, false, "#meeting-recaps"),
+        ],
         oauth: None,
     },
     Spec {
@@ -150,6 +153,10 @@ fn text(config: &Map<String, Value>, key: &str) -> String {
         .to_string()
 }
 
+pub fn allows_automatic_delivery(provider: &str) -> bool {
+    spec_for(provider).is_some_and(|spec| spec.kind != "tasks")
+}
+
 pub fn is_connected(spec: &Spec, config: &Map<String, Value>) -> bool {
     spec.oauth.is_none()
         && spec
@@ -221,13 +228,27 @@ pub fn merge_config(
     Ok(next)
 }
 
+fn valid_slack_webhook(url: &str) -> bool {
+    reqwest::Url::parse(url).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str() == Some("hooks.slack.com")
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.port().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+            && url.path().starts_with("/services/")
+            && url.path().len() > 10
+    })
+}
+
 fn validate(spec: &Spec, config: &Map<String, Value>) -> Result<(), String> {
     match spec.id {
         SLACK => {
             let url = text(config, "webhookUrl");
-            if !url.is_empty() && !url.starts_with("https://hooks.slack.com/") {
+            if !url.is_empty() && !valid_slack_webhook(&url) {
                 return Err(
-                    "The Slack webhook URL should start with https://hooks.slack.com/".into(),
+                    "Use a Slack incoming webhook URL starting with https://hooks.slack.com/services/".into(),
                 );
             }
         }
@@ -755,6 +776,43 @@ fn adf_document(text: &str) -> Value {
         })
         .collect();
     json!({"type": "doc", "version": 1, "content": content})
+}
+
+fn jira_target(config: &Map<String, Value>) -> Value {
+    let mut target = json!({"label":"Jira","connected":is_connected(spec_for(JIRA).unwrap(),config),"siteUrl":text(config,"siteUrl"),"projectKey":text(config,"projectKey"),"issueType":if text(config,"issueType").is_empty() { "Task".to_string() } else { text(config,"issueType") },"account":text(config,"email")});
+    target["revision"] = json!(crate::actions::target_revision(&target));
+    target
+}
+
+fn slack_target(config: &Map<String, Value>) -> Value {
+    let mut target = json!({"label":"Slack · configured webhook channel","connected":is_connected(spec_for(SLACK).unwrap(),config),"channelLabel":text(config,"channelLabel"),"autoPush":config.get("autoPush").and_then(Value::as_bool).unwrap_or(false)});
+    // Include a digest privately in revision calculation, never return the webhook.
+    target["revision"] = json!(crate::actions::target_revision(&json!([
+        target,
+        text(config, "webhookUrl")
+    ])));
+    target
+}
+
+pub(crate) fn reviewed_slack_body(title: &str, body: &str) -> Value {
+    // Disable mrkdwn/automatic parsing so transcript-derived mentions cannot ping
+    // channels/users. Plain-text blocks preserve exactly the reviewed content.
+    let content = format!("{}\n\n{}", title.trim(), body);
+    let chars: Vec<_> = content.chars().collect();
+    let blocks: Vec<_> = chars.chunks(2500).map(|chunk| json!({"type":"section","text":{"type":"plain_text","text":chunk.iter().collect::<String>(),"emoji":false}})).collect();
+    json!({"text":content,"mrkdwn":false,"link_names":false,"unfurl_links":false,"unfurl_media":false,"blocks":blocks})
+}
+
+pub(crate) fn reviewed_jira_body(
+    config: &Map<String, Value>,
+    title: &str,
+    description: &str,
+) -> Value {
+    json!({"fields":{
+        "project":{"key":text(config,"projectKey")},
+        "issuetype":{"name":if text(config,"issueType").is_empty() { "Task".to_string() } else { text(config,"issueType") }},
+        "summary":title.trim(),"description":adf_document(description)
+    }})
 }
 
 pub fn jira_issue(
@@ -1423,6 +1481,79 @@ impl ConnectorService {
         }
     }
 
+    pub async fn reviewed_jira_target(&self) -> Value {
+        jira_target(&self.config(JIRA).await)
+    }
+
+    pub async fn reviewed_slack_target(&self) -> Value {
+        slack_target(&self.config(SLACK).await)
+    }
+
+    pub async fn post_reviewed_slack_summary(
+        &self,
+        expected_target: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Value, crate::actions::ActionError> {
+        use crate::actions::ActionError;
+        let config = self.config(SLACK).await;
+        if !is_connected(spec_for(SLACK).unwrap(), &config) {
+            return Err(ActionError::permission(
+                "Connect a Slack incoming webhook in Settings, then review and confirm again.",
+            ));
+        }
+        if slack_target(&config)["revision"] != expected_target {
+            return Err(ActionError::permission(
+                "The Slack destination changed. Reload, review and confirm the new destination.",
+            ));
+        }
+        let url = text(&config, "webhookUrl");
+        if !valid_slack_webhook(&url) {
+            return Err(ActionError::permission(
+                "Update the Slack incoming webhook in Settings, then review and confirm again.",
+            ));
+        }
+        crate::action_providers::dispatch_slack(
+            self.http.post(url).json(&reviewed_slack_body(title, body)),
+        )
+        .await
+    }
+
+    /// Create exactly one reviewed issue. Never export meeting notes/tasks here.
+    pub async fn create_reviewed_jira_issue(
+        &self,
+        expected_target: &str,
+        title: &str,
+        description: &str,
+    ) -> Result<Value, crate::actions::ActionError> {
+        use crate::actions::ActionError;
+        let (_, config) = self.connected_config(JIRA).await.map_err(|_| {
+            ActionError::permission(
+                "Connect Jira in Settings → Connectors, then review and confirm again.",
+            )
+        })?;
+        if jira_target(&config)["revision"] != expected_target {
+            return Err(ActionError { code:"destination_changed".into(),message:"The Jira destination changed. Reload actions and review the updated destination.".into(),retryable:true,uncertain:false });
+        }
+        let body = reviewed_jira_body(&config, title, description);
+        let created = crate::action_providers::dispatch(
+            self.jira(
+                self.http
+                    .post(format!("{}/rest/api/3/issue", Self::jira_base(&config))),
+                &config,
+            )
+            .json(&body),
+        )
+        .await?;
+        let key = created["key"]
+            .as_str()
+            .filter(|key| !key.is_empty())
+            .ok_or_else(ActionError::uncertain)?;
+        Ok(
+            json!({"id":created["id"],"key":key,"url":format!("{}/browse/{key}",Self::jira_base(&config))}),
+        )
+    }
+
     pub async fn send(&self, provider: &str, meeting: &Value) -> Value {
         let notes = MeetingNotes::from_meeting(meeting);
         let at = Utc::now().timestamp_millis();
@@ -1605,6 +1736,80 @@ mod tests {
             "metadata": {"participants": ["Riyam", "Aditi"]},
             "transcript": []
         })
+    }
+
+    #[test]
+    fn actions_reviewed_jira_target_tracks_destination_without_exposing_credentials() {
+        let mut config=json!({"siteUrl":"https://example.atlassian.net","projectKey":"API","email":"user@example.com","apiToken":"private-secret"}).as_object().unwrap().clone();
+        let before = jira_target(&config);
+        assert!(!before.to_string().contains("private-secret"));
+        config.insert("projectKey".into(), json!("OTHER"));
+        assert_ne!(before["revision"], jira_target(&config)["revision"]);
+        let payload =
+            reviewed_jira_body(&config, "One reviewed issue", "Only reviewed description");
+        assert_eq!(payload["fields"]["summary"], "One reviewed issue");
+        assert_eq!(payload["fields"]["project"]["key"], "OTHER");
+        assert_eq!(payload["fields"]["description"]["type"], "doc");
+        assert!(!payload.to_string().contains("private-secret"));
+    }
+
+    #[test]
+    fn actions_external_tasks_require_manual_confirmation_even_with_legacy_auto_push() {
+        for provider in [JIRA, LINEAR, ASANA, CLICKUP] {
+            assert!(!allows_automatic_delivery(provider));
+        }
+        for provider in [SLACK, NOTION, GOOGLE_DOCS] {
+            assert!(allows_automatic_delivery(provider));
+        }
+    }
+
+    #[test]
+    fn actions_slack_summary_destination_is_private_and_tracks_webhook_changes() {
+        let mut config = json!({"webhookUrl":"https://hooks.slack.com/services/T/B/private-token","channelLabel":"#recaps","autoPush":true}).as_object().unwrap().clone();
+        let target = slack_target(&config);
+        assert_eq!(target["channelLabel"], "#recaps");
+        assert_eq!(target["connected"], true);
+        assert_eq!(target["autoPush"], true);
+        assert!(
+            !target.to_string().contains("private-token")
+                && !target.to_string().contains("webhookUrl")
+        );
+        config.insert(
+            "webhookUrl".into(),
+            json!("https://hooks.slack.com/services/T/B/changed-token"),
+        );
+        assert_ne!(target["revision"], slack_target(&config)["revision"]);
+        assert!(valid_slack_webhook(&text(&config, "webhookUrl")));
+        for url in [
+            "https://hooks.slack.com.evil.example/services/T/B/x",
+            "https://hooks.slack.com@evil.example/services/T/B/x",
+            "http://hooks.slack.com/services/T/B/x",
+            "https://hooks.slack.com/services/T/B/x?redirect=evil",
+            "https://hooks.slack.com/other",
+        ] {
+            assert!(!valid_slack_webhook(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn actions_slack_summary_payload_is_plain_text_bounded_and_complete() {
+        let body = format!("Reviewed recap <!channel> <@U123> {}", "界".repeat(5000));
+        let payload = reviewed_slack_body("Pricing recap", &body);
+        assert_eq!(payload["mrkdwn"], false);
+        assert_eq!(payload["unfurl_links"], false);
+        assert_eq!(payload["link_names"], false);
+        let blocks = payload["blocks"].as_array().unwrap();
+        let rebuilt: String = blocks
+            .iter()
+            .map(|b| {
+                assert_eq!(b["text"]["type"], "plain_text");
+                let text = b["text"]["text"].as_str().unwrap();
+                assert!(text.chars().count() <= 2500);
+                text
+            })
+            .collect();
+        assert_eq!(rebuilt, format!("Pricing recap\n\n{body}"));
+        assert!(!payload.to_string().contains("webhookUrl"));
     }
 
     #[test]

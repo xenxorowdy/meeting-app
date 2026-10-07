@@ -442,23 +442,23 @@ function fromMainWindow(event) {
     return Boolean(target && !target.isDestroyed() && event.sender === target.webContents);
 }
 
-function registerHandlers() {
-    ipcMain.handle(PENDING_CHANNEL, event => {
+function registerHandlers(ipc = ipcMain) {
+    ipc.handle(PENDING_CHANNEL, event => {
         if (!fromMainWindow(event)) return null;
         return takePendingCommand();
     });
     // The main window asks for a refresh after it connects a calendar or creates an event, so the menu
     // doesn't lag the app by a poll interval.
-    ipcMain.handle(REFRESH_CHANNEL, async event => {
+    ipc.handle(REFRESH_CHANNEL, async event => {
         if (!fromMainWindow(event)) return false;
         await poll();
         return true;
     });
-    ipcMain.handle(RECORDING_CHANNEL, (event, active) => {
+    ipc.handle(RECORDING_CHANNEL, (event, active) => {
         if (!fromMainWindow(event)) return false;
         return setRecording(active);
     });
-    ipcMain.handle(TEST_NOTIFICATION_CHANNEL, event => {
+    ipc.handle(TEST_NOTIFICATION_CHANNEL, event => {
         if (!fromMainWindow(event)) return { shown: false };
         if (!Notification.isSupported()) return { shown: false, reason: 'Notifications are not supported on this system.' };
         new Notification({
@@ -467,7 +467,7 @@ function registerHandlers() {
         }).show();
         return { shown: true, backendOnline, calendarState };
     });
-    ipcMain.handle(NOTIFICATION_SETTINGS_CHANNEL, event => {
+    ipc.handle(NOTIFICATION_SETTINGS_CHANNEL, event => {
         if (!fromMainWindow(event)) return false;
         if (process.platform !== 'darwin') return false;
         void shell.openExternal(NOTIFICATION_SETTINGS_URL);

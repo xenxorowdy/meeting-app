@@ -30,7 +30,7 @@ function toRfc3339(localValue) {
     return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
-export function NewMeetingModal({ isOpen, onClose, providers, onCreated }) {
+export function NewMeetingModal({ isOpen, onClose, providers, onCreated, onOpenCalendarSettings }) {
     const [title, setTitle] = useState('');
     const [startsAt, setStartsAt] = useState(nextHalfHour);
     const [duration, setDuration] = useState('30');
@@ -180,9 +180,13 @@ export function NewMeetingModal({ isOpen, onClose, providers, onCreated }) {
                     <Button variant="outline" onClick={onClose}>
                         Cancel
                     </Button>
-                    <Button onClick={submit} disabled={!canCreate || pending}>
-                        {pending ? 'Creating…' : 'Create meeting'}
-                    </Button>
+                    {canCreate || !onOpenCalendarSettings ? (
+                        <Button onClick={submit} disabled={!canCreate || pending}>
+                            {pending ? 'Creating…' : 'Create meeting'}
+                        </Button>
+                    ) : (
+                        <Button onClick={onOpenCalendarSettings}>Connect Google Calendar</Button>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { SegmentedControl, SegmentedItem } from '@/components/ui/segmented-control';
 import { useConnectors } from '@/hooks/useConnectors';
+import { escapeHtml, markdownToPrintHtml, printHtml } from '@/lib/printDocument';
+import { copyToClipboard } from '@/lib/clipboard';
 
 function deliveryText(delivery) {
     if (!delivery) return null;
@@ -110,6 +112,24 @@ function formatMs(ms = 0) {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function exportFilename(title, extension) {
+    const base = String(title || '')
+        .normalize('NFKD')
+        .replace(/[^\p{L}\p{N}]+/gu, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase()
+        .slice(0, 80);
+    return `${base || 'meeting'}_notes.${extension}`;
+}
+
+function taskParts(item) {
+    if (typeof item === 'string') return { task: item, completed: false, details: [] };
+    const details = [];
+    if (item?.owner) details.push(item.owner);
+    if (item?.deadline) details.push(`Due: ${item.deadline}`);
+    return { task: item?.task || '', completed: Boolean(item?.completed), details };
+}
+
 const FORMATS = [
     { value: 'markdown', label: 'Markdown', icon: FileText },
     { value: 'pdf', label: 'PDF', icon: Printer },
@@ -121,19 +141,21 @@ export function ExportModal({ isOpen, onClose, meeting }) {
     const [activeFormat, setActiveFormat] = useState('markdown');
     const [includeTranscript, setIncludeTranscript] = useState(true);
     const [includeEmailDraft, setIncludeEmailDraft] = useState(true);
-    const [copied, setCopied] = useState(false);
+    const [copyState, setCopyState] = useState('idle');
 
     if (!meeting) return null;
 
+    const meetingTitle = meeting.title || 'Untitled meeting';
+    const participants = meeting.participants || [];
     const formattedDate = new Date(meeting.startedAt || Date.now()).toLocaleString();
     const durationMin = Math.round((meeting.durationSeconds || 0) / 60);
 
     // 1. Build Markdown Content
     const buildMarkdown = () => {
-        let md = `# ${meeting.title}\n\n`;
+        let md = `# ${meetingTitle}\n\n`;
         md += `**Date:** ${formattedDate}  \n`;
         md += `**Duration:** ${durationMin} minutes  \n`;
-        md += `**Participants:** ${(meeting.participants || ['You']).join(', ')}\n\n`;
+        md += `**Participants:** ${(participants.length ? participants : ['You']).join(', ')}\n\n`;
 
         if (meeting.summaryMarkdown) {
             md += `## Executive Summary\n\n${meeting.summaryMarkdown}\n\n`;
@@ -177,8 +199,8 @@ export function ExportModal({ isOpen, onClose, meeting }) {
 
     // 2. Build Slack Block Format
     const buildSlack = () => {
-        let slack = `*${meeting.title}*\n`;
-        slack += `_${formattedDate} • ${durationMin} mins • Attendees: ${(meeting.participants || []).join(', ')}_\n\n`;
+        let slack = `*${meetingTitle}*\n`;
+        slack += `_${formattedDate} • ${durationMin} mins${participants.length ? ` • Attendees: ${participants.join(', ')}` : ''}_\n\n`;
 
         if (meeting.summaryMarkdown) {
             slack += `*Executive Summary:*\n>${meeting.summaryMarkdown.replace(/\n\n/g, '\n>')}\n\n`;
@@ -198,7 +220,8 @@ export function ExportModal({ isOpen, onClose, meeting }) {
                 if (typeof item === 'string') {
                     slack += `• [ ] ${item}\n`;
                 } else {
-                    slack += `• [${item.completed ? 'x' : ' '}] *${item.task}* (@${item.owner} - Due: ${item.deadline})\n`;
+                    const task = taskParts(item);
+                    slack += `• [${task.completed ? 'x' : ' '}] *${task.task}*${task.details.length ? ` (${task.details.join(', ')})` : ''}\n`;
                 }
             });
         }
@@ -230,86 +253,59 @@ export function ExportModal({ isOpen, onClose, meeting }) {
         }
     };
 
-    // Handle Clipboard Copy
-    const handleCopy = () => {
-        navigator.clipboard.writeText(getExportContent());
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const handleCopy = async () => {
+        try {
+            await copyToClipboard(getExportContent());
+            setCopyState('copied');
+        } catch {
+            setCopyState('failed');
+        }
+        setTimeout(() => setCopyState('idle'), 2500);
     };
 
-    // Handle File Download (.md / .txt)
     const handleDownload = () => {
         const content = getExportContent();
         const extension = activeFormat === 'slack' || activeFormat === 'text' ? 'txt' : 'md';
-        const filename = `${meeting.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_notes.${extension}`;
-        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+        const blob = new Blob([content], { type: extension === 'md' ? 'text/markdown;charset=utf-8' : 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = filename;
+        link.download = exportFilename(meeting.title, extension);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
 
-    // Handle PDF Print Preview
     const handlePrintPDF = () => {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) return;
-
-        printWindow.document.write(`
-      <html>
-        <head>
-          <title>${meeting.title}</title>
-          <style>
-            body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; line-height: 1.4; color: #1D1D1F; padding: 40px; max-width: 680px; margin: auto; font-size: 15px; }
-            .brand-header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; color: #1D1D1F; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
-            .brand-mark { width: 28px; height: 28px; flex: none; }
-            h1 { font-size: 28px; line-height: 1.2; letter-spacing: -0.02em; font-weight: 600; margin: 0 0 8px; }
-            h2 { font-size: 17px; line-height: 1.2; font-weight: 600; margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #E5E5EA; }
-            .meta { color: #6E6E73; font-size: 13px; margin-bottom: 32px; }
-            ul { padding-left: 16px; margin: 0; }
-            li { margin-bottom: 8px; }
-            pre { background: #F5F5F7; border: 1px solid #E5E5EA; padding: 16px; border-radius: 10px; font-size: 13px; overflow-x: auto; }
-            .transcript-turn { margin-bottom: 16px; }
-            .speaker { font-weight: 600; }
-            .time { color: #6E6E73; font-size: 11px; }
-          </style>
-        </head>
-        <body>
-          <div class="brand-header">
-            <svg class="brand-mark" viewBox="0 0 32 32" role="img" aria-label="KESAMI logo" xmlns="http://www.w3.org/2000/svg">
-              <rect width="32" height="32" rx="9" fill="#EC3013"/>
-              <rect x="6.4" y="11" width="3.6" height="10" rx="1.8" fill="#fff"/>
-              <rect x="11.6" y="7" width="3.6" height="18" rx="1.8" fill="#fff"/>
-              <rect x="16.8" y="9.5" width="3.6" height="13" rx="1.8" fill="#fff"/>
-              <rect x="22" y="6" width="3.6" height="20" rx="1.8" fill="#fff"/>
-            </svg>
-            <span>KESAMI</span>
-          </div>
-          <h1>${meeting.title}</h1>
-          <div class="meta">
-            <strong>Date:</strong> ${formattedDate} |
-            <strong>Duration:</strong> ${durationMin} mins |
-            <strong>Attendees:</strong> ${(meeting.participants || []).join(', ')}
-          </div>
-          <h2>Executive Summary</h2>
-          <p>${(meeting.summaryMarkdown || '').replace(/\n\n/g, '<br/><br/>')}</p>
-          <h2>Key Decisions</h2>
-          <ul>${(meeting.keyDecisions || []).map(d => `<li>${d}</li>`).join('')}</ul>
-          <h2>Action Items</h2>
-          <ul>${(meeting.actionItems || []).map(a => (typeof a === 'string' ? `<li>${a}</li>` : `<li>[${a.completed ? '✓' : ' '}] <strong>${a.task}</strong> (${a.owner} - Due: ${a.deadline})</li>`)).join('')}</ul>
-          ${includeEmailDraft && meeting.emailDraft ? `<h2>Follow-up Email</h2><pre>${meeting.emailDraft}</pre>` : ''}
-          ${includeTranscript && meeting.transcript ? `<h2>Transcript</h2>${meeting.transcript.map(t => `<div class="transcript-turn"><span class="speaker">${t.speaker}</span> <span class="time">[${formatMs(t.startMs)}]</span>: ${t.text}</div>`).join('')}` : ''}
-        </body>
-      </html>
-    `);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-            printWindow.print();
-        }, 400);
+        const decisions = meeting.keyDecisions || [];
+        const actions = meeting.actionItems || [];
+        const transcript = includeTranscript ? meeting.transcript || [] : [];
+        printHtml(`
+            <div class="print-brand">
+                <svg viewBox="0 0 32 32" role="img" aria-label="Kesami logo" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="32" height="32" rx="9" fill="#EC3013"/>
+                    <rect x="6.4" y="11" width="3.6" height="10" rx="1.8" fill="#fff"/>
+                    <rect x="11.6" y="7" width="3.6" height="18" rx="1.8" fill="#fff"/>
+                    <rect x="16.8" y="9.5" width="3.6" height="13" rx="1.8" fill="#fff"/>
+                    <rect x="22" y="6" width="3.6" height="20" rx="1.8" fill="#fff"/>
+                </svg>
+                <span>KESAMI</span>
+            </div>
+            <h1>${escapeHtml(meetingTitle)}</h1>
+            <div class="print-meta">
+                <strong>Date:</strong> ${escapeHtml(formattedDate)} ·
+                <strong>Duration:</strong> ${durationMin} min${participants.length ? ` · <strong>Attendees:</strong> ${escapeHtml(participants.join(', '))}` : ''}
+            </div>
+            ${meeting.summaryMarkdown ? `<h2>Summary</h2>${markdownToPrintHtml(meeting.summaryMarkdown)}` : ''}
+            ${decisions.length ? `<h2>Key decisions</h2><ul>${decisions.map(decision => `<li>${escapeHtml(decision)}</li>`).join('')}</ul>` : ''}
+            ${actions.length ? `<h2>Action items</h2><ul>${actions.map(item => {
+                const task = taskParts(item);
+                return `<li>[${task.completed ? '✓' : ' '}] <strong>${escapeHtml(task.task)}</strong>${task.details.length ? ` (${escapeHtml(task.details.join(', '))})` : ''}</li>`;
+            }).join('')}</ul>` : ''}
+            ${includeEmailDraft && meeting.emailDraft ? `<h2>Follow-up email</h2><pre>${escapeHtml(meeting.emailDraft)}</pre>` : ''}
+            ${transcript.length ? `<h2>Transcript</h2>${transcript.map(turn => `<div class="print-turn"><span class="print-speaker">${escapeHtml(turn.speaker)}</span> <span class="print-time">[${formatMs(turn.startMs)}]</span>: ${escapeHtml(turn.text)}</div>`).join('')}` : ''}
+        `);
     };
 
     return (
@@ -318,7 +314,7 @@ export function ExportModal({ isOpen, onClose, meeting }) {
                 <DialogHeader className="space-y-1 p-4 pb-4 pr-12 text-left hairline-bottom">
                     <DialogTitle className="text-title2 font-semibold">Export notes</DialogTitle>
                     <DialogDescription className="text-callout text-muted-foreground">
-                        Copy the notes for “{meeting.title}”, save them as a file, or send them to your tools.
+                        Copy the notes for “{meetingTitle}”, save them as a file, or send them to your tools.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -364,9 +360,14 @@ export function ExportModal({ isOpen, onClose, meeting }) {
                 </div>
 
                 <DialogFooter className="flex-row items-center justify-end gap-2 p-4 pt-4 hairline-top">
+                    {copyState === 'failed' && (
+                        <span className="mr-auto text-footnote text-destructive" role="status">
+                            Couldn’t copy. Select the preview text instead.
+                        </span>
+                    )}
                     <Button variant="outline" onClick={handleCopy}>
-                        {copied ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                        {copied ? 'Copied' : 'Copy'}
+                        {copyState === 'copied' ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                        {copyState === 'copied' ? 'Copied' : 'Copy'}
                     </Button>
 
                     {activeFormat === 'pdf' ? (

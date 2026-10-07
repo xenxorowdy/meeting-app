@@ -185,7 +185,7 @@ impl PodcastService {
 
     async fn key(&self) -> Result<String, String> {
         self.gemini_key.read().await.clone().ok_or_else(|| {
-            "Add a Gemini API key in Transcription settings before generating a podcast.".into()
+            "Podcast generation is unavailable on this Kesami service. Contact Kesami support.".into()
         })
     }
 

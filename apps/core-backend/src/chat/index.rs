@@ -46,6 +46,8 @@ fn live_revision(m: &Meeting, turns: usize, notes: usize) -> String {
     snapshot.summary_markdown.clear();
     snapshot.action_items.clear();
     snapshot.key_decisions.clear();
+    snapshot.topics.clear();
+    if let Some(metadata) = snapshot.metadata.as_object_mut() { metadata.remove("meetingMemory"); }
     format!("live:{turns}:{notes}:{}", fingerprint(&snapshot))
 }
 
@@ -70,7 +72,10 @@ fn fingerprint(m: &Meeting) -> String {
         m.notes,
         m.summary_markdown,
         m.action_items,
-        m.key_decisions
+        m.key_decisions,
+        m.topics,
+        m.metadata.get("meetingMemory"),
+        "memory-index-v2"
     ]);
     format!("{:x}", Sha256::digest(data.to_string().as_bytes()))
 }
@@ -159,12 +164,26 @@ pub fn chunks(m: &Meeting) -> Vec<Passage> {
         }
     }
     if m.ended_at.is_some() {
+        for fact in crate::memory::facts(m) {
+            let turns: Vec<_> = m.transcript.iter().filter(|t| fact.source_turn_ids.contains(&t.id)).collect();
+            add(&fact.kind, format!("Extracted {} (not human confirmed): {}\n{}: {}\nStated date: {}", fact.kind, fact.name, fact.owner, fact.quote, fact.date), fact.source_turn_ids, turns.first().map(|t| t.start_ms), turns.last().map(|t| t.end_ms));
+        }
         add("summary", m.summary_markdown.clone(), vec![], None, None);
         for text in &m.key_decisions {
-            add("decision", text.clone(), vec![], None, None);
+            add("decision", format!("Recorded summary decision (unverified; consult transcript): {text}"), vec![], None, None);
         }
+        let reviewed_revision = m.action_items.iter().any(|a| a["confirmation"] == "human_reviewed")
+            .then(|| crate::memory::transcript_revision(m));
         for action in &m.action_items {
-            add("action", action.to_string(), vec![], None, None);
+            let grounded = action["confirmation"] == "human_reviewed"
+                && action["sourceTranscriptRevision"].as_str() == reviewed_revision.as_deref();
+            let turns: Vec<_> = if grounded {
+                m.transcript.iter().filter(|turn| action["sourceTurnIds"].as_array().is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(turn.id.as_str())))).collect()
+            } else { vec![] };
+            let text = if action["confirmation"] == "human_reviewed" && !grounded {
+                format!("Reviewed local task; original transcript has changed, so this quote is historical, not current source evidence: {action}")
+            } else { action.to_string() };
+            add("action", text, turns.iter().map(|t| t.id.clone()).collect(), turns.first().map(|t| t.start_ms), turns.last().map(|t| t.end_ms));
         }
     }
     result
@@ -177,6 +196,8 @@ pub struct Index {
 impl Index {
     pub fn open(path: &Path) -> Result<Self> {
         let db = Connection::open(path).map_err(|e| e.to_string())?;
+        let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if version > 2 { return Err("This memory index was created by a newer Kesami version".into()); }
         db.busy_timeout(std::time::Duration::from_secs(3))
             .map_err(|e| e.to_string())?;
         db.execute_batch("PRAGMA journal_mode=WAL;
@@ -185,7 +206,12 @@ impl Index {
             CREATE INDEX IF NOT EXISTS chunks_meeting ON chunks(meeting_id);
             CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(id UNINDEXED, meeting_id UNINDEXED, text, title, tokenize='unicode61');
             CREATE TABLE IF NOT EXISTS vectors(id TEXT PRIMARY KEY, model TEXT NOT NULL, vector BLOB NOT NULL);
-            PRAGMA user_version=1;").map_err(|e| e.to_string())?;
+            CREATE TABLE IF NOT EXISTS entities(id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, normalized_name TEXT NOT NULL, UNIQUE(kind, normalized_name));
+            CREATE TABLE IF NOT EXISTS meeting_entities(meeting_id TEXT NOT NULL, entity_id TEXT NOT NULL, PRIMARY KEY(meeting_id,entity_id));
+            CREATE INDEX IF NOT EXISTS entity_meetings ON meeting_entities(entity_id,meeting_id);
+            CREATE TABLE IF NOT EXISTS memory_facts(meeting_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(meeting_id,id));
+            CREATE INDEX IF NOT EXISTS facts_kind ON memory_facts(kind,meeting_id);
+            PRAGMA user_version=2;").map_err(|e| e.to_string())?;
         Ok(Self { db })
     }
 
@@ -206,6 +232,8 @@ impl Index {
             .chain(changed.iter().map(|m| &m.id))
             .collect();
         for id in remove {
+            tx.execute("DELETE FROM meeting_entities WHERE meeting_id=?1", [id]).map_err(|e| e.to_string())?;
+            tx.execute("DELETE FROM memory_facts WHERE meeting_id=?1", [id]).map_err(|e| e.to_string())?;
             tx.execute(
                 "DELETE FROM vectors WHERE id IN (SELECT id FROM chunks WHERE meeting_id=?1)",
                 [id],
@@ -224,6 +252,18 @@ impl Index {
                 params![m.id, revision(m)],
             )
             .map_err(|e| e.to_string())?;
+            for (kind, name) in crate::memory::entities(m) {
+                let normalized = crate::memory::normalize(&name);
+                let id = format!("{:x}", Sha256::digest(format!("{kind}:{normalized}").as_bytes()));
+                tx.execute("INSERT OR IGNORE INTO entities VALUES(?1,?2,?3,?4)", params![id,kind,name,normalized]).map_err(|e| e.to_string())?;
+                tx.execute("INSERT INTO meeting_entities VALUES(?1,?2)", params![m.id,id]).map_err(|e| e.to_string())?;
+            }
+            for fact in crate::memory::facts(m) {
+                tx.execute("INSERT INTO memory_facts VALUES(?1,?2,?3,?4)", params![m.id,fact.id,fact.kind,serde_json::to_string(&fact).unwrap()]).map_err(|e| e.to_string())?;
+            }
+            for (i, item) in m.action_items.iter().enumerate() {
+                tx.execute("INSERT INTO memory_facts VALUES(?1,?2,'action',?3)", params![m.id,format!("action:{i}"),item.to_string()]).map_err(|e| e.to_string())?;
+            }
             for p in chunks(m) {
                 tx.execute(
                     "INSERT INTO chunks VALUES(?1, ?2, ?3)",
@@ -237,6 +277,7 @@ impl Index {
                 .map_err(|e| e.to_string())?;
             }
         }
+        tx.execute("DELETE FROM entities WHERE id NOT IN (SELECT entity_id FROM meeting_entities)", []).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     }
 
@@ -382,6 +423,19 @@ impl Index {
             }
         }
         let mut ranked: Vec<_> = scores.into_iter().collect();
+        // Recency is a small relevance signal, never a substitute for a match.
+        // Use the newest eligible meeting as the anchor for reproducible results.
+        let latest = meetings.iter().map(|m| m.started_at).max().unwrap_or(0);
+        for (id, score) in &mut ranked {
+            let p = &passages[id];
+            let days = latest.saturating_sub(p.started_at).max(0) as f32 / 86_400_000.0;
+            *score *= 1.0 + 0.15 / (1.0 + days / 90.0);
+            if !terms.is_empty() {
+                let text = p.excerpt.to_lowercase();
+                let matches = terms.iter().filter(|term| text.contains(term.as_str())).count();
+                *score += 0.005 * matches as f32 / terms.len() as f32;
+            }
+        }
         ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         let mut result: Vec<Passage> = Vec::new();
         let mut bytes = 0;
@@ -392,7 +446,7 @@ impl Index {
                 if result.iter().any(|old| {
                     old.chunk_id == *id
                         || (old.meeting_id == p.meeting_id
-                            && (diverse || (!p.turn_ids.is_empty() && old.turn_ids == p.turn_ids)))
+                            && (diverse || (!p.turn_ids.is_empty() && old.turn_ids == p.turn_ids && old.source_kind == p.source_kind)))
                 }) {
                     continue;
                 }

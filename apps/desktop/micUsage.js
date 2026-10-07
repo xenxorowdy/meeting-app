@@ -159,13 +159,13 @@ function start(sender, { spawnFn = spawn } = {}) {
     return Promise.resolve({ started: true, helper });
 }
 
-function registerHandlers() {
-    ipcMain.handle('mic-usage:available', () => {
+function registerHandlers(ipc = ipcMain) {
+    ipc.handle('mic-usage:available', () => {
         const state = availability();
         return { available: state.available, platform: state.platform, reason: state.reason };
     });
-    ipcMain.handle('mic-usage:start', event => start(event.sender));
-    ipcMain.handle('mic-usage:stop', () => stop());
+    ipc.handle('mic-usage:start', event => start(event.sender));
+    ipc.handle('mic-usage:stop', () => stop());
 }
 
 module.exports = {

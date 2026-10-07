@@ -54,13 +54,14 @@ pub async fn move_meeting(store: &Store, id: &str, body: &Value) -> Result<Meeti
             return Err("Folder not found".into());
         }
     }
-    let mut meeting = store.get(id).await.ok_or("Meeting not found")?;
-    if meeting.ended_at.is_none() {
-        return Err("Finish this meeting before moving it to a folder.".into());
-    }
-    if !meeting.metadata.is_object() { meeting.metadata = json!({}); }
-    meeting.metadata["collectionId"] = value.clone();
-    store.put(meeting).await.map_err(|e| e.to_string())
+    store.update(id, |meeting| {
+        if meeting.ended_at.is_none() {
+            return Err((409, "Finish this meeting before moving it to a folder.".into()));
+        }
+        if !meeting.metadata.is_object() { meeting.metadata = json!({}); }
+        meeting.metadata["collectionId"] = value.clone();
+        Ok(())
+    }).await.map_err(|(_, cause)| cause)
 }
 
 #[cfg(test)]

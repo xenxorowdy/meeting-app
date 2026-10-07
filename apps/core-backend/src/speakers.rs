@@ -93,6 +93,10 @@ impl SpeechLog {
         &self.roster
     }
 
+    pub fn spans(&self) -> &[SpeechSpan] {
+        &self.spans
+    }
+
     pub fn is_empty(&self) -> bool {
         self.spans.is_empty() && self.open.is_empty()
     }

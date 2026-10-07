@@ -1,0 +1,206 @@
+// Run after build:ui: node_modules/.bin/electron test/widget-ui/render.cjs
+const { app, BrowserWindow } = require('electron');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+
+async function run() {
+    const output = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-widget-render-'));
+    app.setPath('userData', path.join(output, 'profile'));
+    await app.whenReady();
+    const win = new BrowserWindow({
+        width: 288, height: 52, useContentSize: true, show: false, transparent: true, frame: false,
+        webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: false, nodeIntegration: false },
+    });
+    const errors = [];
+    win.webContents.on('console-message', ({ level, message }) => { if (level === 'error') errors.push(message); });
+    const evaluate = source => win.webContents.executeJavaScript(source);
+    const settle = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    await win.loadFile(path.resolve(__dirname, '../../apps/ui/dist/widget.html'));
+    await settle(300);
+    assert.equal(await evaluate("document.querySelector('.ksw-pill-ask')?.disabled"), false, 'the active meeting exposes Ask');
+    assert.equal(await evaluate("document.querySelector('.ks-widget').scrollWidth > document.querySelector('.ks-widget').clientWidth"), false, 'the compact widget fits its window');
+    assert(await evaluate("!!document.querySelector('.ksw-pill.is-recording .ksw-meter')"), 'a live recording shows the level meter, not a static glyph');
+    await fs.writeFile(path.join(output, 'compact-dark.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('.ks-widget').dataset.theme = 'light'");
+    await settle(180);
+    await fs.writeFile(path.join(output, 'compact-light.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('.ks-widget').dataset.theme = 'dark'");
+    await evaluate("document.querySelector('.ksw-pill-ask').click()");
+    win.setContentSize(460, 500);
+    await settle(100);
+    assert(await evaluate("!!document.querySelector('.ksw-ask-intro')"));
+    assert.equal(await evaluate("document.querySelectorAll('.ksw-starters button').length"), 3);
+    assert.equal(await evaluate("document.querySelector('.ks-widget').scrollHeight > document.querySelector('.ks-widget').clientHeight"), false);
+    await fs.writeFile(path.join(output, 'ask-dark.png'), (await win.webContents.capturePage()).toPNG());
+    const introBounds = await evaluate("(() => { const node = document.querySelector('.ksw-ask-log'); return { content: node.scrollHeight, available: node.clientHeight }; })()");
+    assert(introBounds.content <= introBounds.available, `all question suggestions fit: ${JSON.stringify(introBounds)}; screenshot: ${output}/ask-dark.png`);
+    await evaluate("document.querySelector('.ks-widget').dataset.theme = 'light'");
+    await settle(180);
+    await fs.writeFile(path.join(output, 'ask-light.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('.ks-widget').dataset.theme = 'dark'");
+    await evaluate("document.querySelector('#ksw-ask-tab').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))");
+    assert.equal(await evaluate("document.activeElement.id"), 'ksw-transcript-tab', 'arrow keys select and focus the neighboring tab');
+    await evaluate("document.querySelector('#ksw-transcript-tab').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))");
+    assert.equal(await evaluate("document.querySelector('#ksw-ask-tab').getAttribute('aria-selected')"), 'true');
+    await evaluate("document.querySelector('.ksw-starters button').click()");
+    await settle(250);
+    assert.equal(await evaluate("window.fixtureRequests.some(request => request.path.endsWith('/messages') && request.body?.question === 'Summarize the discussion so far')"), true, 'a suggested question sends immediately');
+
+    await evaluate(`(() => {
+        const box = document.querySelector('.ksw-composer textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'What was decided?');
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('.ksw-composer').requestSubmit();
+        document.querySelector('.ksw-tabs button').click();
+    })()`);
+    await settle(250);
+    assert(await evaluate("document.querySelector('.ksw-transcript')?.textContent.includes('ship the new search')"));
+    await fs.writeFile(path.join(output, 'transcript-dark.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelectorAll('.ksw-tabs button')[1].click()");
+    await settle(50);
+    assert(await evaluate("document.querySelector('.ksw-answer')?.textContent.includes('Friday')"), 'the answer survives a view switch');
+    assert(await evaluate("document.querySelector('.ksw-sources')?.textContent.includes('Friday')"), 'supporting evidence stays available');
+    await evaluate("document.querySelector('.ksw-answer .ks-chat-citation').click()");
+    assert.equal(await evaluate("document.querySelector('.ksw-sources').open"), true, 'an inline source opens its evidence');
+    assert.deepEqual(await evaluate("window.fixtureRequests.find(request => request.path === '/api/chat/threads' && request.method === 'POST')?.body.scope"), { type: 'meetings', meetingIds: ['widget-fixture'] });
+    assert.equal(await evaluate("window.fixtureRequests.some(request => request.path === '/api/chat/threads/widget-thread/messages' && request.method === 'POST' && request.body.question === 'What was decided?')"), true);
+    await fs.writeFile(path.join(output, 'answer-dark.png'), (await win.webContents.capturePage()).toPNG());
+
+    await evaluate("document.querySelector('.ks-widget').dataset.theme = 'light'");
+    await settle(50);
+    await fs.writeFile(path.join(output, 'answer-light.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('.ksw-controls .is-stop').click()");
+    assert.deepEqual(await evaluate('window.fixtureCommands'), ['stop']);
+
+    await evaluate("document.querySelector('#ksw-transcript-tab').click()");
+    await evaluate(`window.fixtureEvent('transcript_replaced', { turns: Array.from({ length: 30 }, (_, i) => ({ id: 'read-' + i, speaker: i % 2 ? 'Maya' : 'You', stream: i % 2 ? 'system' : 'mic', startMs: i * 10000, text: 'Review item ' + i + ': the team is checking the details before the next release.' })) })`);
+    await settle(80);
+    await evaluate("const feed = document.querySelector('.ksw-transcript-scroll'); feed.scrollTop = 0; feed.dispatchEvent(new Event('scroll'))");
+    await settle(30);
+    await evaluate("window.fixtureEvent('transcript_turn', { id: 'new-turn', speaker: 'Maya', text: 'A new update while you read.', startMs: 320000, stream: 'system' })");
+    await settle(50);
+    assert.equal(await evaluate("document.querySelector('.ksw-transcript-scroll').scrollTop"), 0, 'new text preserves the position while reading older turns');
+    await evaluate("document.querySelector('.ksw-follow').click()");
+    await settle(50);
+    assert.equal(await evaluate("(() => { const node = document.querySelector('.ksw-transcript-scroll'); return node.scrollHeight - node.scrollTop - node.clientHeight < 2; })()"), true, 'Jump to latest resumes following');
+    await fs.writeFile(path.join(output, 'transcript-light.png'), (await win.webContents.capturePage()).toPNG());
+
+    await evaluate("window.fixtureDisconnect()");
+    await settle(50);
+    assert(await evaluate("document.querySelector('.ksw-transcript-scroll').textContent.includes('A new update while you read.')"), 'captured text remains visible offline');
+    assert(await evaluate("!!document.querySelector('.ksw-connection-notice')"));
+    await fs.writeFile(path.join(output, 'offline-light.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('#ksw-ask-tab').click()");
+    assert.equal(await evaluate("document.querySelector('.ksw-send').disabled"), true, 'offline questions cannot be submitted');
+    await evaluate("window.fixtureReconnect(); document.querySelector('#ksw-transcript-tab').click(); window.fixtureSetState({ sessionState: 'paused', micMuted: true, systemAudioMuted: true })");
+    await settle(50);
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Resume the meeting\"]').textContent"), 'Resume');
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Unmute your microphone\"]').getAttribute('aria-pressed')"), 'true');
+    await evaluate("document.querySelector('[aria-label=\"Unmute your microphone\"]').click(); document.querySelector('[aria-label=\"Unmute meeting audio\"]').click(); document.querySelector('[aria-label=\"Resume the meeting\"]').click()");
+    assert.deepEqual(await evaluate('window.fixtureCommands'), ['stop', 'toggle-mic', 'toggle-system', 'toggle-pause']);
+    await fs.writeFile(path.join(output, 'paused-light.png'), (await win.webContents.capturePage()).toPNG());
+
+    await evaluate("window.fixtureEvent('transcript_replaced', { turns: [] })");
+    await settle(50);
+    assert(await evaluate("document.querySelector('.ksw-empty-state').textContent.includes('Recording is paused')"));
+    await evaluate("window.fixtureSetState({ sessionState: 'completed', canControl: false })");
+    await settle(50);
+    assert.equal(await evaluate("document.querySelectorAll('.ksw-controls button').length"), 0, 'finished meetings have no active recording controls');
+    await fs.writeFile(path.join(output, 'completed-light.png'), (await win.webContents.capturePage()).toPNG());
+
+    await evaluate("window.fixtureThreadDelay = 400; window.fixtureEvent('meeting_started', { id: 'loading-meeting', title: 'A new meeting', startedAt: Date.now() }); window.fixtureSetState({ sessionState: 'recording', canControl: true, title: 'A new meeting', micMuted: false, systemAudioMuted: false })");
+    await settle(50);
+    await evaluate("document.querySelector('#ksw-ask-tab').click()");
+    await settle(30);
+    assert(await evaluate("document.querySelector('.ksw-thinking').textContent.includes('Loading')"), 'chat loading is visible');
+    await settle(400);
+    win.setContentSize(360, 420);
+    await settle(80);
+    assert.equal(await evaluate("document.querySelector('.ks-widget').scrollHeight > document.querySelector('.ks-widget').clientHeight"), false, 'the shorter window keeps the widget within bounds');
+    assert.equal(await evaluate("document.querySelector('#ksw-ask-panel').hidden"), false);
+    assert.equal(await evaluate("document.querySelector('.ksw-controls .is-stop').getBoundingClientRect().bottom <= innerHeight"), true, 'Stop remains reachable on short displays');
+    assert.equal(await evaluate("document.querySelector('.ksw-composer').getBoundingClientRect().bottom <= innerHeight"), true, 'the question composer remains reachable on short displays');
+    await fs.writeFile(path.join(output, 'small-light.png'), (await win.webContents.capturePage()).toPNG());
+    win.setContentSize(460, 500);
+    await evaluate("window.fixtureChatError = 'The answer could not be generated. Try again.'; document.querySelector('.ksw-starters button').click()");
+    await settle(220);
+    assert(await evaluate("document.querySelector('.ksw-ask-notice').textContent.includes('could not be generated')"), 'a failed question has a visible retry path');
+    assert.equal(await evaluate("document.querySelector('.ksw-composer textarea').value"), 'Summarize the discussion so far', 'a failed question is restored');
+    await fs.writeFile(path.join(output, 'error-light.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("window.fixtureChatError = null; document.querySelector('.ksw-ask-notice button').click()");
+    await settle(220);
+    assert.equal(await evaluate("document.querySelectorAll('.ksw-message.is-user').length"), 1, 'retry does not duplicate the question');
+    assert(await evaluate("!!document.querySelector('.ksw-answer')"), 'retry produces an answer');
+    await evaluate(`(() => {
+        window.fixtureAnswerDelay = 600;
+        const box = document.querySelector('.ksw-composer textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'What are the action items?');
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await settle(30);
+    await evaluate("document.querySelector('.ksw-composer').requestSubmit()");
+    await settle(40);
+    await evaluate("document.querySelector('[aria-label=\"Cancel question\"]').click()");
+    await settle(650);
+    assert.equal(await evaluate("document.querySelectorAll('.ksw-answer').length"), 1, 'a canceled response never appears later');
+    assert.equal(await evaluate("document.querySelector('.ksw-composer textarea').value"), 'What are the action items?', 'cancel restores the question');
+    // Call-detection mode uses the same production widget and shell-state subscription.
+    win.setContentSize(212, 252);
+    await evaluate("window.fixtureSetState({ sessionState: 'idle', canControl: false, callPrompt: { id: 'detected-call', source: 'google-meet', createdAt: Date.now(), expiresAt: Date.now() + 120000, status: 'ready', error: null } })");
+    await settle(80);
+    assert.equal(await evaluate("document.querySelector('#ksw-call-title').textContent"), 'Take notes');
+    assert.equal(await evaluate("document.querySelector('.ksw-call-start').textContent"), 'Start');
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').scrollHeight > document.querySelector('.ksw-call-card').clientHeight"), false);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.ksw-call-grip')).webkitAppRegion"), 'drag');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.ksw-call-start')).webkitAppRegion"), 'no-drag');
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').classList.contains('is-wobbling')"), false, 'motion waits for its timer');
+    await fs.writeFile(path.join(output, 'call-detected-dark.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('.ksw-call-shell').dataset.theme = 'light'");
+    await fs.writeFile(path.join(output, 'call-detected-light.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("window.fixtureFireWobble()");
+    await settle(30);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').classList.contains('is-wobbling')"), true, 'the delayed timer starts a gentle wobble');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.ksw-call-card')).animationDuration"), '0.6s');
+    await settle(650);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').classList.contains('is-wobbling')"), false, 'the wobble settles once');
+    await evaluate("document.querySelector('.ksw-call-start').click(); document.querySelector('.ksw-call-start').click()");
+    await settle(30);
+    assert.deepEqual(await evaluate('window.fixturePromptCommands'), [{ action: 'start-call', promptId: 'detected-call' }], 'double clicks forward one Start command');
+    assert.equal(await evaluate("document.querySelector('.ksw-call-start').disabled"), true);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-dismiss').disabled"), true);
+    await evaluate("window.fixtureSetState({ callPrompt: { id: 'detected-call', source: 'google-meet', createdAt: Date.now(), expiresAt: Date.now() + 120000, status: 'starting', error: null } })");
+    await settle(30);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-start').textContent"), 'Starting…');
+    await evaluate("window.fixtureSetState({ callPrompt: { id: 'detected-call', source: 'google-meet', createdAt: Date.now(), expiresAt: Date.now() + 120000, status: 'ready', error: 'Permission denied. Check recording permissions in Kesami, then retry.' } })");
+    await settle(40);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-start').textContent"), 'Retry');
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').scrollHeight > document.querySelector('.ksw-call-card').clientHeight"), false, 'error state fits');
+    await fs.writeFile(path.join(output, 'call-detected-error.png'), (await win.webContents.capturePage()).toPNG());
+    await evaluate("document.querySelector('.ksw-call-dismiss').focus(); window.fixtureFireWobble(); document.querySelector('.ksw-call-dismiss').click()");
+    await settle(30);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').classList.contains('is-wobbling')"), false, 'focused cards skip motion');
+    assert.deepEqual(await evaluate('window.fixturePromptCommands.at(-1)'), { action: 'dismiss-call', promptId: 'detected-call' });
+
+    await evaluate("window.fixtureSetState({ callPrompt: { id: 'reduced-motion', source: 'microphone', createdAt: Date.now(), expiresAt: Date.now() + 120000, status: 'ready', error: null } })");
+    await settle(30);
+    await evaluate("window.fixtureOriginalMatchMedia = window.matchMedia; window.matchMedia = () => ({ matches: true }); window.fixtureFireWobble(); window.matchMedia = window.fixtureOriginalMatchMedia; void 0");
+    await settle(30);
+    assert.equal(await evaluate("document.querySelector('.ksw-call-card').classList.contains('is-wobbling')"), false, 'reduced motion skips the wobble');
+    await evaluate("window.fixtureSetState({ callPrompt: { id: 'unmount-timer', source: 'zoom', createdAt: Date.now(), expiresAt: Date.now() + 120000, status: 'ready', error: null } })");
+    await settle(30);
+    assert.equal(await evaluate('window.fixtureMotionTimerCount()'), 1);
+    await evaluate("window.fixtureSetState({ sessionState: 'recording', canControl: true, callPrompt: null })");
+    win.setContentSize(288, 52);
+    await settle(40);
+    assert.equal(await evaluate('window.fixtureMotionTimerCount()'), 0, 'leaving prompt mode cleans up its timer');
+    assert(await evaluate("!!document.querySelector('.ksw-pill.is-recording')"), 'successful start returns to the recording pill');
+    assert.deepEqual(errors, [], 'the widget has no renderer errors');
+    console.log(`Widget flow passed. Screenshots: ${output}`);
+    win.destroy();
+    app.quit();
+}
+
+run().catch(error => { console.error(error); app.exit(1); });

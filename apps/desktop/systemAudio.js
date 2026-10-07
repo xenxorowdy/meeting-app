@@ -208,13 +208,13 @@ function stop() {
     return { stopped: true };
 }
 
-function registerHandlers() {
-    ipcMain.handle('system-audio:available', () => {
+function registerHandlers(ipc = ipcMain) {
+    ipc.handle('system-audio:available', () => {
         const state = availability();
         return { available: state.available, platform: state.platform, reason: state.reason };
     });
-    ipcMain.handle('system-audio:start', event => start(event.sender));
-    ipcMain.handle('system-audio:stop', () => stop());
+    ipc.handle('system-audio:start', event => start(event.sender));
+    ipc.handle('system-audio:stop', () => stop());
 }
 
 module.exports = {

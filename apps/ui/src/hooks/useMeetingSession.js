@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
     noiseSuppression: true,
     // Read-only: the backend reports whether a key is stored, never the key.
     geminiApiKeySet: false,
+    openaiApiKeySet: false,
     sarvamApiKeySet: false,
     recordScreen: false,
     // 'ask' opens the picker on every start; a source id records that one
@@ -74,11 +75,14 @@ export function useMeetingSession() {
     const [clientMicMuted, setClientMicMuted] = useState(false);
     const [systemAudioMuted, setSystemAudioMuted] = useState(false);
     const [error, setError] = useState(null);
+    const [stopFailed, setStopFailed] = useState(false);
     const [micError, setMicError] = useState(null);
     const [systemAudioError, setSystemAudioError] = useState(null);
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [license, setLicense] = useState(null);
     const [engine, setEngine] = useState(null);
+    const [liveRoster, setLiveRoster] = useState([]);
+    const [meetingClient, setMeetingClient] = useState(null);
 
     const [recordingState, setRecordingState] = useState({ active: false, mode: null, hasSystemAudio: false, error: null });
     // The mic stream has to be state, not just a ref: the screen recording mixes it
@@ -104,8 +108,12 @@ export function useMeetingSession() {
     const recorderStartRef = useRef(null);
     const recorderGenerationRef = useRef(0);
     const recorderAbortRef = useRef(null);
+    const summaryRequestRef = useRef(null);
     const finishedRecordingRef = useRef(null);
     const startingRef = useRef(false);
+    const stopPromiseRef = useRef(null);
+    const pendingStopRef = useRef(null);
+    const updateQueueRef = useRef(Promise.resolve());
     const captureMuteRef = useRef({ mic: false, system: false });
     // Effective mic mute folds in the meeting client's mute: muting in Zoom or
     // Meet has to keep the microphone out of the recording and the transcript.
@@ -165,11 +173,13 @@ export function useMeetingSession() {
         async status => {
             if (!status) return;
 
-            setSessionState(mapBackendState(status.state));
+            setSessionState(pendingStopRef.current ? SESSION_STATES.PROCESSING : mapBackendState(status.state));
             if (typeof status.durationSeconds === 'number') setDurationSeconds(status.durationSeconds);
             if (status.audioLevels) {
                 levels.publish({ mic: clampLevel(status.audioLevels.mic), system: clampLevel(status.audioLevels.system) });
             }
+            setLiveRoster(Array.isArray(status.participants?.names) ? status.participants.names : []);
+            setMeetingClient(status.meetingClient || null);
 
             const meetingId = status.meetingId || status.currentMeeting?.id || null;
             if (meetingId && meetingId !== activeMeetingIdRef.current) {
@@ -245,7 +255,7 @@ export function useMeetingSession() {
                     break;
 
                 case 'state_change':
-                    setSessionState(mapBackendState(data?.newState || data?.to));
+                    setSessionState(pendingStopRef.current ? SESSION_STATES.PROCESSING : mapBackendState(data?.newState || data?.to));
                     break;
 
                 case 'meeting_started':
@@ -343,14 +353,14 @@ export function useMeetingSession() {
             const [status, storedSettings, licenseStatus] = await Promise.all([
                 apiRequest('/api/status'),
                 apiRequest('/api/settings').catch(() => ({ settings: {} })),
-                apiRequest('/api/license/status').catch(() => null),
+                apiRequest('/api/license/status').catch(() => undefined),
             ]);
 
             await applyStatus(status);
             setSettings(prev => ({ ...prev, ...(storedSettings?.settings || {}) }));
-            setLicense(licenseStatus);
+            if (licenseStatus) setLicense(licenseStatus);
             setEngine(status);
-            setError(null);
+            if (!pendingStopRef.current) setError(null);
         } catch (cause) {
             setError(cause.message);
         }
@@ -360,20 +370,28 @@ export function useMeetingSession() {
         if (connection === 'online') refresh();
     }, [connection, refresh]);
 
-    // Elapsed time is derived from the meeting's own start timestamp so it can't drift.
     useEffect(() => {
-        if (sessionState !== SESSION_STATES.RECORDING && sessionState !== SESSION_STATES.PAUSED) return undefined;
-        const startedAt = activeMeeting?.startedAt;
-        if (!startedAt) return undefined;
-
-        const tick = () => setDurationSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-        tick();
-        const timer = setInterval(tick, 1000);
-        return () => clearInterval(timer);
-    }, [sessionState, activeMeeting?.startedAt]);
+        if (connection !== 'online') return;
+        const controller = new AbortController();
+        const updatePlan = async () => {
+            try {
+                const status = await apiRequest('/api/license/status', { signal: controller.signal });
+                if (!controller.signal.aborted) setLicense(status);
+            } catch { /* Keep the last confirmed plan during a connection outage. */ }
+        };
+        window.addEventListener('focus', updatePlan);
+        const timer = setInterval(updatePlan, 60000);
+        return () => { controller.abort(); clearInterval(timer); window.removeEventListener('focus', updatePlan); };
+    }, [connection]);
 
     useEffect(() => {
         if (sessionState !== SESSION_STATES.RECORDING) setInterimTurns([]);
+    }, [sessionState]);
+
+    useEffect(() => {
+        if (sessionState !== SESSION_STATES.RECORDING && sessionState !== SESSION_STATES.PAUSED) return undefined;
+        const timer = setInterval(() => socketRef.current?.send('get_status'), 5000);
+        return () => clearInterval(timer);
     }, [sessionState]);
 
     // Pausing and muting keep the same devices open. Device changes and stop
@@ -415,6 +433,7 @@ export function useMeetingSession() {
             includeStream: true,
             muted: captureMuteRef.current.system,
             onPcm: pcm => {
+                if (captureMuteRef.current.system) return;
                 systemSourceRef.current = systemCaptureRef.current?.source || 'system';
                 socketRef.current?.sendAudio(STREAM_SYSTEM, pcm);
             },
@@ -480,7 +499,7 @@ export function useMeetingSession() {
             signal: controller.signal,
             bitsPerSecond: settingsRef.current.recordingBitsPerSecond,
             onSystemPcm: pcm => {
-                if (!current() || systemSourceRef.current) return;
+                if (!current() || systemSourceRef.current || captureMuteRef.current.system) return;
                 if (socketRef.current) socketRef.current.sendAudio(STREAM_SYSTEM, pcm);
             },
             onError: message => { if (current()) setRecordingState(prev => ({ ...prev, error: message })); },
@@ -537,7 +556,7 @@ export function useMeetingSession() {
 
     const startMeeting = useCallback(
         async (title, { sourceId = null, event = null, mode = 'audio' } = {}) => {
-        if (startingRef.current) return null;
+        if (startingRef.current || pendingStopRef.current || stopPromiseRef.current) return null;
         setError(null);
         setMicError(null);
         setSystemAudioError(null);
@@ -607,7 +626,27 @@ export function useMeetingSession() {
     }, []);
 
     const stopMeeting = useCallback(
-        async (turns = []) => {
+        (turns = []) => {
+            if (stopPromiseRef.current) return stopPromiseRef.current;
+            if (!pendingStopRef.current && !activeMeetingIdRef.current) return Promise.resolve(null);
+            if (!pendingStopRef.current) {
+                pendingStopRef.current = {
+                    meetingId: activeMeetingIdRef.current,
+                    recording: null,
+                    transcript: turns.map(turn => ({
+                        id: turn.id,
+                        channel: turn.stream || turn.channel || 'system',
+                        speaker: turn.speaker,
+                        startMs: turn.startMs,
+                        endMs: turn.endMs,
+                        text: turn.text,
+                        confidence: turn.confidence ?? 1,
+                    })),
+                };
+            }
+            const pending = pendingStopRef.current;
+            setStopFailed(false);
+            setError(null);
             setSessionState(SESSION_STATES.PROCESSING);
             setInterimTurns([]);
             // A meeting stopped before the recorder ever opened must not leave a
@@ -619,12 +658,15 @@ export function useMeetingSession() {
 
             // Finish the recording before telling the backend the meeting is over,
             // so its path and duration can be stored on the same record.
-            let recording = finishedRecordingRef.current ? await finishedRecordingRef.current : null;
-            finishedRecordingRef.current = null;
+            const finish = async () => {
+            if (finishedRecordingRef.current) {
+                pending.recording = await finishedRecordingRef.current;
+                finishedRecordingRef.current = null;
+            }
             if (recorderRef.current) {
                 const handle = recorderRef.current;
                 recorderRef.current = null;
-                recording = await handle.stop().catch(cause => {
+                pending.recording = await handle.stop().catch(cause => {
                     setRecordingState(prev => ({ ...prev, error: cause.message }));
                     return null;
                 });
@@ -635,30 +677,30 @@ export function useMeetingSession() {
                 const response = await apiRequest('/api/meetings/stop', {
                     method: 'POST',
                     body: {
-                        recording: isRemoteBackend() || settingsRef.current.supportsLocalRecording === false ? null : recording,
-                        transcript: turns.map(turn => ({
-                            id: turn.id,
-                            channel: turn.stream || turn.channel || 'system',
-                            speaker: turn.speaker,
-                            startMs: turn.startMs,
-                            endMs: turn.endMs,
-                            text: turn.text,
-                            confidence: turn.confidence ?? 1,
-                        })),
+                        ...pending,
+                        recording: isRemoteBackend() || settingsRef.current.supportsLocalRecording === false ? null : pending.recording,
                     },
                 });
 
+                if (!response.meeting || response.meeting.id !== pending.meetingId) {
+                    throw new Error('The workspace did not confirm saving this meeting.');
+                }
                 const meeting = adoptMeeting(response.meeting);
+                pendingStopRef.current = null;
                 setSessionState(SESSION_STATES.COMPLETED);
                 if (meeting && callbacksRef.current.onMeetingCompleted) {
                     callbacksRef.current.onMeetingCompleted(meeting);
                 }
                 return meeting;
             } catch (cause) {
-                setError(cause.message);
-                setSessionState(SESSION_STATES.IDLE);
+                setError(`Recording stopped, but the meeting could not be saved. ${cause.message}`);
+                setStopFailed(true);
+                setSessionState(SESSION_STATES.PROCESSING);
                 return null;
             }
+            };
+            stopPromiseRef.current = finish().finally(() => { stopPromiseRef.current = null; });
+            return stopPromiseRef.current;
         },
         [adoptMeeting]
     );
@@ -685,6 +727,22 @@ export function useMeetingSession() {
 
     const regenerateSummary = useCallback(async meetingId => {
         if (!meetingId) return { ok: false, message: 'Open a meeting before regenerating its summary.' };
+        if (summaryRequestRef.current) {
+            if (summaryRequestRef.current.meetingId !== meetingId) {
+                return { ok: false, message: 'Another meeting summary is already being generated.' };
+            }
+            try {
+                await apiRequest(`/api/meetings/${meetingId}/summarize/cancel`, { method: 'POST' });
+                return { ok: false, cancelled: true };
+            } catch (cause) {
+                setError(cause.message);
+                return { ok: false, message: cause.message };
+            }
+        }
+
+        const request = { meetingId };
+        summaryRequestRef.current = request;
+        setError(null);
         setIsGeneratingSummary(true);
         try {
             const response = await apiRequest(`/api/meetings/${meetingId}/summarize`, {
@@ -706,16 +764,20 @@ export function useMeetingSession() {
                       }
                     : current
             );
-            return { ok: true };
+            if (summary.warning) setError(`A basic summary was used because AI generation failed: ${summary.warning}`);
+            return { ok: true, warning: summary.warning || null };
         } catch (cause) {
+            if (cause.status === 409 && cause.message.includes('stopped')) return { ok: false, cancelled: true };
             setError(cause.message);
             return { ok: false, message: cause.message };
         } finally {
-            setIsGeneratingSummary(false);
+            if (summaryRequestRef.current === request) {
+                summaryRequestRef.current = null;
+                setIsGeneratingSummary(false);
+            }
         }
     }, []);
 
-    // The backend exposes no meeting-update route yet, so edits stay in this session.
     const addNote = useCallback(
         async text => {
             const meetingId = activeMeetingIdRef.current;
@@ -734,9 +796,9 @@ export function useMeetingSession() {
     const deleteNote = useCallback(async noteId => {
         const meetingId = activeMeetingIdRef.current;
         if (!meetingId) return { ok: false };
-        setActiveMeeting(prev => (prev && prev.id === meetingId ? { ...prev, notes: (prev.notes || []).filter(note => note.id !== noteId) } : prev));
         try {
             await apiRequest(`/api/meetings/${meetingId}/notes/${noteId}`, { method: 'DELETE' });
+            setActiveMeeting(prev => (prev && prev.id === meetingId ? { ...prev, notes: (prev.notes || []).filter(note => note.id !== noteId) } : prev));
             return { ok: true };
         } catch (cause) {
             return { ok: false, message: cause.message };
@@ -744,7 +806,61 @@ export function useMeetingSession() {
     }, []);
 
     const updateActiveMeeting = useCallback(updates => {
-        setActiveMeeting(prev => (prev ? { ...prev, ...updates } : prev));
+        const meetingId = activeMeetingIdRef.current;
+        if (!meetingId) return Promise.resolve({ ok: false, message: 'Select a meeting to edit.' });
+        const save = async () => {
+            try {
+                const response = await apiRequest(`/api/meetings/${meetingId}`, { method: 'PATCH', body: updates });
+                if (!response.meeting) throw new Error('The workspace did not confirm saving your changes.');
+                const meeting = normalizeMeeting(response.meeting);
+                setActiveMeeting(current => current?.id === meetingId ? meeting : current);
+                return { ok: true, meeting };
+            } catch (cause) {
+                setError(`Could not save your changes. ${cause.message}`);
+                return { ok: false, message: cause.message };
+            }
+        };
+        updateQueueRef.current = updateQueueRef.current.then(save, save);
+        return updateQueueRef.current;
+    }, []);
+
+    const updateCommitments = useCallback((commitmentId = null, review = {}) => {
+        const meetingId = activeMeetingIdRef.current;
+        if (!meetingId) return Promise.resolve({ ok: false, message: 'Select a meeting first.' });
+        const save = async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            try {
+                const path = `/api/meetings/${encodeURIComponent(meetingId)}/commitments${commitmentId ? `/${encodeURIComponent(commitmentId)}` : ''}`;
+                const response = await apiRequest(path, { method: commitmentId ? 'PATCH' : 'POST', body: review, signal: controller.signal });
+                if (!response.meeting) throw new Error('Kesami did not confirm saving your review.');
+                const meeting = normalizeMeeting(response.meeting);
+                setActiveMeeting(current => current?.id === meetingId ? meeting : current);
+                return { ok: true, meeting };
+            } catch (cause) { return { ok: false, message: controller.signal.aborted ? 'Saving took too long. Reload commitments to check the saved state, then retry.' : cause.message }; }
+            finally { clearTimeout(timer); }
+        };
+        updateQueueRef.current = updateQueueRef.current.then(save, save);
+        return updateQueueRef.current;
+    }, []);
+
+    const updatePostMeetingAction = useCallback((actionId, review) => {
+        const meetingId = activeMeetingIdRef.current;
+        if (!meetingId) return Promise.resolve({ ok: false, message: 'Select a meeting first.' });
+        const save = async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 45000);
+            try {
+                const response = await apiRequest(`/api/meetings/${encodeURIComponent(meetingId)}/actions/${encodeURIComponent(actionId)}`, { method: 'POST', body: review, signal: controller.signal });
+                if (!response.meeting) throw new Error('No action receipt was returned. Reload actions before retrying.');
+                const meeting = normalizeMeeting(response.meeting);
+                setActiveMeeting(current => current?.id === meetingId ? meeting : current);
+                return { ok: true, meeting };
+            } catch (cause) { return { ok: false, message: controller.signal.aborted ? 'The request timed out. Reload actions to check the saved result before retrying.' : cause.message }; }
+            finally { clearTimeout(timer); }
+        };
+        updateQueueRef.current = updateQueueRef.current.then(save, save);
+        return updateQueueRef.current;
     }, []);
 
     const renameSpeaker = useCallback(
@@ -763,6 +879,27 @@ export function useMeetingSession() {
                 return { ok: true, meeting };
             } catch (cause) {
                 setError(cause.message);
+                return { ok: false, message: cause.message };
+            }
+        },
+        [adoptMeeting]
+    );
+
+    const changeTurnSpeaker = useCallback(
+        async (turnId, nextName) => {
+            const meetingId = activeMeetingIdRef.current;
+            const cleaned = String(nextName || '').trim();
+            if (!meetingId || !turnId || !cleaned) {
+                return { ok: false, message: 'Enter a speaker name.' };
+            }
+            try {
+                const response = await apiRequest(`/api/meetings/${meetingId}`, {
+                    method: 'PATCH',
+                    body: { turnSpeakers: { [turnId]: cleaned } },
+                });
+                const meeting = adoptMeeting(response.meeting);
+                return { ok: true, meeting };
+            } catch (cause) {
                 return { ok: false, message: cause.message };
             }
         },
@@ -789,7 +926,7 @@ export function useMeetingSession() {
                     throw new Error(response.warnings?.join('; ') || 'The backend rejected these settings.');
                 }
                 const credentialKeys = [
-                    'geminiApiKey', 'sarvamApiKey',
+                    'geminiApiKey', 'openaiApiKey', 'sarvamApiKey',
                     'googleCalendarClientId', 'googleCalendarClientSecret',
                     'microsoftCalendarClientId', 'microsoftCalendarClientSecret',
                 ];
@@ -857,12 +994,15 @@ export function useMeetingSession() {
         clientMicMuted,
         systemAudioMuted,
         recordingState,
+        stopFailed,
         error,
         micError,
         systemAudioError,
         settings,
         license,
         engine,
+        liveRoster,
+        meetingClient,
         startMeeting,
         pauseMeeting,
         resumeMeeting,
@@ -870,7 +1010,10 @@ export function useMeetingSession() {
         loadMeeting,
         regenerateSummary,
         updateActiveMeeting,
+        updateCommitments,
+        updatePostMeetingAction,
         renameSpeaker,
+        changeTurnSpeaker,
         toggleMicMute,
         toggleSystemAudioMute,
         updateSettings,

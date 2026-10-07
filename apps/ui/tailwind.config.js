@@ -32,19 +32,7 @@ export default {
         extend: {
             spacing,
             fontFamily: {
-                sans: [
-                    'ui-sans-serif',
-                    'system-ui',
-                    '-apple-system',
-                    'BlinkMacSystemFont',
-                    'SF Pro Display',
-                    'SF Pro Text',
-                    'Segoe UI Variable Text',
-                    'Segoe UI',
-                    'Helvetica Neue',
-                    'Arial',
-                    'sans-serif',
-                ],
+                sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
                 mono: ['ui-monospace', 'SF Mono', 'SFMono-Regular', 'Menlo', 'Cascadia Mono', 'Consolas', 'monospace'],
             },
             fontSize: {

@@ -132,7 +132,7 @@ contextBridge.exposeInMainWorld('kesamiShell', {
 
     onWidgetCommand: listener => {
         if (typeof listener !== 'function') return () => {};
-        const forward = (_event, action) => listener(action);
+        const forward = (_event, action, promptId) => listener(action, promptId);
         ipcRenderer.on('shell:widget-command', forward);
         return () => ipcRenderer.removeListener('shell:widget-command', forward);
     },

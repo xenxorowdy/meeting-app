@@ -50,12 +50,31 @@ const base = {
     recording: { videoPath: 'fixture.webm', durationMs: 25000, startedAtMs: today.getTime(), mode: 'screen' },
 };
 window.fixtureCalls = [];
+const commitmentCandidates = [
+    { id: 'promise', classification: 'explicit_commitment', person: 'Alex Rivera', speaker: 'Alex Rivera', targetAction: 'Send a calendar invite', commitment: "I'll send a cal invite after this.", dueDate: '', sourceTurnIds: ['turn-4'], startMs: 16000, confidence: 'high', confidenceReason: 'Explicit promise; review the speaker label.', status: 'pending', references: [] },
+    { id: 'suggestion', classification: 'suggested_action', person: '', speaker: 'Maya Chen', targetAction: 'Schedule a Friday session', commitment: "Let's schedule a Friday session.", dueDate: 'Friday', sourceTurnIds: ['turn-3'], startMs: 12000, confidence: 'medium', confidenceReason: 'A suggestion has no accepted owner yet.', status: 'pending', references: [] },
+    { id: 'unclear', classification: 'unclear', person: '', speaker: 'Sam Park', targetAction: 'Review the filter UX', commitment: "I'd push back on the filter UX — it needs one more round of testing.", dueDate: '', sourceTurnIds: ['turn-2'], startMs: 8000, confidence: 'low', confidenceReason: 'No unambiguous promise.', status: 'pending', references: [] },
+];
+let commitments = null;
+const actionSuggestions = [
+    ['local', 'action_item', 'Review API design', 'local_task'],
+    ['promise-action', 'commitment', 'Check with engineering', 'local_task'],
+    ['followup-action', 'follow_up', 'Follow up with the data team', 'local_task'],
+    ['calendar-action', 'calendar', 'Schedule follow-up next Tuesday', 'google_calendar'],
+    ['email-action', 'email', 'Send proposal to Acme', 'local_draft'],
+    ['jira-action', 'jira', 'Create Jira ticket', 'jira'],
+].map(([id, kind, title, destination]) => ({ id, kind, title, destination, person: 'Alex Rivera', dueDate: kind === 'calendar' ? 'next Tuesday' : '', classification: kind === 'commitment' ? 'explicit_commitment' : 'suggested_action', sourceTurnIds: ['turn-4'], excerpt: transcript[4].text, startMs: 16000, revision: 'fixture-action-source', body: kind === 'email' ? 'Please review the proposal.' : '' }));
+const actionProviders = { google_calendar: { connected: true, account: 'alex@example.com', revision: 'fixture-google-target' }, jira: { connected: true, account: 'alex@example.com', siteUrl: 'https://example.atlassian.net', projectKey: 'API', issueType: 'Task', revision: 'fixture-jira-target' } };
+for (const destination of ['slack', 'jira']) actionSuggestions.push({ id: `summary-${destination}`, kind: `summary_${destination}`, title: base.title, destination, person: '', dueDate: '', classification: 'generated_summary', sourceTurnIds: [], excerpt: '', startMs: null, revision: 'fixture-summary-source', body: `Meeting: ${base.title}\nDate: 2026-10-06 (UTC)\n\nReviewed meeting recap.` });
+actionProviders.slack = { connected: true, channelLabel: '#meeting-recaps', revision: 'fixture-slack-target', autoPush: false };
+let actionHistory = [];
+
 const chatThread = { id: 'fixture-chat', title: 'Roadmap decisions', scope: { type: 'all' } };
 const chatAnswer = {
     requestId: 'fixture-request', role: 'assistant',
     content: '**Ship AI search by Oct 15 [1].**\n\n- Alex will schedule the review _[1]_.\n- Older source [2]; unknown reference [99].\n\nLiteral code: `[1]`',
     citations: [
-        { number: 1, title: base.title, meetingId: base.id, sourceRevision: 'fixture-revision', turnIds: ['turn-1'], startMs: 4000, excerpt: transcript[1].text },
+        { number: 1, title: base.title, startedAt: base.startedAt, meetingId: base.id, sourceRevision: 'fixture-revision', turnIds: ['turn-1'], startMs: 4000, excerpt: transcript[1].text },
         { number: 2, title: 'Removed meeting', available: false, unavailableReason: 'Source unavailable' },
     ],
 };
@@ -65,10 +84,47 @@ Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
         window.fixtureCopiedText = text;
     },
 } });
+const execCommand = document.execCommand.bind(document);
+document.execCommand = (command, ...rest) => (command === 'copy' && window.fixtureCopyFails ? false : execCommand(command, ...rest));
 window.fetch = async (url, options = {}) => {
     const path = new URL(url).pathname;
     const body = options.body ? JSON.parse(options.body) : null;
     window.fixtureCalls.push({ path, method: options.method || 'GET', body });
+    if (path.startsWith(`/api/meetings/${base.id}/commitments`)) {
+        if (window.fixtureCommitmentsFails) return new Response(JSON.stringify({ error: 'Synthetic commitment service unavailable' }), { status: 503 });
+        if (!body) return new Response(JSON.stringify(commitments ? { ...commitments, current: true } : { current: false, candidates: [] }));
+        if ((options.method || 'GET') === 'POST') {
+            commitments ||= { version: 1, transcriptRevision: 'fixture-transcript', coverage: 'complete', candidates: commitmentCandidates.map(item => ({ ...item })) };
+        } else {
+            const item = commitments.candidates.find(candidate => candidate.id === path.split('/').at(-1));
+            item.status = body.status;
+            if (body.status === 'confirmed') {
+                item.reviewedPerson = body.person;
+                item.reviewedAction = body.targetAction;
+                item.actionItemId = item.id;
+                window.fixtureMeeting.actionItems = [...window.fixtureMeeting.actionItems, { id: item.id, task: body.targetAction, owner: body.person, deadline: item.dueDate, completed: false }];
+            }
+        }
+        return new Response(JSON.stringify({ meeting: { ...window.fixtureMeeting, metadata: { ...window.fixtureMeeting.metadata, meetingCommitments: commitments } } }));
+    }
+    if (path.startsWith(`/api/meetings/${base.id}/actions`)) {
+        if (window.fixtureActionsFails) return new Response(JSON.stringify({ error: 'Synthetic actions unavailable' }), { status: 503 });
+        if (!body) return new Response(JSON.stringify({ suggestions: window.fixtureActionsEmpty ? [] : window.fixtureActionSourceChanged ? actionSuggestions.map(s => ({ ...s, revision: 'edited-source', excerpt: 'Edited transcript statement' })) : actionSuggestions, history: actionHistory, providers: { ...actionProviders, slack: { ...actionProviders.slack, connected: !window.fixtureSlackDisconnected, revision: window.fixtureSlackTargetRevision || actionProviders.slack.revision } } }));
+        const id = path.split('/').at(-1), source = actionSuggestions.find(s => s.id === id);
+        if (!body.confirmed) return new Response(JSON.stringify({ error: 'Confirmation is required' }), { status: 400 });
+        let record = actionHistory.find(r => r.id === id);
+        if (!record) { record = { id, source, review: body, attempts: 0 }; actionHistory.push(record); }
+        if (record.status === 'succeeded') return new Response(JSON.stringify({ meeting: window.fixtureMeeting }));
+        record.attempts++; record.review = body;
+        const failed = window.fixtureActionPermission && ['jira', 'google_calendar', 'slack'].includes(body.destination);
+        record.status = failed ? 'failed' : window.fixtureActionUnknown && body.destination === 'jira' ? 'unknown' : 'succeeded';
+        if (failed) record.error = { code: 'permission_required', message: 'Connect this provider in Settings, then review and confirm again.', retryable: true };
+        else if (record.status === 'unknown') record.error = { code: 'outcome_unknown', message: 'The provider may have created this action. Check the provider; Kesami will not resend it.', retryable: false };
+        else { delete record.error; record.result = body.destination === 'local_draft' ? { local: true, sent: false, draft: { subject: body.title, body: body.body, recipients: body.recipients } } : { id: 'fixture-created' }; }
+        const updated = { ...window.fixtureMeeting, metadata: { ...window.fixtureMeeting.metadata, postMeetingActions: { version: 1, items: actionHistory } } };
+        if (!failed && record.status === 'succeeded' && body.destination === 'local_task' && !updated.actionItems.some(t => t.workflowActionId === id)) updated.actionItems = [...updated.actionItems, { id: `task-${id}`, task: body.title, owner: body.person, deadline: body.dueDate, completed: false, workflowActionId: id }];
+        return new Response(JSON.stringify({ meeting: updated }));
+    }
     if (path === '/api/folders') {
         if (body) folders.push({ id: 'new-folder', name: body.name });
         return new Response(JSON.stringify({ folders }));
@@ -85,14 +141,23 @@ window.fetch = async (url, options = {}) => {
         ] }));
     }
     if (path === `/api/chat/sources/${base.id}`) return new Response(JSON.stringify({ meeting: base }));
-    if (path === '/api/auth/config') return new Response(JSON.stringify({ registrationAllowed: true }));
+    if (path === '/api/auth/config') {
+        if (window.fixtureAuthOffline) throw new Error('Engine unavailable');
+        return new Response(JSON.stringify(window.fixtureCloud
+            ? { registrationAllowed: true, cloudManaged: true, googleAuth: { provider: 'supabase', configured: window.fixtureGoogleConfigured !== false, url: 'https://project.supabase.co' } }
+            : { registrationAllowed: true, googleClientId: window.fixtureGoogleConfigured === false ? '' : 'fixture.apps.googleusercontent.com' }));
+    }
+    if (path === '/api/auth/supabase/google' || path === '/api/auth/google') {
+        return new Response(JSON.stringify({ token: 'fixture-google-session', account: { id: 'fixture-google', name: 'Asha Verma', email: 'asha@work.com', authProvider: 'google' } }));
+    }
     if (path === '/api/billing/subscription') return new Response(JSON.stringify({
         tier: 'free', subscription: null, billing: { billingEnabled: false },
         usage: { minutesUsed: 0, freeMonthlyMinutes: 120, canRecord: true },
     }));
-    if (path === '/api/plans') return new Response(JSON.stringify({ billingEnabled: false, plans: [
-        { id: 'free', name: 'Local', status: 'available', price: { amountMinor: 0 }, description: 'Your meetings, on your device. No account required.', features: ['Record meetings on your device', 'Keep and export your meeting library', 'Use your own transcription and AI providers'], note: 'Provider API usage may be billed separately by your chosen provider.' },
-        { id: 'pro', name: 'Pro', status: 'coming_soon', price: null, description: 'Optional paid services are in development.', features: ['Planned: managed AI usage', 'Planned: account billing and subscription management'], note: 'Not available for purchase. No paid features or cloud sync are enabled.' },
+    if (path === '/api/plans') return new Response(JSON.stringify({ billingEnabled: false, billing: { razorpay: false, stripe: false }, plans: [
+        { id: 'free', name: 'Free', status: 'available', requiresAccount: false, prices: [{ amountMinor: 0, currency: 'USD', interval: null }], description: 'Your meetings, on your device.', features: ['2 hours of meeting recording per month', '3 shared AI summaries or chat replies per month', 'Keep and export your meeting library'], note: 'Sign in with Google to transcribe meetings and use meeting AI. Your library stays on this computer.' },
+        { id: 'pro', name: 'Pro', status: 'available', requiresAccount: true, prices: [{ amountMinor: 49900, currency: 'INR', interval: 'month', provider: 'razorpay' }, { amountMinor: 1000, currency: 'USD', interval: 'month', provider: 'stripe' }], description: 'Unlimited recording and AI summaries, per user.', features: ['Unlimited meeting recording', 'AI meeting summaries and action items', 'AI chat over your meetings'], note: 'Billed per user.' },
+        { id: 'enterprise', name: 'Enterprise', status: 'contact', requiresAccount: true, prices: [], description: 'Custom pricing for teams and organizations.', features: ['Volume and multi-workspace licensing'], note: 'Team plans are coming later.' },
     ] }));
     if (path === '/api/auth/password') return new Response(JSON.stringify({ token: 'fixture-rotated-session', account: { id: 'fixture-account', name: 'Asha Verma', email: 'asha@work.com' } }));
     if (path === '/api/chat/index/status') return new Response(JSON.stringify({ mode: 'hybrid', pendingChunks: 0 }));
@@ -108,8 +173,12 @@ function Fixture({ theme }) {
     window.fixtureSetAccount = setAccount;
     const [entered, setEntered] = useState(false);
     window.fixtureEnterWorkspace = () => setEntered(true);
+    window.fixtureSignOut = () => setEntered(false);
     const [meeting, setMeeting] = useState(base);
+    window.fixtureMeeting = meeting;
+    window.fixtureBase = base;
     window.fixturePatchMeeting = updates => setMeeting(value => ({ ...value, ...updates }));
+    window.fixtureSpeakerEdits = window.fixtureSpeakerEdits || [];
     const [recording, setRecording] = useState(false);
     const [paused, setPaused] = useState(false);
     useEffect(() => {
@@ -146,7 +215,19 @@ function Fixture({ theme }) {
             stream.getTracks().forEach(track => track.stop());
         };
     }, []);
-    if (!entered) return <SignInView theme={theme} onToggleTheme={window.fixtureSetTheme} onContinue={() => setEntered(true)} />;
+    if (!entered) {
+        return (
+            <SignInView
+                theme={theme}
+                onToggleTheme={window.fixtureSetTheme}
+                onAuthenticated={value => {
+                    window.fixtureAuthenticated = value;
+                    setAccount(value);
+                    setEntered(true);
+                }}
+            />
+        );
+    }
     return (
         <DesignWorkspace
             theme={theme}
@@ -191,7 +272,7 @@ function Fixture({ theme }) {
                     start: new Date(today.getTime() + i * 14400000).toISOString(),
                     end: new Date(today.getTime() + (i * 14400 + 3600) * 1000).toISOString(),
                 })),
-                providers: [{ connected: true }],
+                providers: [{ provider: 'google', label: 'Google Calendar', connected: true, configured: true }],
             }}
             session={{
                 isRecording: recording && !paused,
@@ -216,12 +297,35 @@ function Fixture({ theme }) {
             }}
             isConnected
             connection="online"
-            onSettings={() => {
+            onSettings={tab => {
                 window.settingsOpened = true;
+                window.settingsTabOpened = tab;
             }}
             onSelectMeeting={(selected, target) => { window.fixtureSourceTarget = target; setView('live'); }}
             onUpdate={updates => setMeeting(value => ({ ...value, ...updates }))}
-            onRenameSpeaker={async () => ({ ok: true })}
+            onUpdateCommitments={async (id, body = {}) => {
+                const response = await window.fetch(`http://127.0.0.1:48900/api/meetings/${base.id}/commitments${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(body) });
+                const data = await response.json();
+                if (!response.ok) return { ok: false, message: data.error };
+                setMeeting(data.meeting);
+                return { ok: true, meeting: data.meeting };
+            }}
+            onUpdatePostMeetingAction={async (id, body) => {
+                const response = await window.fetch(`http://127.0.0.1:48900/api/meetings/${base.id}/actions/${id}`, { method: 'POST', body: JSON.stringify(body) });
+                const data = await response.json();
+                if (!response.ok) return { ok: false, message: data.error };
+                setMeeting(data.meeting); return { ok: true, meeting: data.meeting };
+            }}
+            onRenameSpeaker={async (from, to) => {
+                window.fixtureSpeakerEdits.push(['all', from, to]);
+                setMeeting(value => ({ ...value, transcript: value.transcript.map(turn => (turn.speaker === from ? { ...turn, speaker: to, speakerEdited: true } : turn)) }));
+                return { ok: true };
+            }}
+            onChangeTurnSpeaker={async (turnId, to) => {
+                window.fixtureSpeakerEdits.push(['line', turnId, to]);
+                setMeeting(value => ({ ...value, transcript: value.transcript.map(turn => (turn.id === turnId ? { ...turn, speaker: to, speakerEdited: true } : turn)) }));
+                return { ok: true };
+            }}
             onAddNote={async () => ({ ok: true })}
             onDeleteNote={noop}
             onExport={noop}

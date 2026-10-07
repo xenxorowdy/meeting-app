@@ -39,21 +39,20 @@ export async function signInWithGoogle(options) {
     return result.account;
 }
 
-/**
- * Returns the signed-in account, or null when nobody is signed in. A backend
- * that cannot be reached counts as signed out: the sign-in screen decides what
- * to tell the user, and the workspace still opens.
- */
-export async function fetchSession() {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    try {
-        const result = await apiRequest('/api/auth/session', { signal: controller.signal });
-        return result.account || null;
-    } catch {
-        return null;
-    } finally {
-        clearTimeout(timer);
+export async function restoreSession({ attempts = 5, delayMs = 800 } = {}) {
+    for (let attempt = 1; ; attempt += 1) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+            const result = await apiRequest('/api/auth/session', { signal: controller.signal });
+            return { account: result.account || null, reachable: true };
+        } catch (cause) {
+            if (cause?.status > 0) return { account: null, reachable: true };
+            if (attempt >= attempts) return { account: null, reachable: false };
+        } finally {
+            clearTimeout(timer);
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
     }
 }
 

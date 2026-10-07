@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::{Mutex, OnceCell, RwLock};
 
 const DEFAULT_MAX_CONNECTIONS: u32 = 5;
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 10;
@@ -46,6 +46,7 @@ pub struct SupabaseDb {
     secret: Option<String>,
     pool: OnceCell<PgPool>,
     last: RwLock<Option<Check>>,
+    billing_lock: Mutex<()>,
 }
 
 fn now_ms() -> i64 {
@@ -278,6 +279,7 @@ impl SupabaseDb {
             secret,
             pool: OnceCell::new(),
             last: RwLock::new(None),
+            billing_lock: Mutex::new(()),
         }
     }
 
@@ -287,6 +289,7 @@ impl SupabaseDb {
             secret,
             pool: OnceCell::new(),
             last: RwLock::new(None),
+            billing_lock: Mutex::new(()),
         }
     }
 
@@ -484,38 +487,25 @@ impl SupabaseDb {
         let [user_id] = users.as_slice() else {
             return Ok(false);
         };
-        sqlx::query(
-            "INSERT INTO public.billing AS existing \
-                (provider, provider_subscription_id, user_id, plan, customer_id, status, currency, amount_minor, current_period_end) \
-             VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, to_timestamp($9)) \
-             ON CONFLICT (provider, provider_subscription_id) DO UPDATE SET \
-                user_id = EXCLUDED.user_id, \
-                plan = EXCLUDED.plan, \
-                customer_id = COALESCE(EXCLUDED.customer_id, existing.customer_id), \
-                status = EXCLUDED.status, \
-                currency = EXCLUDED.currency, \
-                amount_minor = EXCLUDED.amount_minor, \
-                current_period_end = COALESCE(EXCLUDED.current_period_end, existing.current_period_end), \
-                updated_at = now() \
-             WHERE existing.status <> 'canceled' AND EXCLUDED.status <> 'incomplete'",
-        )
-        .bind(&subscription.provider)
-        .bind(&subscription.provider_subscription_id)
-        .bind(user_id)
-        .bind(&subscription.plan)
-        .bind(&subscription.customer_id)
-        .bind(&subscription.status)
-        .bind(&subscription.currency)
-        .bind(subscription.amount_minor)
-        .bind(subscription.current_period_end.map(|ms| ms as f64 / 1000.0))
-        .persistent(false)
-        .execute(pool)
-        .await
-        .map_err(|cause| self.step_failure("Could not save a subscription to Supabase.", cause))?;
+        kesami_core_backend::billing_db::save_subscription(pool, user_id, subscription, None)
+            .await.map_err(|cause| self.step_failure("Could not save a subscription to Supabase.", cause))?;
         Ok(true)
     }
 
+    pub async fn subscription_for_google(&self, google_sub: &str, account_id: &str) -> Result<Option<Subscription>, String> {
+        let pool = self.pool().await?;
+        let users: Vec<String> = sqlx::query_scalar("SELECT DISTINCT user_id::text FROM auth.identities WHERE provider='google' AND (provider_id=$1 OR identity_data->>'sub'=$1) LIMIT 2")
+            .bind(google_sub).persistent(false).fetch_all(pool).await
+            .map_err(|cause| self.step_failure("Could not find the subscription user.",cause))?;
+        let [user] = users.as_slice() else { return Ok(None); };
+        let mut sub = kesami_core_backend::billing_db::subscription(pool,user).await
+            .map_err(|cause| self.step_failure("Could not read the account subscription.",cause))?;
+        if let Some(sub) = sub.as_mut() { sub.account_id=account_id.to_string(); }
+        Ok(sub)
+    }
+
     pub async fn mirror_billing(&self, billing: &BillingStore, accounts: &AccountStore) -> Result<(), String> {
+        let _lock = self.billing_lock.lock().await;
         for (provider, event_id, received_at) in billing.unmirrored_events().await.map_err(|(_, message)| message)? {
             let pool = self.pool().await?;
             sqlx::query(
@@ -545,9 +535,10 @@ impl SupabaseDb {
             };
             if !saved {
                 eprintln!(
-                    "[Kesami Core Backend] Supabase billing: account {} has no Supabase Google user, so subscription {} stays local only.",
+                    "[Kesami Core Backend] Supabase billing: account {} has no matched Supabase Google user yet; subscription {} will be retried.",
                     subscription.account_id, subscription.provider_subscription_id
                 );
+                continue;
             }
             billing
                 .mark_subscription_mirrored(&subscription.provider_subscription_id, updated_at)
@@ -783,6 +774,7 @@ mod tests {
             secret: None,
             pool: OnceCell::new(),
             last: RwLock::new(None),
+            billing_lock: Mutex::new(()),
         }
     }
 
@@ -882,7 +874,7 @@ mod tests {
         .unwrap();
         assert_eq!(mirrored_at, received_at);
         assert!(billing.unmirrored_events().await.unwrap().is_empty());
-        assert!(billing.unmirrored_subscriptions().await.unwrap().is_empty());
+        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(), 1);
 
         db.mirror_billing(&billing, &accounts).await.unwrap();
         apply_webhook(&billing, "razorpay", "evt_cancelled", &entity("sub_Payer1", &payer, "cancelled")).await.unwrap();
@@ -893,14 +885,28 @@ mod tests {
         apply_webhook(&billing, "razorpay", "evt_while_offline", &entity("sub_Payer2", &payer, "active")).await.unwrap();
         assert!(db.mirror_billing(&billing, &accounts).await.is_err());
         assert_eq!(billing.unmirrored_events().await.unwrap().len(), 1);
-        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(), 1);
+        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(), 2);
         sqlx::raw_sql("ALTER TABLE public.billing_events_offline RENAME TO billing_events").execute(&pool).await.unwrap();
         db.mirror_billing(&billing, &accounts).await.unwrap();
         assert!(billing.unmirrored_events().await.unwrap().is_empty());
-        assert!(billing.unmirrored_subscriptions().await.unwrap().is_empty());
+        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(), 1);
         let rows = billing_rows(&pool).await;
         assert_eq!(rows.iter().map(|row| (row.0.as_str(), row.3.as_str())).collect::<Vec<_>>(), [("sub_Payer1", "canceled"), ("sub_Payer2", "active")]);
         assert!(billing_events(&pool).await.contains(&"evt_while_offline".to_string()));
+
+        let restored = db.subscription_for_google("google-sub-payer","new-installation").await.unwrap().unwrap();
+        assert_eq!(restored.account_id,"new-installation");
+        assert_eq!(restored.provider_subscription_id,"sub_Payer2");
+        assert_eq!(crate::billing::tier_for(Some(&restored)),"pro");
+        let late=accounts.google_sign_in("google-sub-late","late@example.com","Late",true).await.unwrap().account.id;
+        apply_webhook(&billing,"razorpay","evt_late_identity",&entity("sub_Late",&late,"active")).await.unwrap();
+        db.mirror_billing(&billing,&accounts).await.unwrap();
+        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(),2);
+        sqlx::raw_sql("INSERT INTO auth.users VALUES ('11111111-1111-1111-1111-111111111111','late@example.com'); INSERT INTO auth.identities VALUES ('google-sub-late','11111111-1111-1111-1111-111111111111','{\"sub\":\"google-sub-late\"}','google');")
+            .execute(&pool).await.unwrap();
+        db.mirror_billing(&billing,&accounts).await.unwrap();
+        assert_eq!(billing.unmirrored_subscriptions().await.unwrap().len(),1);
+        assert_eq!(db.subscription_for_google("google-sub-late",&late).await.unwrap().unwrap().status,"active");
 
         let _ = std::fs::remove_dir_all(dir);
     }

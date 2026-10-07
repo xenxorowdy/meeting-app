@@ -1,6 +1,7 @@
-import React, { act } from 'react';
+import React, { act, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useMeetingSession } from '../../apps/ui/src/hooks/useMeetingSession.js';
+import { useUnscheduledCallPrompt } from '../../apps/ui/src/hooks/useUnscheduledCallPrompt.js';
 import { resetMocks, state } from './mocks.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,10 +14,23 @@ function equal(actual, expected, message) {
 
 const flush = async fn => act(async () => { await fn?.(); await new Promise(resolve => setTimeout(resolve, 0)); });
 let session;
+let promptApi;
+let promptEnabled = true;
 
 function Probe() {
     session = useMeetingSession();
     return <output>{session.sessionState}</output>;
+}
+
+function CallProbe() {
+    session = useMeetingSession();
+    promptApi = useUnscheduledCallPrompt({
+        enabled: promptEnabled,
+        canRecord: session.connection === 'online' && ['idle', 'completed', 'error'].includes(session.sessionState),
+        onStart: () => session.startMeeting('Calendar sync', { mode: 'audio', event: { id: 'calendar-sync', provider: 'google', title: 'Calendar sync', start: new Date().toISOString(), end: new Date(Date.now() + 1800000).toISOString(), attendees: [] } }),
+    });
+    useEffect(() => { session.setOnUnscheduledCall(promptApi.notifyUnscheduledCall); }, [session.setOnUnscheduledCall, promptApi.notifyUnscheduledCall]);
+    return <output>{promptApi.callPrompt?.id || session.sessionState}</output>;
 }
 
 async function scenario(options, test) {
@@ -28,7 +42,7 @@ async function scenario(options, test) {
         mounted = false;
     };
     try {
-        await flush(() => root.render(<Probe />));
+        await flush(() => root.render(options.withPrompt ? <CallProbe /> : <Probe />));
         equal(session.connection, 'online', 'Fixture connects to its mock backend');
         await test({ unmount });
     } finally {
@@ -37,6 +51,41 @@ async function scenario(options, test) {
 }
 
 const cases = [
+    ['detected browser calls start one audio recording with calendar metadata', () => scenario({ withPrompt: true, recordingSupported: true }, async () => {
+        await flush(() => state.events({ type: 'unscheduled_call', data: { source: 'google-meet', url: 'https://meet.google.com/test-call', participants: ['Maya'] } }));
+        const id = promptApi.callPrompt.id;
+        let first;
+        let duplicate;
+        await flush(() => { first = promptApi.startCallPrompt(id); duplicate = promptApi.startCallPrompt(id); });
+        equal(await first, true, 'Start succeeds');
+        equal(await duplicate, false, 'Repeated Start is rejected');
+        equal(state.requests.filter(request => request.path === '/api/meetings/start').length, 1, 'Exactly one meeting starts');
+        const request = state.requests.find(request => request.path === '/api/meetings/start');
+        equal(request.body.metadata.calendarEvent.id, 'calendar-sync', 'Calendar-covered calls can retain event metadata');
+        equal(session.sessionState, 'recording', 'Start enters the existing recording flow');
+        equal(promptApi.callPrompt, null, 'The prompt clears on startup');
+        await flush(() => { state.mic[0].resolve(); state.system[0].resolve(); });
+        equal(state.recorders[0].options.mode, 'audio', 'The prompt starts audio recording');
+        await flush(() => session.stopMeeting());
+    })],
+    ['microphone-only detection prompts, retracts, and cleans up its subscription', async () => {
+        let listener;
+        let unsubscribed = 0;
+        globalThis.kesamiShell = {};
+        globalThis.kesamiMicUsage = { onEvent: fn => { listener = fn; return () => { listener = null; unsubscribed++; }; }, start: async () => {} };
+        try {
+            await scenario({ withPrompt: true }, async ({ unmount }) => {
+                await flush(() => listener({ active: true }));
+                equal(promptApi.callPrompt.source, 'microphone', 'Generic microphone activity is accepted');
+                await flush(() => listener({ active: false }));
+                equal(promptApi.callPrompt, null, 'Mic inactivity retracts the idle card');
+                equal(state.requests.some(request => request.path === '/api/meetings/start'), false, 'Detection never starts recording itself');
+                await unmount();
+                equal(listener, null, 'Unmount removes the native listener');
+                equal(unsubscribed, 1, 'The watcher subscription is removed once');
+            });
+        } finally { delete globalThis.kesamiMicUsage; delete globalThis.kesamiShell; }
+    }],
     ['pause and resume keep pending microphone and system devices', () => scenario({}, async () => {
         await flush(() => session.startMeeting('Pause during startup'));
         equal([state.mic.length, state.system.length], [1, 1], 'Both devices start once');

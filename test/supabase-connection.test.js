@@ -37,6 +37,7 @@ async function spawnBackend({ supabase = {}, local = true } = {}) {
             KESAMI_PBKDF2_ITERATIONS: '1000',
             KESAMI_SUMMARY_PROVIDER: 'claude',
             KESAMI_GEMINI_API_KEY: '',
+            KESAMI_OPENAI_API_KEY: '',
             KESAMI_SARVAM_API_KEY: '',
             KESAMI_CHAT_EMBEDDINGS: 'off',
             KESAMI_SUPABASE_DB_URL: '',

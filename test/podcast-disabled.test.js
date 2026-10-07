@@ -85,7 +85,7 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
         serveMediaScheme: recordCall('recorder:serve-scheme'),
         registerHandlers: recordCall('recorder:register-handlers'),
         installDisplayMediaHandler: recordCall('recorder:display-media'),
-        shutdown: recordCall('recorder:shutdown'),
+        shutdown: async () => { calls.push('recorder:shutdown'); },
     };
     const podcast = {
         PODCASTS_ROOT: '/test/podcasts',
@@ -98,14 +98,18 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
     class Window {
         constructor() {
             this.webContents = {
-                session: { setPermissionRequestHandler() {} },
+                session: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} },
                 setWindowOpenHandler() {},
+                on() {},
+                isDestroyed: () => false,
             };
         }
         once() {}
         on() {}
         loadFile() { calls.push('window:load'); }
     }
+    let quit;
+    const quitting = new Promise(resolve => { quit = resolve; });
     runDesktopFile('main.js', {
         electron: {
             app: {
@@ -113,7 +117,9 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
                 on: (name, listener) => events.set(name, listener),
                 whenReady: () => ({ then: callback => { ready = Promise.resolve().then(callback); } }),
                 getVersion: () => 'test',
+                quit: () => quit(),
             },
+            ipcMain: { handle() {}, on() {} },
             BrowserWindow: Window,
             Menu: { buildFromTemplate: template => template, setApplicationMenu() {} },
             shell: {},
@@ -122,9 +128,14 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
         },
         './recorder': recorder,
         './podcast': podcast,
-        './widget': { registerHandlers() {}, create() {}, destroy() {} },
-        './menubar': { registerHandlers() {}, create() {}, destroy() {} },
+        './legacy': { adoptLegacyLocations() {} },
+        './widget': { registerHandlers() {}, create() {}, destroy() {}, setLive() {} },
+        './menubar': { registerHandlers() {}, create() {}, destroy() {}, refresh: async () => {} },
         './systemAudio': { registerHandlers() {}, shutdown() {} },
+        './micUsage': { registerHandlers() {}, shutdown() {} },
+        './googleSignIn': { registerHandlers() {} },
+        './rendererSecurity': require('../apps/desktop/rendererSecurity'),
+        'node:url': require('node:url'),
         './dock': { showDockIcon: async () => {} },
         './connection': { registerHandlers: recordCall('connection:register-handlers') },
         'node:child_process': { spawn: () => assert.fail('The healthy existing backend should be reused') },
@@ -148,10 +159,13 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
         process: { env: {}, argv: [], platform: 'linux', on() {} },
         console: { log() {}, error: message => errors.push(message) },
         setTimeout,
+        setInterval: () => ({ unref() {} }),
+        clearInterval() {},
         URL,
     });
     await ready;
-    await events.get('before-quit')();
+    events.get('before-quit')({ preventDefault() {} });
+    await quitting;
 
     assert.deepEqual(errors, []);
     assert.ok(calls.includes('window:load'));

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, nativeImage, nativeTheme } = require('electron');
+const { app, BrowserWindow, Menu, shell, nativeImage, nativeTheme, ipcMain } = require('electron');
 const legacy = require('./legacy');
 legacy.adoptLegacyLocations(app);
 const recorder = require('./recorder');
@@ -14,6 +14,8 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { secureWindow, isTrustedFrame, permissionAllowed, trustedIpc } = require('./rendererSecurity');
 
 const BACKEND_HOST = process.env.CORE_BACKEND_HOST || '127.0.0.1';
 const BACKEND_PORT = Number(process.env.CORE_BACKEND_PORT || 48900);
@@ -25,9 +27,10 @@ const BACKEND_WATCH_MS = 10_000;
 // A packaged build carries the backend and UI in Resources, and keeps backend
 // data in Application Support rather than beside a source checkout.
 const CORE_BACKEND_DIR = app.isPackaged ? app.getPath('userData') : path.resolve(__dirname, '..', 'core-backend');
+const CORE_BACKEND_FILE = process.platform === 'win32' ? 'kesami-core-backend.exe' : 'kesami-core-backend';
 const CORE_BACKEND_BINARY = app.isPackaged
-    ? path.join(process.resourcesPath, 'kesami-core-backend')
-    : path.join(CORE_BACKEND_DIR, 'target', 'release', 'kesami-core-backend');
+    ? path.join(process.resourcesPath, CORE_BACKEND_FILE)
+    : path.join(CORE_BACKEND_DIR, 'target', 'release', CORE_BACKEND_FILE);
 const UI_DIST_DIR = app.isPackaged ? path.join(process.resourcesPath, 'ui') : path.resolve(__dirname, '..', 'ui', 'dist');
 const UI_DIST_INDEX = path.join(UI_DIST_DIR, 'index.html');
 const UI_DIST_WIDGET = path.join(UI_DIST_DIR, 'widget.html');
@@ -130,13 +133,20 @@ async function startBackend() {
         if (auth.cloudUrl && !env.KESAMI_CLOUD_URL && !env.ALPHA_CLOUD_URL) env.KESAMI_CLOUD_URL = auth.cloudUrl;
     }
 
+    const options = { cwd: CORE_BACKEND_DIR, env, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true };
     if (fs.existsSync(CORE_BACKEND_BINARY)) {
-        backendProcess = spawn(CORE_BACKEND_BINARY, [], { cwd: CORE_BACKEND_DIR, env, stdio: ['ignore', 'inherit', 'inherit'] });
+        backendProcess = spawn(CORE_BACKEND_BINARY, [], options);
     } else {
+        if (app.isPackaged) throw new Error('the packaged core backend is missing; reinstall Kesami');
         console.log('[Kesami] release binary not found, falling back to cargo run');
-        backendProcess = spawn('cargo', ['run', '--release'], { cwd: CORE_BACKEND_DIR, env, stdio: ['ignore', 'inherit', 'inherit'] });
+        backendProcess = spawn('cargo', ['run', '--release'], options);
     }
 
+    let launchError = null;
+    backendProcess.once('error', cause => {
+        launchError = cause;
+        backendProcess = null;
+    });
     backendProcess.on('exit', code => {
         if (code !== 0 && code !== null) console.error(`[Kesami] core backend exited with code ${code}`);
         backendProcess = null;
@@ -150,7 +160,7 @@ async function startBackend() {
         await wait(400);
     }
 
-    throw new Error(`the core backend did not answer on :${BACKEND_PORT}`);
+    throw new Error(launchError ? `the core backend could not start: ${launchError.message}` : `the core backend did not answer on :${BACKEND_PORT}`);
 }
 
 let backendStarting = null;
@@ -206,7 +216,9 @@ function buildMenu() {
         { role: 'editMenu' },
         {
             label: 'View',
-            submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'togglefullscreen' }],
+            submenu: app.isPackaged
+                ? [{ role: 'togglefullscreen' }]
+                : [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'togglefullscreen' }],
         },
         { role: 'windowMenu' },
     ];
@@ -216,6 +228,7 @@ function buildMenu() {
 
 function createWindow() {
     const dark = nativeTheme.shouldUseDarkColors;
+    const useDevServer = !app.isPackaged && (process.argv.includes('--dev') || !fs.existsSync(UI_DIST_INDEX));
 
     mainWindow = new BrowserWindow({
         width: 1280,
@@ -226,33 +239,34 @@ function createWindow() {
         title: 'KESAMI',
         // The toolbar in the UI is a drag region, so the window keeps the traffic
         // lights but drops the title bar.
-        titleBarStyle: 'hiddenInset',
-        trafficLightPosition: { x: 14, y: 18 },
+        ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 18 } } : { autoHideMenuBar: true }),
         backgroundColor: dark ? '#1c1c1e' : '#f2f2f7',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
-            sandbox: false,
+            sandbox: true,
         },
     });
 
     // The renderer needs the microphone, the screen once recording is on, and
     // notifications for the pre-meeting reminder; everything else stays denied.
-    mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-        callback(permission === 'media' || permission === 'audioCapture' || permission === 'display-capture' || permission === 'notifications');
+    secureWindow(mainWindow, {
+        url: useDevServer ? DEV_UI_URL : pathToFileURL(UI_DIST_INDEX).href,
+        role: 'main',
+        openExternal: url => shell.openExternal(url),
     });
-
-    recorder.installDisplayMediaHandler(mainWindow.webContents.session);
-
-    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
-        return { action: 'deny' };
+    mainWindow.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+        callback(permissionAllowed(contents, permission, details));
     });
+    mainWindow.webContents.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
+        permissionAllowed(contents, permission, { ...details, securityOrigin: requestingOrigin })
+    );
+
+    recorder.installDisplayMediaHandler(mainWindow.webContents.session, request => isTrustedFrame(mainWindow?.webContents, request.frame));
 
     mainWindow.once('ready-to-show', () => mainWindow.show());
 
-    const useDevServer = process.argv.includes('--dev') || !fs.existsSync(UI_DIST_INDEX);
     if (useDevServer) {
         console.log(`[Kesami] loading the dev server at ${DEV_UI_URL}`);
         mainWindow.loadURL(DEV_UI_URL);
@@ -281,15 +295,15 @@ function showMainWindow() {
 }
 
 function createWidget() {
-    const useDevServer = process.argv.includes('--dev') || !fs.existsSync(UI_DIST_WIDGET);
+    const useDevServer = !app.isPackaged && (process.argv.includes('--dev') || !fs.existsSync(UI_DIST_WIDGET));
     widget.create({
         devUrl: useDevServer ? new URL('widget.html', DEV_UI_URL).href : null,
         distFile: UI_DIST_WIDGET,
         preload: path.join(__dirname, 'widgetPreload.js'),
         onActivateMain: showMainWindow,
-        onCommand: action => {
+        onCommand: (action, promptId) => {
             if (!mainWindow || mainWindow.isDestroyed()) return;
-            mainWindow.webContents.send('shell:widget-command', action);
+            mainWindow.webContents.send('shell:widget-command', action, promptId);
         },
     });
 }
@@ -308,13 +322,14 @@ if (!app.requestSingleInstanceLock()) {
         showDockIcon({ app, nativeImage }).catch(cause => console.error(`[Kesami] could not apply the Dock icon: ${cause.message}`));
         buildMenu();
         recorder.serveMediaScheme();
-        recorder.registerHandlers();
-        widget.registerHandlers();
-        menubar.registerHandlers();
-        systemAudio.registerHandlers();
-        micUsage.registerHandlers();
-        googleSignIn.registerHandlers();
-        connection.registerHandlers();
+        const ipc = trustedIpc(ipcMain);
+        recorder.registerHandlers(ipc);
+        widget.registerHandlers(ipc);
+        menubar.registerHandlers(ipc);
+        systemAudio.registerHandlers(ipc);
+        micUsage.registerHandlers(ipc);
+        googleSignIn.registerHandlers(ipc);
+        connection.registerHandlers(ipc);
 
         menubar.create({
             onActivateMain: showMainWindow,
@@ -348,15 +363,26 @@ if (!app.requestSingleInstanceLock()) {
         if (process.platform !== 'darwin') app.quit();
     });
 
-    app.on('before-quit', async () => {
+    let quitting = false;
+    let shutdownComplete = false;
+    app.on('before-quit', event => {
+        if (shutdownComplete) return;
+        // Electron does not await an async event listener. Hold the first quit
+        // until writes are closed, then allow the second quit to proceed.
+        event.preventDefault();
+        if (quitting) return;
+        quitting = true;
         // Close the recording file before the backend goes away, so quitting
         // mid-meeting still leaves something playable on disk.
         widget.destroy();
         menubar.destroy();
         systemAudio.shutdown();
         micUsage.shutdown();
-        await recorder.shutdown();
-        stopBackend();
+        recorder.shutdown().catch(cause => console.error(`[Kesami] could not finish recording: ${cause.message}`)).finally(() => {
+            stopBackend();
+            shutdownComplete = true;
+            app.quit();
+        });
     });
     process.on('exit', stopBackend);
 }

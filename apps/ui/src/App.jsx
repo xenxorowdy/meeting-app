@@ -19,7 +19,7 @@ const NewMeetingModal = lazy(() => import('@/components/NewMeetingModal').then(m
 const SettingsModal = lazy(() => import('@/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 import { isRecordingSupported } from '@/lib/screenRecorder';
 import { getBackendConnection } from '@/lib/connection.js';
-import { fetchSession, signOut as signOutSession, hasLocalMode, enterLocalMode, rememberLocalMode } from '@/lib/auth.js';
+import { restoreSession, signOut as signOutSession, hasLocalMode, rememberLocalMode } from '@/lib/auth.js';
 import { DesignWorkspace } from '@/components/design/DesignWorkspace';
 import { SignInView } from '@/components/design/SignInView';
 import { LogoMark } from '@/components/brand/Logo';
@@ -39,25 +39,38 @@ export default function App() {
     const [account, setAccount] = useState(null);
     const [authNotice, setAuthNotice] = useState('');
     const [openSettingsOnEntry, setOpenSettingsOnEntry] = useState(false);
+    const [restoreFailed, setRestoreFailed] = useState(false);
+    const [restoreAttempt, setRestoreAttempt] = useState(0);
     const [theme, setTheme] = useTheme();
     const [preferences] = usePreferences();
 
     // A session token survives restarts in the desktop shell (and for this
     // browser session otherwise), so a stored session is restored before the
     // sign-in screen is shown.
+    const restoreActiveRef = useRef(true);
     useEffect(() => {
         let cancelled = false;
+        let retry = null;
         if (!getBackendConnection().token) {
             setEntered(hasLocalMode());
-            return;
+            return undefined;
         }
-        fetchSession().then(restored => {
-            if (!cancelled) { setAccount(restored); setEntered(Boolean(restored) || hasLocalMode()); }
+        restoreSession(restoreAttempt ? { attempts: 1 } : undefined).then(({ account: restored, reachable }) => {
+            if (cancelled || !restoreActiveRef.current) return;
+            if (!reachable) {
+                setRestoreFailed(true);
+                retry = setTimeout(() => setRestoreAttempt(value => value + 1), 5000);
+                return;
+            }
+            setRestoreFailed(false);
+            setAccount(restored);
+            setEntered(Boolean(restored) || hasLocalMode());
         });
         return () => {
             cancelled = true;
+            clearTimeout(retry);
         };
-    }, []);
+    }, [restoreAttempt]);
 
     const handleSignOut = useCallback(async () => {
         try {
@@ -77,9 +90,32 @@ export default function App() {
     if (entered === null) {
         return (
             <div className="ks-app" data-theme={theme}>
-                <div className="ks-session-restore" role="status">
-                    <LogoMark size={22} live /> Restoring your session…
-                </div>
+                {restoreFailed ? (
+                    <div className="ks-session-restore ks-session-restore-failed" role="alert">
+                        <LogoMark size={22} />
+                        <p>Kesami can’t reach its engine yet. It restarts on its own, so this usually clears in a few seconds.</p>
+                        <div>
+                            <button type="button" className="ks-button ks-primary" onClick={() => setRestoreAttempt(value => value + 1)}>
+                                Try again
+                            </button>
+                            <button
+                                type="button"
+                                className="ks-button"
+                                onClick={() => {
+                                    restoreActiveRef.current = false;
+                                    setRestoreFailed(false);
+                                    setEntered(false);
+                                }}
+                            >
+                                Sign in again
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="ks-session-restore" role="status">
+                        <LogoMark size={22} live /> Restoring your session…
+                    </div>
+                )}
             </div>
         );
     }
@@ -102,13 +138,6 @@ export default function App() {
                     theme={theme}
                     onToggleTheme={setTheme}
                     notice={authNotice}
-                    onContinue={async destination => {
-                        if (destination !== 'settings') await enterLocalMode();
-                        setAccount(null);
-                        setAuthNotice('');
-                        setOpenSettingsOnEntry(destination === 'settings');
-                        setEntered(true);
-                    }}
                     onAuthenticated={value => { setAccount(value); setAuthNotice(''); setOpenSettingsOnEntry(false); setEntered(true); }}
                 />
             )}
@@ -121,6 +150,8 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     const [citationFocus, setCitationFocus] = useState(null);
     const [isExportOpen, setIsExportOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(openSettingsOnEntry);
+    const [settingsTab, setSettingsTab] = useState(null);
+    const [dismissedRecordingError, setDismissedRecordingError] = useState(null);
     const [isNewMeetingOpen, setIsNewMeetingOpen] = useState(false);
     const [pendingStart, setPendingStart] = useState(null);
     const exportMounted = useOnceOpen(isExportOpen);
@@ -141,6 +172,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         clientMicMuted,
         systemAudioMuted,
         recordingState,
+        stopFailed,
         error,
         micError,
         systemAudioError,
@@ -153,7 +185,12 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         loadMeeting,
         regenerateSummary,
         updateActiveMeeting,
+        updateCommitments,
+        updatePostMeetingAction,
         renameSpeaker,
+        changeTurnSpeaker,
+        liveRoster,
+        meetingClient,
         toggleMicMute,
         toggleSystemAudioMute,
         updateSettings,
@@ -187,6 +224,10 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     const wasLiveRef = useRef(false);
 
     const invitedNames = useMemo(() => attendeeNames(activeMeeting?.metadata?.calendarEvent), [activeMeeting?.metadata?.calendarEvent]);
+    const speakerNames = useMemo(() => {
+        const inCall = Array.isArray(activeMeeting?.metadata?.participants) ? activeMeeting.metadata.participants : [];
+        return [...new Set([...inCall, ...liveRoster, ...invitedNames].map(name => String(name).trim()).filter(Boolean))];
+    }, [activeMeeting?.metadata?.participants, liveRoster, invitedNames]);
 
     // Live turns arrive over the backend socket.
     useEffect(() => {
@@ -213,7 +254,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         async (title, sourceId, event, mode = 'audio') => {
             clearTurns();
             setActiveTab('live');
-            await startMeeting(title, { sourceId, event, mode });
+            return await startMeeting(title, { sourceId, event, mode });
         },
         [clearTurns, startMeeting]
     );
@@ -257,16 +298,6 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
     useEffect(() => {
         globalThis.kesamiShell?.setRecordingIndicator(isRecording);
     }, [isRecording]);
-
-    useEffect(() => {
-        globalThis.kesamiShell?.setWidgetState({
-            sessionState,
-            micMuted,
-            systemAudioMuted,
-            title: activeMeeting?.title || null,
-            canControl: isRecording || isPaused,
-        });
-    }, [sessionState, micMuted, systemAudioMuted, activeMeeting?.title, isRecording, isPaused]);
 
     useMeetingReminder({
         events: calendar.events,
@@ -330,21 +361,36 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
         });
     }, [setOnMeetingEnded, handleStopRecording, settings.autoStopOnMeetingEnd]);
 
-    // Unscheduled-call prompts: browser meetings arrive through the backend
+    // Call prompts: browser meetings arrive through the backend
     // socket, microphone use through the desktop shell (subscribed in the hook).
-    const { notifyUnscheduledCall } = useUnscheduledCallPrompt({
+    const { callPrompt, notifyUnscheduledCall, startCallPrompt, dismissCallPrompt } = useUnscheduledCallPrompt({
         enabled: settings.promptForUnscheduledCalls !== false,
         canRecord: isConnected && isIdle,
-        events: calendar.events,
-        onStart: () => startWithSource('', null, null, 'audio'),
+        onStart: () => {
+            const event = eventForNow(calendarEventsRef.current);
+            return startWithSource(event?.title || '', null, event, 'audio');
+        },
     });
     useEffect(() => {
         setOnUnscheduledCall(notifyUnscheduledCall);
     }, [setOnUnscheduledCall, notifyUnscheduledCall]);
 
     useEffect(() => {
-        return globalThis.kesamiShell?.onWidgetCommand(action => {
-            if (action === 'toggle-mic') toggleMicMute();
+        globalThis.kesamiShell?.setWidgetState({
+            sessionState,
+            micMuted,
+            systemAudioMuted,
+            title: activeMeeting?.title || null,
+            canControl: isRecording || isPaused,
+            callPrompt: settings.promptForUnscheduledCalls !== false && isIdle ? callPrompt : null,
+        });
+    }, [sessionState, micMuted, systemAudioMuted, activeMeeting?.title, isRecording, isPaused, isIdle, callPrompt, settings.promptForUnscheduledCalls]);
+
+    useEffect(() => {
+        return globalThis.kesamiShell?.onWidgetCommand((action, promptId) => {
+            if (action === 'start-call') startCallPrompt(promptId);
+            else if (action === 'dismiss-call') dismissCallPrompt(promptId);
+            else if (action === 'toggle-mic') toggleMicMute();
             else if (action === 'toggle-system') toggleSystemAudioMute();
             else if (action === 'toggle-pause') {
                 if (isPaused) resumeMeeting();
@@ -353,7 +399,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                 if (isRecording || isPaused) handleStopRecording();
             }
         });
-    }, [toggleMicMute, toggleSystemAudioMute, isPaused, isRecording, resumeMeeting, pauseMeeting, handleStopRecording]);
+    }, [startCallPrompt, dismissCallPrompt, toggleMicMute, toggleSystemAudioMute, isPaused, isRecording, resumeMeeting, pauseMeeting, handleStopRecording]);
 
     const handleSelectHistoryMeeting = useCallback(
         async (meeting, citation = null) => {
@@ -366,9 +412,18 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
             const loaded = await loadMeeting(meeting.id);
             setCitationFocus(citation);
             // Open the transcript by default; a timed citation can open replay.
-            if (loaded) setActiveTab(citation && loaded.recording?.videoPath ? 'replay' : 'live');
+            if (loaded) setActiveTab(citation && !citation.preferTranscript && loaded.recording?.videoPath ? 'replay' : 'live');
         },
         [loadMeeting, isIdle, activeMeeting?.id]
+    );
+
+    const handleUpdateMeeting = useCallback(
+        async updates => {
+            const result = await updateActiveMeeting(updates);
+            if (result?.ok && ('title' in updates || 'summaryMarkdown' in updates)) history.reload();
+            return result;
+        },
+        [updateActiveMeeting, history]
     );
 
     const handleRenameSpeaker = useCallback(
@@ -378,6 +433,15 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
             return result;
         },
         [renameSpeaker, history]
+    );
+
+    const handleChangeTurnSpeaker = useCallback(
+        async (turnId, nextName) => {
+            const result = await changeTurnSpeaker(turnId, nextName);
+            if (result.ok) history.reload();
+            return result;
+        },
+        [changeTurnSpeaker, history]
     );
 
     // Standard desktop shortcuts: view switching, export, preferences, record toggle
@@ -420,7 +484,9 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
 
     const meetingAudioError = recordingState?.hasSystemAudio ? null : systemAudioError;
 
-    const banner = !isConnected
+    const banner = stopFailed
+        ? { tone: 'warning', text: error || 'Recording stopped. Retry saving this meeting before starting another.', actionLabel: 'Retry save', onAction: handleStopRecording }
+        : !isConnected
         ? {
               tone: 'destructive',
               text:
@@ -429,16 +495,20 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                       : 'Your workspace is offline. Check your connection and service access in Settings.',
           }
         : micError
-          ? { tone: 'warning', text: `Microphone unavailable: ${micError}` }
+          ? { tone: 'warning', text: `Microphone unavailable: ${micError}`, onDismiss: null }
           : meetingAudioError
-            ? { tone: 'warning', text: `Meeting audio: ${meetingAudioError}` }
+            ? { tone: 'warning', text: `Meeting audio: ${meetingAudioError}`, onDismiss: null }
             : endNotice
-              ? { tone: 'warning', text: endNotice }
+              ? { tone: 'warning', text: endNotice, onDismiss: () => setEndNotice(null) }
               : error
               ? { tone: 'warning', text: error }
-              : recordingState?.error
-                ? { tone: 'warning', text: `Screen recording: ${recordingState.error}` }
+              : recordingState?.error && recordingState.error !== dismissedRecordingError
+                ? { tone: 'warning', text: `Recording: ${recordingState.error}`, onDismiss: () => setDismissedRecordingError(recordingState.error) }
                 : null;
+    const openSettings = useCallback(tab => {
+        setSettingsTab(typeof tab === 'string' ? tab : null);
+        setIsSettingsOpen(true);
+    }, []);
 
     return (
         <div className="ks-app" data-theme={theme}>
@@ -456,6 +526,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                     isRecording,
                     isPaused,
                     isProcessing,
+                    stopFailed,
                     autoSummarize: settings.autoSummarize !== false,
                     isGeneratingSummary,
                     durationSeconds,
@@ -466,7 +537,9 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                     systemAudioSeen,
                     systemAudioError: meetingAudioError,
                     recordingState,
-                    nameSuggestions: invitedNames,
+                    nameSuggestions: speakerNames,
+                    liveRoster,
+                    meetingClient,
                     onStart: handleStartRecording,
                     onStop: handleStopRecording,
                     onPause: pauseMeeting,
@@ -479,12 +552,15 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                 banner={banner}
                 onRetry={refresh}
                 onDismiss={clearError}
-                onSettings={() => setIsSettingsOpen(true)}
+                onSettings={openSettings}
                 onNewMeeting={() => setIsNewMeetingOpen(true)}
                 onExport={() => setIsExportOpen(true)}
                 onSelectMeeting={handleSelectHistoryMeeting}
                 onRenameSpeaker={handleRenameSpeaker}
-                onUpdate={updateActiveMeeting}
+                onChangeTurnSpeaker={handleChangeTurnSpeaker}
+                onUpdate={handleUpdateMeeting}
+                onUpdateCommitments={updateCommitments}
+                onUpdatePostMeetingAction={updatePostMeetingAction}
                 onRegenerateSummary={regenerateSummary}
                 onAddNote={addNote}
                 onDeleteNote={deleteNote}
@@ -520,12 +596,21 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                         onClose={() => setIsNewMeetingOpen(false)}
                         providers={calendar.providers}
                         onCreated={calendar.refreshEvents}
+                        onOpenCalendarSettings={() => {
+                            setIsNewMeetingOpen(false);
+                            openSettings('calendar');
+                        }}
                     />
                 )}
                 {settingsMounted && (
                     <SettingsModal
                         isOpen={isSettingsOpen}
+                        initialTab={settingsTab}
                         onClose={() => setIsSettingsOpen(false)}
+                        onOpenPlans={() => {
+                            setIsSettingsOpen(false);
+                            setActiveTab('pricing');
+                        }}
                         settings={settings}
                         license={license}
                         isConnected={isConnected}

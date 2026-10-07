@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { cn } from '@/utils/cn';
 import { SourceChip } from '@/components/SourceChip';
 
@@ -131,7 +131,9 @@ function splitRow(row) {
         .map(cell => cell.trim());
 }
 
-export function MarkdownText({ markdown, className, citations = [], onOpenCitation }) {
+const NO_CITATIONS = [];
+
+export const MarkdownText = memo(function MarkdownText({ markdown, className, citations = NO_CITATIONS, onOpenCitation }) {
     if (!markdown || !markdown.trim()) return null;
 
     const blocks = parseBlocks(markdown);
@@ -198,4 +200,4 @@ export function MarkdownText({ markdown, className, citations = [], onOpenCitati
             })}
         </div>
     );
-}
+});

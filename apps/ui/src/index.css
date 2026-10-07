@@ -128,7 +128,7 @@
     body {
         @apply bg-background text-foreground;
         margin: 0;
-        font-family: 'Inter', theme('fontFamily.sans');
+        font-family: theme('fontFamily.sans');
         font-size: 13px;
         line-height: 1.4;
         -webkit-font-smoothing: antialiased;

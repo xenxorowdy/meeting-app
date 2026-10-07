@@ -8,14 +8,17 @@
     "scripts": {
         "start": "electron .",
         "dev": "electron . --dev",
-        "dist:mac": "node prepareAuthConfig.js && electron-builder --mac"
+        "dist:mac": "node prepareAuthConfig.js && electron-builder --mac",
+        "dist:win": "node prepareAuthConfig.js && electron-builder --win"
     },
     "devDependencies": {
-        "electron": "^30.5.1",
+        "electron": "44.5.1",
         "electron-builder": "^26.15.3"
     },
     "build": {
-        "electronVersion": "30.5.1",
+        "electronVersion": "44.5.1",
+        "electronLanguages": ["en"],
+        "compression": "maximum",
         "appId": "com.kesami.meetings",
         "productName": "Kesami",
         "directories": {
@@ -35,27 +38,16 @@
         "extraResources": [
             {
                 "from": "../ui/dist",
-                "to": "ui"
+                "to": "ui",
+                "filter": ["**/*", "!**/*.map"]
             },
             {
                 "from": "../ui/src/lib/calendarEvents.js",
                 "to": "calendar/calendarEvents.mjs"
             },
             {
-                "from": "../core-backend/target/release/kesami-core-backend",
-                "to": "kesami-core-backend"
-            },
-            {
                 "from": "packaging/generated/auth-config.json",
                 "to": "auth-config.json"
-            },
-            {
-                "from": "assets/SystemAudioDump",
-                "to": "SystemAudioDump"
-            },
-            {
-                "from": "assets/mic-watch",
-                "to": "mic-watch"
             }
         ],
         "mac": {
@@ -74,7 +66,22 @@
                 }
             ],
             "icon": "packaging/icon.icns",
+            "extraResources": [
+                {
+                    "from": "../core-backend/target/release/kesami-core-backend",
+                    "to": "kesami-core-backend"
+                },
+                {
+                    "from": "assets/SystemAudioDump",
+                    "to": "SystemAudioDump"
+                },
+                {
+                    "from": "assets/mic-watch",
+                    "to": "mic-watch"
+                }
+            ],
             "category": "public.app-category.productivity",
+            "minimumSystemVersion": "13.0",
             "identity": null,
             "hardenedRuntime": false,
             "notarize": false,
@@ -90,6 +97,32 @@
         },
         "dmg": {
             "title": "Kesami"
+        },
+        "win": {
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ],
+            "icon": "packaging/icon.png",
+            "extraResources": [
+                {
+                    "from": "../core-backend/target/release/kesami-core-backend.exe",
+                    "to": "kesami-core-backend.exe"
+                }
+            ]
+        },
+        "nsis": {
+            "oneClick": true,
+            "perMachine": false,
+            "artifactName": "${productName}-Setup-${arch}.${ext}",
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "Kesami",
+            "runAfterFinish": true
         }
     }
 }

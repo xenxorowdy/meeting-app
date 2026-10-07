@@ -27,9 +27,9 @@ test('Rust chat retrieves bounded evidence, persists threads, cancels and invali
     const fixtures = Array.from({ length: 205 }, (_, i) => ({
         id: `m${i}`, title: `Synthetic meeting ${i}`, startedAt: 1000 + i, endedAt: 2000 + i,
         durationSeconds: 1, createdAt: 1000, metadata: {}, summaryMarkdown: '', keyDecisions: [],
-        actionItems: i === 204 ? Array.from({ length: 105 }, (_, n) => ({ task: `Task ${n}`, owner: 'Asha' })) : [],
+        actionItems: i === 204 ? Array.from({ length: 105 }, (_, n) => ({ task: `Task ${n}`, owner: 'Asha', ...(n < 2 ? { completed: n === 0 } : {}) })) : [],
         transcript: [{ id: 't1', channel: 'system', speaker: 'Asha', startMs: 10, endMs: 100, confidence: 1,
-            text: i === 204 ? `${'Unrelated cafeteria discussion. '.repeat(200)} Zephyr deadline is Friday. ${'Unrelated weather discussion. '.repeat(200)}` : 'Outside scope secret: Monday deadline.' }],
+            text: i === 204 ? `${'Unrelated cafeteria discussion. '.repeat(200)} Zephyr deadline is Friday. I will send Acme the API proposal on Friday. ${'Unrelated weather discussion. '.repeat(200)}` : 'Outside scope secret: Monday deadline.' }],
     }));
     const liveFixture = { ...fixtures[204], id: 'live', endedAt: null, actionItems: [], transcript: [
         { ...fixtures[204].transcript[0], text: 'Zephyr deadline is Friday.' },
@@ -42,10 +42,19 @@ test('Rust chat retrieves bounded evidence, persists threads, cancels and invali
     await fs.writeFile(fake, `#!${process.execPath}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (args[args.indexOf('--tools') + 1] !== '' || !args.includes('--strict-mcp-config') || !args.includes('--disable-slash-commands')) process.exit(3);
+if (args.includes('--tools') && (args[args.indexOf('--tools') + 1] !== '' || !args.includes('--strict-mcp-config') || !args.includes('--disable-slash-commands'))) process.exit(3);
 let input = '';
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
+  if (!input.startsWith('{')) {
+    const structured = { executiveSummary: 'Asha will send Acme a proposal.', sections: [], keyDecisions: [], actionItems: [{ task: 'Task 0', owner: 'Asha', deadline: 'Friday', priority: 'Medium', sourceTurns: [0] }], followUpEmail: { subject: '', body: '' }, memoryFacts: [
+      { kind: 'company', name: 'Acme', quote: 'I will send Acme the API proposal on Friday.', owner: '', date: '', sourceTurns: [0] },
+      { kind: 'commitment', name: 'Send proposal', quote: 'I will send Acme the API proposal on Friday.', owner: 'Asha', date: 'Friday', sourceTurns: [0] },
+      { kind: 'company', name: 'Fabricated Ltd', quote: 'I will send Acme the API proposal on Friday.', owner: '', date: '', sourceTurns: [0] }
+    ] };
+    process.stdout.write(JSON.stringify({ structured_output: structured }));
+    return;
+  }
   const packet = JSON.parse(input);
   fs.appendFileSync(process.env.KESAMI_CHAT_CAPTURE, input + '\\n');
   const correcting = args[args.indexOf('--system-prompt') + 1].includes('Your previous response failed validation:');
@@ -63,7 +72,7 @@ process.stdin.on('end', () => {
         cwd: root, stdio: ['ignore', 'ignore', 'ignore'],
         env: { ...process.env, KESAMI_DATA_DIR: root, KESAMI_LIBRARY_DIR: library, CORE_BACKEND_DATA_FILE: path.join(root, 'absent.json'),
             CORE_BACKEND_PORT: String(port), KESAMI_CLAUDE_BIN: fake,
-            KESAMI_SUMMARY_PROVIDER: 'claude', KESAMI_GEMINI_API_KEY: '', KESAMI_SARVAM_API_KEY: '', KESAMI_CHAT_EMBEDDINGS: 'off', KESAMI_CHAT_CAPTURE: capture },
+            KESAMI_SUMMARY_PROVIDER: 'claude', KESAMI_GEMINI_API_KEY: '', KESAMI_OPENAI_API_KEY: '', KESAMI_SARVAM_API_KEY: '', KESAMI_CHAT_EMBEDDINGS: 'off', KESAMI_CHAT_CAPTURE: capture },
     });
     let spawnError;
     backend.on('error', error => { spawnError = error; });
@@ -183,8 +192,37 @@ process.stdin.on('end', () => {
     const page2 = await api(actionRoute, { question: 'List every action item, page 2', requestId: randomUUID() });
     assert.equal(page2.data.coverage.shownItems, 5);
     assert.equal(page2.data.coverage.nextPage, null);
+    const openTasks = await api(actionRoute, { question: 'What action items are still unresolved?', requestId: randomUUID() });
+    assert.equal(openTasks.data.retrievalMode, 'structured');
+    assert.equal(openTasks.data.coverage.totalItems, 104);
+    assert.ok(!openTasks.data.citations.some(source => JSON.parse(source.excerpt).completed === true));
+    assert.match(openTasks.data.answer, /unknown status is labeled/);
+    assert.ok(openTasks.data.citations.every(source => source.startedAt === fixtures[204].startedAt));
+    const filtered = await api('/api/chat/threads', { scope: { type: 'all', entity: { kind: 'person', name: 'Asha' }, fromMs: 1200, toMs: 1204 } });
+    assert.equal(filtered.status, 200);
+    assert.equal(filtered.data.eligibleMeetings, 5);
+    const filteredAnswer = await api(`/api/chat/threads/${filtered.data.id}/messages`, { question: 'Zephyr deadline?', requestId: randomUUID() });
+    assert.equal(filteredAnswer.status, 200);
+    assert.ok(filteredAnswer.data.citations.every(source => Number(source.meetingId.slice(1)) >= 200));
+    const unknownCompany = await api('/api/chat/threads', { scope: { type: 'all', entity: { kind: 'company', name: 'Imaginary' } } });
+    assert.equal(unknownCompany.data.eligibleMeetings, 0);
+    const unknownAnswer = await api(`/api/chat/threads/${unknownCompany.data.id}/messages`, { question: 'Pricing?', requestId: randomUUID() });
+    assert.equal(unknownAnswer.data.status, 'insufficient_evidence');
     const noEvidence = await api(route, { question: 'Quantum aardvark?', requestId: randomUUID() });
     assert.equal(noEvidence.data.status, 'insufficient_evidence');
+
+    const generated = await api('/api/meetings/m204/summarize', { regenerate: true });
+    assert.equal(generated.status, 200, JSON.stringify(generated.data));
+    assert.equal(generated.data.summary.actionItems.find(item => item.task === 'Task 0').completed, true);
+    const storedMemory = (await api('/api/meetings/m204')).data.meeting.metadata.meetingMemory;
+    assert.equal(storedMemory.version, 1);
+    assert.equal(storedMemory.facts.length, 2, 'unsupported company is discarded');
+    assert.deepEqual(storedMemory.facts[1].sourceTurnIds, ['t1']);
+    const companyThread = await api('/api/chat/threads', { scope: { type: 'all', entity: { kind: 'company', name: 'Acme' } } });
+    assert.equal(companyThread.data.eligibleMeetings, 1);
+    const commitmentAnswer = await api(`/api/chat/threads/${companyThread.data.id}/messages`, { question: 'What commitments did Asha make to Acme?', requestId: randomUUID() });
+    assert.equal(commitmentAnswer.status, 200, JSON.stringify(commitmentAnswer.data));
+    assert.ok(commitmentAnswer.data.citations.every(source => source.meetingId === 'm204' && source.startedAt === 1204));
 
     const slowId = randomUUID();
     const slow = api(route, { question: 'slow Zephyr deadline?', requestId: slowId });

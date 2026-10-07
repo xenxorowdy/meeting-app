@@ -35,8 +35,8 @@ async function run() {
         webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
     });
     const errors = [];
-    window.webContents.on('console-message', (_, level, message) => {
-        if (level === 3) errors.push(message);
+    window.webContents.on('console-message', ({ level, message }) => {
+        if (level === 'error') errors.push(message);
     });
     window.webContents.session.setPermissionRequestHandler((_, __, callback) => callback(false));
     window.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (_, done) => done({ cancel: true }));

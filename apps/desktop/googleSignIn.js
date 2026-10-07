@@ -83,8 +83,8 @@ async function start(options) {
     }
 }
 
-function registerHandlers() {
-    ipcMain.handle('google-sign-in:start', (_event, options) => start(options));
+function registerHandlers(ipc = ipcMain) {
+    ipc.handle('google-sign-in:start', (_event, options) => start(options));
 }
 
 module.exports = { registerHandlers };

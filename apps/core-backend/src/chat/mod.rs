@@ -219,6 +219,11 @@ pub async fn resolve_scope(store: &Store, scope: &Value) -> Result<Vec<Meeting>>
     if from.zip(to).is_some_and(|(a, b)| a > b) {
         return Err("Start date must precede end date".into());
     }
+    let entity = scope.get("entity").map(|v| {
+        let kind = v["kind"].as_str().filter(|s| matches!(*s, "person" | "company" | "topic" | "project")).ok_or("Invalid memory entity type")?;
+        let name = v["name"].as_str().map(str::trim).filter(|s| !s.is_empty() && s.len() <= 300).ok_or("Enter an entity name")?;
+        Ok::<_, String>((kind, name))
+    }).transpose()?;
     let source = store.meetings.read().await;
     if ids.iter().any(|id| !source.contains_key(id)) {
         return Err("A selected meeting no longer exists".into());
@@ -232,6 +237,7 @@ pub async fn resolve_scope(store: &Store, scope: &Value) -> Result<Vec<Meeting>>
                     || m.metadata.get("collectionId").unwrap_or(&Value::Null) == &scope["folderId"])
                 && from.is_none_or(|n| m.started_at >= n)
                 && to.is_none_or(|n| m.started_at <= n)
+                && entity.is_none_or(|(kind, name)| crate::memory::matches_entity(m, kind, name))
         })
         .cloned()
         .collect();
@@ -268,7 +274,7 @@ impl EvidencePacket {
             conversation.push(msg);
         }
         conversation.reverse();
-        let sources:Vec<_> = passages.iter().enumerate().map(|(i,p)|json!({"source":i+1,"meetingId":p.meeting_id,"title":p.title,"startedAt":p.started_at,"kind":p.source_kind,"startMs":p.start_ms,"content":p.excerpt})).collect();
+        let sources:Vec<_> = passages.iter().enumerate().map(|(i,p)|json!({"source":i+1,"meetingId":p.meeting_id,"title":p.title,"startedAt":p.started_at,"date":chrono::DateTime::from_timestamp_millis(p.started_at).map(|d|d.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string()),"kind":p.source_kind,"startMs":p.start_ms,"content":p.excerpt})).collect();
         let scope_note = if coverage["live"] == true { "This meeting is in progress. Answer only from the captured transcript and notes; newer speech is not included. Say 'so far' rather than implying the meeting is complete." } else { "Use the supplied meeting evidence." };
         let mut prompt = json!({"question":question,"conversation":conversation,"sources":sources,"coverage":coverage,"scopeNote":scope_note}).to_string();
         // UTF-8 bytes conservatively upper-bound common provider tokenizers. Reserve
@@ -350,17 +356,17 @@ async fn answer(
     let live = meetings.iter().any(|meeting| meeting.ended_at.is_none());
     if meetings.is_empty() {
         return Ok(
-            json!({"answer":"There are no completed meetings in this scope yet.","citations":[],"status":"insufficient_evidence","coverage":{"eligibleMeetings":0,"retrievedMeetings":0}}),
+            json!({"answer":"No completed meetings match this scope or its filters.","citations":[],"status":"insufficient_evidence","coverage":{"eligibleMeetings":0,"retrievedMeetings":0}}),
         );
     }
     let lower = question.to_lowercase();
     // Exhaustive lists are answered directly from structured records, without an LLM.
-    if !live && (lower.contains("every") || lower.contains("all"))
-        && (lower.contains("action item") || lower.contains("action items"))
+    let unresolved = ["unresolved", "incomplete", "outstanding", "still open", "not completed", "unfinished"].iter().any(|s| lower.contains(s));
+    if !live && (unresolved || lower.contains("every") || lower.contains("all"))
+        && (lower.contains("action item") || lower.contains("tasks"))
     {
         let mut lines = vec![
-            "Recorded action items (completion status is unknown unless explicitly recorded):"
-                .to_string(),
+            if unresolved { "Action items not marked complete (unknown status is labeled; this does not prove they remain unresolved):" } else { "Recorded action items (completion status is unknown unless explicitly recorded):" }.to_string(),
         ];
         let page = lower
             .rsplit_once("page ")
@@ -369,22 +375,31 @@ async fn answer(
             .unwrap_or(1)
             .clamp(1, 10_000);
         let offset = (page - 1) * 100;
+        let qualifiers: Vec<_> = index::search_terms(question).into_iter().filter(|t| !["list", "every", "all", "action", "item", "items", "tasks", "task", "which", "still", "unresolved", "incomplete", "outstanding", "open", "not", "completed", "unfinished", "page"].contains(&t.as_str()) && !t.chars().all(|c| c.is_ascii_digit())).collect();
         let mut citations = Vec::new();
         let mut total = 0;
         let mut shown = 0;
         for m in &meetings {
+            let entity_text = if qualifiers.is_empty() { String::new() } else { crate::memory::entities(m).iter().map(|(_, name)|name.as_str()).collect::<Vec<_>>().join(" ") };
             for item in &m.action_items {
+                let status = crate::memory::task_status(item);
+                if unresolved && status == "completed" { continue; }
+                if !qualifiers.is_empty() {
+                    let searchable = format!("{item} {entity_text}").to_lowercase();
+                    if !qualifiers.iter().all(|term| searchable.contains(term)) { continue; }
+                }
                 total += 1;
                 if total <= offset || shown >= 100 {
                     continue;
                 }
                 shown += 1;
-                lines.push(format!("- {} [{}]", item, shown));
-                citations.push(json!({"number":shown,"meetingId":m.id,"title":m.title,"sourceKind":"action","excerpt":item.to_string(),"sourceRevision":revision(m),"available":true}));
+                let date = chrono::DateTime::from_timestamp_millis(m.started_at).map(|d|d.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string()).unwrap_or_default();
+                lines.push(format!("- {} — {} · {} · {} ({date}) [{shown}]", item["task"].as_str().unwrap_or("Untitled task"), item["owner"].as_str().unwrap_or("Unassigned"), status, m.title));
+                citations.push(json!({"number":shown,"meetingId":m.id,"title":m.title,"startedAt":m.started_at,"sourceKind":"action","excerpt":item.to_string(),"turnIds":item.get("sourceTurnIds").cloned().unwrap_or(json!([])),"sourceRevision":revision(m),"available":true}));
             }
         }
         if total == 0 {
-            lines.push("No action items are stored in these meetings. This does not establish that none were discussed.".into());
+            lines.push("No matching action items are recorded in this scope. This does not establish that none were discussed or that all work is complete.".into());
         }
         let next_page = (total > offset + shown).then_some(page + 1);
         if offset > 0 || next_page.is_some() {
@@ -396,7 +411,7 @@ async fn answer(
             return Err("Sources changed. Please retry.".into());
         }
         return Ok(
-            json!({"answer":lines.join("\n\n"),"citations":citations,"status":if offset>0 || next_page.is_some() {"partial"} else {"answered"},"retrievalMode":"structured","coverage":{"eligibleMeetings":meetings.len(),"totalItems":total,"shownItems":shown,"page":page,"nextPage":next_page,"truncated":offset>0 || next_page.is_some()}}),
+            json!({"answer":lines.join("\n\n"),"citations":citations,"status":if offset>0 || next_page.is_some() {"partial"} else {"answered"},"retrievalMode":"structured","coverage":{"eligibleMeetings":meetings.len(),"totalItems":total,"shownItems":shown,"unresolved":unresolved,"page":page,"nextPage":next_page,"truncated":offset>0 || next_page.is_some()}}),
         );
     }
     let mut query = question.to_string();
@@ -466,7 +481,7 @@ async fn answer(
         .answer_evidence(&packet, None)
         .await
         .map_err(|_| {
-            "The answer provider could not complete this request. Check AI settings and retry."
+            "Meeting AI could not complete this request. Sign in with Google and retry."
         })?;
     let citations = match packet.validate_answer(&response) {
         Ok(citations) => citations,
@@ -474,7 +489,7 @@ async fn answer(
             // One corrective attempt remains inside the request's existing
             // timeout and cancellation guard. Never fabricate citation markers.
             response = state.summarizer.answer_evidence(&packet, Some(&error)).await
-                .map_err(|_| "The answer provider could not complete this request. Check AI settings and retry.")?;
+                .map_err(|_| "Meeting AI could not complete this request. Sign in with Google and retry.")?;
             packet.validate_answer(&response)
                 .map_err(|_| "The AI couldn't produce an answer with valid source references. Please try again.")?
         }

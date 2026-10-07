@@ -60,14 +60,11 @@ test('refuses a sibling directory that merely shares the prefix', () => {
     assert.equal(resolveMedia(relative), null);
 });
 
-test('a meeting directory is always a single safe segment, out of sight while it records', () => {
+test('a meeting directory is always a single safe segment, and invalid ids cannot alias another meeting', () => {
     assert.equal(meetingDir('2d3ce081-4f71-422a-8278-108dcdbdc436'), path.join(IN_PROGRESS, '2d3ce081-4f71-422a-8278-108dcdbdc436'));
-    // Separators and dots are stripped rather than escaped, so no id can climb.
-    assert.equal(meetingDir('../../etc/passwd'), path.join(IN_PROGRESS, 'etcpasswd'));
-    assert.equal(meetingDir('a/b'), path.join(IN_PROGRESS, 'ab'));
-    assert.throws(() => meetingDir('///'), /needs a meeting id/);
-    assert.throws(() => meetingDir(''), /needs a meeting id/);
-    assert.throws(() => meetingDir(null), /needs a meeting id/);
+    for (const id of ['../../etc/passwd', 'a/b', '///', '', null, 'x'.repeat(129)]) {
+        assert.throws(() => meetingDir(id), /needs a valid meeting id/);
+    }
 });
 
 test('recordings made before the library moved still resolve, under the old root', () => {

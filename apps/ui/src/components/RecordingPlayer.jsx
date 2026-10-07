@@ -18,6 +18,7 @@ import {
     SkipForward,
     Minus,
     Plus,
+    CirclePlay,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatMs, getSpeakerStyle, initialsFor } from '@/lib/speakers';
 import { speakerColor } from '@/components/design/designHelpers';
+import { copyToClipboard } from '@/lib/clipboard';
 
 // `timeupdate` fires around 4-60 times a second depending on the platform, but the
 // highlight only has to keep up with speech, so recomputing more often than this
@@ -35,9 +37,10 @@ const PLAYBACK_RATES = [0.5, 1, 2, 4];
 
 function EmptyState({ title, children }) {
     return (
-        <section className="flex h-full min-h-[300px] flex-col justify-center rounded-xl border p-8">
-            <h3 className="text-title3 font-semibold">{title}</h3>
-            <p className="mt-2 max-w-sm text-callout text-muted-foreground">{children}</p>
+        <section className="ks-replay-empty flex h-full min-h-[300px] w-full flex-col items-center justify-center gap-3 px-8 py-24 text-center">
+            <CirclePlay aria-hidden="true" />
+            <h3 className="text-headline font-medium">{title}</h3>
+            <p className="max-w-sm text-callout text-muted-foreground">{children}</p>
         </section>
     );
 }
@@ -337,13 +340,13 @@ export function RecordingPlayer({ compact = false, meeting, citationFocus = null
     }, [playbackRate, src]);
 
     if (!meeting) {
-        return <EmptyState title="No meeting selected">Pick a meeting from History to replay its recording alongside the transcript.</EmptyState>;
+        return <EmptyState title="No meeting selected">Open a meeting from your library to replay its recording alongside the transcript.</EmptyState>;
     }
 
     if (!recording?.videoPath) {
         return (
-            <EmptyState title="This meeting wasn’t recorded">
-                Choose a screen in the recording source picker when you start your next meeting. Its replay will appear here once recording finishes.
+            <EmptyState title="This meeting has no recording">
+                Meetings you record in the Kesami desktop app, with sound only or with your screen, can be replayed here once they finish.
             </EmptyState>
         );
     }
@@ -395,8 +398,10 @@ export function RecordingPlayer({ compact = false, meeting, citationFocus = null
                         className="ks-button"
                         onClick={async () => {
                             try {
-                                await navigator.clipboard.writeText(`${meeting.title} · ${formatMs(currentMs)}`);
+                                await copyToClipboard(`${meeting.title} · ${formatMs(currentMs)}`);
+                                setShareError('');
                                 setCopied(true);
+                                setTimeout(() => setCopied(false), 2000);
                             } catch {
                                 setShareError('Could not copy the timestamp.');
                             }

@@ -10,7 +10,7 @@ This project is decoupled into two clean, independent applications:
 packages/meeting-app/
 ├── apps/
 │   ├── ui/             # React 19 + Tailwind CSS + Shadcn UI Desktop Client
-│   ├── core-backend/   # Rust performance core + Node.js compatibility implementation
+│   ├── core-backend/   # Rust core engine + hosted cloud relay
 │   └── extension/      # Chrome extension: participant names from Google Meet / Zoom
 └── package.json        # Workspace orchestrator
 ```
@@ -29,15 +29,15 @@ packages/meeting-app/
 The production entrypoint is now Rust (`core-backend/src/main.rs`). It keeps the
 existing HTTP and WebSocket contract on `127.0.0.1:48900`, uses Tokio for
 concurrent connections, and moves the binary audio packet parser and integer RMS
-calculation out of the JavaScript event loop. The original Node.js engine remains
-available as `npm run test:legacy` while the remaining native STT and licensing
-providers are migrated behind the same API.
+calculation out of the JavaScript event loop. The hosted cloud relay is a second,
+much smaller Rust binary in the same crate (`src/bin/kesami-cloud-relay.rs`); see
+[CLOUD_TRANSCRIPTION.md](CLOUD_TRANSCRIPTION.md).
 
-- **Native Audio Capture**: ScreenCaptureKit (macOS) & WASAPI Loopback (Windows) over 16-byte binary streaming IPC.
+- **Meeting Audio Capture**: ScreenCaptureKit through the `SystemAudioDump` helper on macOS, over 16-byte binary streaming IPC. Windows has no native helper: Screen + sound recordings use Electron's display-media loopback, and audio-only meetings need a loopback input device (Stereo Mix, VB-Audio Cable).
 - **Audio DSP & VAD**: Zero-copy 16 kHz resampler, integer sum-of-squares RMS VAD, spectral noise cancellation on the microphone, and acoustic echo suppression against the meeting audio.
 - **Speech-to-Text (STT)**: Sarvam Saaras — realtime streaming WebSocket transcription during the meeting, with optional post-meeting diarization over the completed recording.
 - **Diarization Engine**: Guaranteed physical `"You"` attribution on mic + live voiceprint clustering on meeting audio + provider diarization and meeting-client names when available. See [Who said what](#who-said-what).
-- **Storage Layer**: one visible folder per meeting on disk (see [The meeting library](#the-meeting-library)), written atomically, with multi-format export (Markdown, JSON); SQLite/FTS5 remains behind the compatibility implementation during migration.
+- **Storage Layer**: one visible folder per meeting on disk (see [The meeting library](#the-meeting-library)), written atomically, with multi-format export (Markdown, JSON).
 - **AI Summarizer**: Structured meeting intelligence through the Claude Code CLI (no API key required), with a keyword heuristic as the offline fallback. See [Meeting summaries](#meeting-summaries).
 - **Accounts & Pricing**: SQLite accounts and sessions with automatic legacy JSON migration. The local plan is free; Pro pricing is configurable for preview, with payment collection and subscription enforcement still pending.
 - **API Server**: Standalone WebSocket and HTTP/IPC bridge for frontend communication.
@@ -80,6 +80,8 @@ summary.
 | `KESAMI_SUMMARY_MODEL`          | `sonnet`            | Model alias or full name passed to `--model`.                                                   |
 | `KESAMI_SUMMARY_TIMEOUT_SECS`   | `180`               | Per-summary wall-clock budget.                                                                  |
 | `KESAMI_SUMMARY_MAX_BUDGET_USD` | _(unset)_           | Optional `--max-budget-usd` cap per summary.                                                    |
+| `KESAMI_OPENAI_API_KEY`         | _(unset)_           | Gemini backup: `gpt-5-nano` runs only after Gemini answers 429 (quota exhausted).               |
+| `KESAMI_OPENAI_DAILY_BUDGET_USD` | `3`                | Estimated OpenAI spend allowed per UTC day; tallied in `.kesami/openai-usage.json`.            |
 | `KESAMI_SUMMARY_SAFE_MODE`      | `1`                 | Set to `0` to let local Claude Code customizations apply.                                       |
 
 `GET /health` and `GET /api/status` report the resolved engine under `summary`
@@ -336,34 +338,47 @@ npm run test:backend
 # Run podcast project, render, and path-confinement tests
 npm run test:podcast
 
-# Run the legacy JavaScript compatibility suite during migration
-npm run --prefix apps/core-backend test:legacy
+# Run the hosted cloud relay tests
+npm run test:cloud
 ```
 
-## macOS releases
+## Releases
 
 Kesami is distributed for free through
 [xenxorowdy/kesami-releases](https://github.com/xenxorowdy/kesami-releases). That repo holds only
 the downloads, the install instructions, and `install.sh`; the source stays here.
 
-**Supported:** Apple Silicon Macs (arm64) only. The bundled `SystemAudioDump` helper and the build
-target are arm64-only, so there is no Intel or universal build yet.
+**Supported:**
+
+- **macOS:** Apple Silicon Macs (arm64), macOS 13 or later. The bundled `SystemAudioDump` helper and
+  the build target are arm64-only, so there is no Intel or universal build yet.
+- **Windows:** 64-bit Windows 10 or 11 (x64). The installer is `Kesami-Setup-x64.exe`, with no version
+  in its name so `releases/latest/download/Kesami-Setup-x64.exe` always fetches the newest one. It
+  installs per user, with no administrator prompt. There is no system audio helper on Windows: an
+  audio-only meeting hears the other participants only through a loopback input (Stereo Mix,
+  VB-Audio Cable) picked under Settings › Audio › Meeting audio, while a **Screen + sound**
+  recording gets them from Electron's display-media loopback.
 
 ### Build locally
 
 ```bash
 npm ci
-npm run dist:mac    # UI + release backend + mic-watch, then electron-builder
+KESAMI_CLOUD_URL=https://<your-relay-host> npm run dist:mac    # on a Mac: UI + release backend + mic-watch, then electron-builder
+KESAMI_CLOUD_URL=https://<your-relay-host> npm run dist:win    # on Windows: UI + release backend, then electron-builder
 ```
 
 This needs `apps/ui/.env` with `KESAMI_AUTH_PROVIDER=supabase`, `KESAMI_SUPABASE_URL`, and
-`KESAMI_SUPABASE_PUBLISHABLE_KEY`. The `.dmg` and `.zip` land in `apps/desktop/release/`.
+`KESAMI_SUPABASE_PUBLISHABLE_KEY`, plus a public HTTPS `KESAMI_CLOUD_URL` in the
+packaging environment. Provider keys stay on the relay server. The `.dmg`, `.zip` and `.exe` land in
+`apps/desktop/release/`. Each platform's build needs its own release backend
+(`kesami-core-backend` or `kesami-core-backend.exe`), so build on the platform you are packaging for.
 
 ### Publish a release
 
-After committing the release changes, pushing a `v*` tag runs
-`.github/workflows/release-mac.yml` on a GitHub macOS runner. It sets the app version from the tag,
-builds the `.dmg` and `.zip`, and attaches them to a release with the same tag in `kesami-releases`.
+After committing the release changes, pushing a `v*` tag runs `.github/workflows/release.yml`. It
+sets the app version from the tag, builds the `.dmg` and `.zip` on a macOS runner and
+`Kesami-Setup-x64.exe` on a Windows runner, then a final job attaches all three to a release with the
+same tag in `kesami-releases`. If either platform fails, nothing is published.
 
 ```bash
 git push origin HEAD
@@ -371,8 +386,8 @@ git tag v1.0.2
 git push origin v1.0.2
 ```
 
-You can also start it by hand from the Actions tab (**Release macOS → Run workflow**) with a tag
-name.
+You can also start it by hand from the Actions tab (**Release → Run workflow**) with a tag name.
+Running it for a tag that already has a release replaces that release's files and notes.
 
 One-time repo setup (Settings → Secrets and variables → Actions):
 
@@ -380,7 +395,7 @@ One-time repo setup (Settings → Secrets and variables → Actions):
 | -------- | --------------------------------- | ------------------------------------------------------------------------------ |
 | Variable | `KESAMI_SUPABASE_URL`             | Supabase project URL                                                           |
 | Variable | `KESAMI_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` key                                                         |
-| Variable | `KESAMI_CLOUD_URL` (optional)     | HTTPS origin of the transcription relay (see `CLOUD_TRANSCRIPTION.md`)         |
+| Variable | `KESAMI_CLOUD_URL`     | Required HTTPS origin of the transcription and AI relay (see `CLOUD_TRANSCRIPTION.md`)         |
 | Secret   | `RELEASES_TOKEN`                  | Fine-grained token with **Contents: read and write** on `kesami-releases` only |
 
 The workflow's built-in `GITHUB_TOKEN` stays read-only. It can't write to another repository, which
@@ -397,4 +412,9 @@ release and drag Kesami into Applications. Auto-update is not available for unsi
 The separate `kesami-releases/install.sh` currently requires a valid code signature and therefore
 cannot install this unsigned build. Use the DMG until that installer supports unsigned releases.
 
-The release workflow does not need Apple signing or notarization credentials.
+The Windows installer is not Authenticode-signed either, so Microsoft Defender SmartScreen shows
+"Windows protected your PC" until the download builds reputation. Users who trust the app click
+**More info**, then **Run anyway**. Signing it needs a code-signing certificate, which
+electron-builder picks up from `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` once one exists.
+
+The release workflow does not need Apple or Windows signing credentials.

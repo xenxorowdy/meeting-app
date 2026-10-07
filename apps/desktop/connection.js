@@ -34,11 +34,11 @@ async function save(value) {
     return current;
 }
 
-function registerHandlers() {
-    ipcMain.on('connection:get', event => {
+function registerHandlers(ipc = ipcMain) {
+    ipc.on('connection:get', event => {
         event.returnValue = load();
     });
-    ipcMain.handle('connection:save', (_event, value) => save(value));
+    ipc.handle('connection:save', (_event, value) => save(value));
 }
 
 module.exports = { registerHandlers };

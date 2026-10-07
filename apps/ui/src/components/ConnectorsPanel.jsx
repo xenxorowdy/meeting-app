@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { getBackendConnection } from '@/lib/connection';
+import { copyToClipboard } from '@/lib/clipboard';
 
 const KIND_LABELS = {
     notes: 'Posts the summary, decisions and action items',
@@ -54,7 +55,7 @@ function ConnectorCard({ connector, connectors, disabled }) {
     const handleAutoPush = checked =>
         run('Saving…', async () => {
             await connectors.save(connector.provider, { autoPush: checked });
-            return checked ? 'New meetings will be sent automatically.' : 'Automatic sending is off.';
+            return checked ? 'New meeting notes will be sent automatically.' : 'Automatic sending is off.';
         });
 
     const handleSignIn = () =>
@@ -80,12 +81,12 @@ function ConnectorCard({ connector, connectors, disabled }) {
                 {connector.connected && (
                     <div className="flex shrink-0 items-center gap-2">
                         <Label htmlFor={`auto-${connector.provider}`} className="text-footnote text-muted-foreground">
-                            Send after every meeting
+                            {connector.kind === 'tasks' ? 'Review required for each action' : 'Send after every meeting'}
                         </Label>
                         <Switch
                             id={`auto-${connector.provider}`}
-                            checked={connector.autoPush}
-                            disabled={disabled || busy}
+                            checked={connector.kind !== 'tasks' && connector.autoPush}
+                            disabled={disabled || busy || connector.kind === 'tasks'}
                             onCheckedChange={handleAutoPush}
                         />
                         <Button variant="ghost" size="iconSm" aria-label={open ? 'Hide details' : 'Edit details'} onClick={() => setOpen(!open)}>
@@ -98,11 +99,9 @@ function ConnectorCard({ connector, connectors, disabled }) {
             {expanded && (
                 <div className="space-y-4 border-t border-border px-4 py-4">
                     <p className="text-footnote text-muted-foreground">{connector.help}</p>
+                    {['slack', 'jira'].includes(connector.provider) && <p className="text-footnote text-muted-foreground">After connecting, open a finished meeting → Summary → Share summary to Slack or Jira. Review the text and confirm each manual delivery.{connector.provider === 'jira' && ' Summary sharing creates one recap issue; the legacy Export flow creates tasks.'}</p>}
                     {connector.oauth && !connector.configured && (
-                        <p className="text-footnote text-warning">
-                            Google sign-in isn’t set up for this workspace yet. It uses the same OAuth client as Google Calendar, with the Google
-                            Drive API enabled.
-                        </p>
+                        <p className="text-footnote text-warning">{connector.label} isn’t available in this version of Kesami yet.</p>
                     )}
                     {connector.fields?.length > 0 && (
                         <div className="grid gap-4 sm:grid-cols-2">
@@ -185,19 +184,23 @@ function ConnectorCard({ connector, connectors, disabled }) {
 }
 
 function CopyButton({ value, label }) {
-    const [copied, setCopied] = useState(false);
+    const [state, setState] = useState('idle');
     return (
         <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-                navigator.clipboard.writeText(value);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
+            onClick={async () => {
+                try {
+                    await copyToClipboard(value);
+                    setState('copied');
+                } catch {
+                    setState('failed');
+                }
+                setTimeout(() => setState('idle'), 2000);
             }}
         >
-            {copied ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
-            {copied ? 'Copied' : label}
+            {state === 'copied' ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            {state === 'copied' ? 'Copied' : state === 'failed' ? 'Couldn’t copy' : label}
         </Button>
     );
 }
@@ -205,8 +208,9 @@ function CopyButton({ value, label }) {
 function McpSection({ mcp }) {
     const connection = getBackendConnection();
     const url = `${connection.url}${mcp?.path || '/mcp'}`;
-    const header = connection.token ? ` --header "Authorization: Bearer ${connection.token}"` : '';
-    const headers = connection.token ? { headers: { Authorization: `Bearer ${connection.token}` } } : {};
+    const token = mcp?.hosted ? connection.token : '';
+    const header = token ? ` --header "Authorization: Bearer ${token}"` : '';
+    const headers = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
     const snippets = {
         claude: `claude mcp add --transport http kesami ${url}${header}`,
         json: JSON.stringify({ mcpServers: { kesami: { url, ...headers } } }, null, 2),

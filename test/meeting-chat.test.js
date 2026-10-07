@@ -36,3 +36,19 @@ test('copied answers replace known citation markers with a readable source list'
     assert.equal(result, '**Friday.**\n\nLiteral `[1]` and unrelated [2026].\n\nSources\n• Roadmap · 1:05');
     assert.equal(copyAnswerText({ content: 'An ordinary answer [3]' }), 'An ordinary answer [3]');
 });
+
+test('memory scope keeps folder boundaries and validates inclusive local dates', async () => {
+    const { memoryScope, citationDate, scopeKey } = await load();
+    const base = { type: 'folder', folderId: 'customers' };
+    const scoped = memoryScope(base, { kind: 'company', name: ' Acme ', from: '2026-01-01', to: '2026-01-31' });
+    assert.deepEqual(scoped.entity, { kind: 'company', name: 'Acme' });
+    assert.equal(scoped.folderId, 'customers');
+    assert.equal(scoped.fromMs, new Date('2026-01-01T00:00:00').getTime());
+    assert.equal(scoped.toMs, new Date('2026-01-31T23:59:59.999').getTime());
+    assert.notEqual(scopeKey(scoped), scopeKey(base));
+    assert.deepEqual(memoryScope(base, {}), base);
+    assert.throws(() => memoryScope(base, { from: 'invalid' }), /valid dates/);
+    assert.throws(() => memoryScope(base, { from: '2026-02-02', to: '2026-01-01' }), /precede/);
+    assert.equal(citationDate(null), '');
+    assert.ok(citationDate(scoped.fromMs));
+});

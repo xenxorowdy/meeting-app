@@ -21,6 +21,17 @@ jobs:
       - name: Integration tests against the real backend
         run: node --test test/meeting-chat-integration.test.js test/live-echo.test.js test/live-speakers.test.js
 
+  backend-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/core-backend
+      - name: Build the backend for Windows
+        run: cargo build --manifest-path apps/core-backend/Cargo.toml
+
   ui:
     runs-on: ubuntu-latest
     steps:

@@ -8,6 +8,7 @@ export function ResizableChatPanel({ open, onClose, children }) {
     const [preferredWidth, setPreferredWidth] = useState(DEFAULT_WIDTH);
     const [maximum, setMaximum] = useState(800);
     const [dragging, setDragging] = useState(false);
+    const [expanded, setExpanded] = useState(false);
     const minimum = Math.min(320, maximum);
     const width = Math.max(minimum, Math.min(maximum, preferredWidth));
     const clamp = value => Math.max(minimum, Math.min(maximum, value));
@@ -48,18 +49,25 @@ export function ResizableChatPanel({ open, onClose, children }) {
     }, [dragging, minimum, maximum]);
 
     useEffect(() => {
+        if (!open) setExpanded(false);
+    }, [open]);
+
+    useEffect(() => {
         if (!open) return;
         const closeOnEscape = event => {
-            if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"]')) onClose();
+            if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"]')) {
+                if (expanded) setExpanded(false);
+                else onClose();
+            }
         };
         window.addEventListener('keydown', closeOnEscape);
         return () => window.removeEventListener('keydown', closeOnEscape);
-    }, [open, onClose]);
+    }, [open, onClose, expanded]);
 
     if (!open) return null;
     return (
-        <aside aria-label="Ask AI panel" ref={panel} className={`ks-meeting-chat${dragging ? ' is-resizing' : ''}`} style={{ '--ks-chat-width': `${width}px` }}>
-            <div
+        <aside aria-label="Ask AI panel" ref={panel} className={`ks-meeting-chat${dragging ? ' is-resizing' : ''}${expanded ? ' is-expanded' : ''}`} style={{ '--ks-chat-width': `${width}px` }}>
+            {!expanded && <div
                 className="ks-chat-resize"
                 role="separator"
                 tabIndex={0}
@@ -86,8 +94,8 @@ export function ResizableChatPanel({ open, onClose, children }) {
                 }}
             >
                 <span />
-            </div>
-            {children}
+            </div>}
+            {typeof children === 'function' ? children({ isExpanded: expanded, onToggleExpand: () => setExpanded(value => !value) }) : children}
         </aside>
     );
 }

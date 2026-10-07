@@ -12,7 +12,12 @@ class FakeWindow {
         this.options = options;
         this.bounds = { x: options.x, y: options.y, width: options.width, height: options.height };
         this.sent = [];
-        this.webContents = { id: windows.length + 1, send: (channel, payload) => this.sent.push({ channel, payload }) };
+        this.webContents = {
+            id: windows.length + 1,
+            send: (channel, payload) => this.sent.push({ channel, payload }),
+            on() {},
+            setWindowOpenHandler() {},
+        };
         this.destroyed = false;
         this.visible = false;
         this.focusStolen = false;
@@ -127,7 +132,7 @@ function openLive(onActivateMain = () => {}, onCommand = () => {}) {
 
 const STATE = { sessionState: 'recording', micMuted: false, systemAudioMuted: true, title: 'Weekly sync', canControl: true };
 
-const invoke = (channel, sender, arg) => handlers.get(channel)({ sender }, arg);
+const invoke = (channel, sender, ...args) => handlers.get(channel)({ sender }, ...args);
 
 test('expanding pins the bottom-right corner so the panel grows up and left', () => {
     const before = { x: 900, y: 700, width: COLLAPSED.width, height: COLLAPSED.height };
@@ -157,6 +162,23 @@ test('a work area smaller than the expanded panel still yields a reachable origi
     assert.equal(after.y, tiny.y + SCREEN_MARGIN);
 });
 
+test('expanding on a short display fits the whole widget inside its work area', () => {
+    const original = { ...WORK_AREA };
+    Object.assign(WORK_AREA, { x: 0, y: 0, width: 360, height: 500 });
+    try {
+        const created = openLive();
+        invoke('widget:set-expanded', created.webContents, true);
+        assert.equal(created.bounds.width, 320);
+        assert.equal(created.bounds.height, 460);
+        assert.ok(created.bounds.x >= SCREEN_MARGIN);
+        assert.ok(created.bounds.y >= SCREEN_MARGIN);
+        assert.ok(created.bounds.x + created.bounds.width <= WORK_AREA.width - SCREEN_MARGIN);
+        assert.ok(created.bounds.y + created.bounds.height <= WORK_AREA.height - SCREEN_MARGIN);
+    } finally {
+        Object.assign(WORK_AREA, original);
+    }
+});
+
 test('the widget stays hidden until a meeting is being transcribed', () => {
     const created = open();
 
@@ -180,6 +202,7 @@ test('the widget opens without stealing focus and survives a full-screen call', 
     assert.equal(created.options.skipTaskbar, true);
     assert.equal(created.options.webPreferences.contextIsolation, true);
     assert.equal(created.options.webPreferences.nodeIntegration, false);
+    assert.equal(created.options.webPreferences.sandbox, true);
 });
 
 test('window-scoped channels refuse a sender that is not the widget', () => {
@@ -310,4 +333,69 @@ test('destroy closes the window so it cannot hold the app open at quit', () => {
 
     assert.equal(created.isDestroyed(), true);
     assert.equal(widget.isOpen(), false);
+});
+
+const promptState = () => ({
+    ...STATE, sessionState: 'idle', canControl: false,
+    callPrompt: { id: 'call-prompt-1', source: 'microphone', createdAt: Date.now(), expiresAt: Date.now() + 120000, status: 'ready' },
+});
+
+test('an idle call prompt opens at card size independently of recording widget settings', () => {
+    const created = open();
+    invoke('widget:set-visible', { id: 'main-window' }, false);
+    invoke('widget:hide', created.webContents);
+    invoke('widget:set-state', { id: 'main-window' }, promptState());
+    assert.equal(created.visible, true);
+    assert.equal(created.focusStolen, false);
+    assert.equal(created.bounds.width, widget._testing.PROMPT.width);
+    assert.equal(created.bounds.height, widget._testing.PROMPT.height);
+    invoke('widget:set-expanded', created.webContents, true);
+    assert.equal(created.bounds.width, widget._testing.PROMPT.width);
+    invoke('widget:set-state', { id: 'main-window' }, { ...STATE, callPrompt: null });
+    assert.equal(created.visible, false, 'the disabled recording widget stays hidden');
+    assert.equal(created.bounds.width, COLLAPSED.width);
+    invoke('widget:set-visible', { id: 'main-window' }, true);
+});
+
+test('prompt commands carry an identifier and reject stale, expired, pending, and foreign requests', () => {
+    const commands = [];
+    const created = open(() => {}, (...args) => commands.push(args));
+    const state = promptState();
+    invoke('widget:set-state', { id: 'main-window' }, state);
+    assert.equal(invoke('widget:command', created.webContents, 'start-call', state.callPrompt.id), true);
+    assert.equal(invoke('widget:command', created.webContents, 'dismiss-call', state.callPrompt.id), true);
+    assert.deepEqual(commands, [['start-call', state.callPrompt.id], ['dismiss-call', state.callPrompt.id]]);
+    assert.equal(invoke('widget:command', created.webContents, 'start-call', 'old'), false);
+    assert.equal(invoke('widget:command', { id: 'impostor' }, 'start-call', state.callPrompt.id), false);
+    assert.equal(invoke('widget:command', created.webContents, 'stop'), false);
+    invoke('widget:set-state', { id: 'main-window' }, { ...state, callPrompt: { ...state.callPrompt, status: 'starting' } });
+    assert.equal(invoke('widget:command', created.webContents, 'start-call', state.callPrompt.id), false);
+    invoke('widget:set-state', { id: 'main-window' }, { ...state, callPrompt: { ...state.callPrompt, expiresAt: Date.now() - 1 } });
+    assert.equal(created.visible, false);
+    assert.equal(invoke('widget:command', created.webContents, 'start-call', state.callPrompt.id), false);
+});
+
+test('a fresh widget subscription can retrieve state and shell closure clears an orphaned card', () => {
+    const created = open();
+    const state = promptState();
+    invoke('widget:set-state', { id: 'main-window' }, state);
+    assert.deepEqual(invoke('widget:get-state', created.webContents), state);
+    assert.equal(invoke('widget:get-state', { id: 'impostor' }), null);
+    widget.setLive(false);
+    assert.equal(created.visible, false);
+    assert.equal(invoke('widget:get-state', created.webContents).callPrompt, null);
+});
+
+test('the native shell expires the card at two minutes even if the renderer stops updating', t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+    const created = open();
+    const state = promptState();
+    invoke('widget:set-state', { id: 'main-window' }, state);
+    t.mock.timers.tick(119999);
+    assert.equal(created.visible, true);
+    t.mock.timers.tick(1);
+    assert.equal(created.visible, false);
+    assert.equal(created.bounds.width, COLLAPSED.width);
+    assert.equal(created.sent.at(-1).payload.callPrompt, null);
+    widget.destroy();
 });

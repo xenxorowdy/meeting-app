@@ -4,27 +4,51 @@ version = "2.0.0"
 edition = "2021"
 description = "Rust core engine for the Kesami meeting assistant"
 license = "Commercial"
+default-run = "kesami-core-backend"
+
+[features]
+default = ["app"]
+app = [
+    "dep:dotenvy",
+    "dep:fastembed",
+    "dep:jsonwebtoken",
+    "dep:serde",
+    "dep:tokio-util",
+    "dep:uuid",
+]
+
+[[bin]]
+name = "kesami-core-backend"
+path = "src/main.rs"
+required-features = ["app"]
 
 [dependencies]
 base64 = "0.22.1"
+bytes = "1.11"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-dotenvy = "0.15.7"
-jsonwebtoken = "9.3"
-hmac = "0.12"
-sha2 = "0.10"
-subtle = "2.6"
+dotenvy = { version = "0.15.7", optional = true }
+jsonwebtoken = { version = "9.3", optional = true }
+hmac = { version = "0.12" }
+http-body-util = "0.1.5"
+hyper = { version = "1.11", features = ["server", "http1"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
+sha2 = { version = "0.10" }
+subtle = { version = "2.6" }
 rusqlite = { version = "0.38", features = ["bundled"] }
-fastembed = { version = "=6.0.2", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
+fastembed = { version = "=6.0.2", default-features = false, features = ["ort-download-binaries-rustls-tls"], optional = true }
 # HTTPS provider clients use rustls, avoiding a runtime OpenSSL dependency.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"] }
 serde_json = "1.0.132"
 tokio = { version = "1.45.1", features = ["macros", "net", "rt-multi-thread", "sync", "time", "io-util", "signal", "fs", "process"] }
-tokio-util = { version = "0.7", features = ["io"] }
+tokio-util = { version = "0.7", features = ["io"], optional = true }
 futures-util = { version = "0.3", features = ["sink"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
-uuid = { version = "1.11.0", features = ["v4", "serde"] }
+uuid = { version = "1.11.0", features = ["v4", "serde"], optional = true }
+
+[dev-dependencies]
+uuid = { version = "1.11.0", features = ["v4"] }
 
 [profile.release]
 codegen-units = 1

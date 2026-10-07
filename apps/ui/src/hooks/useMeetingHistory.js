@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiText, normalizeMeeting } from '@/lib/backend';
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -69,14 +69,22 @@ export function useMeetingHistory({ enabled = true } = {}) {
         return apiText(`/api/meetings/${id}/export?format=${encodeURIComponent(format)}`);
     }, []);
 
-    return {
-        meetings,
-        searchQuery,
-        setSearchQuery,
-        isLoading,
-        error,
-        reload: () => load(searchQuery),
-        deleteMeeting,
-        exportMeeting,
-    };
+    const clearError = useCallback(() => setError(null), []);
+
+    const reload = useCallback(() => load(searchQuery), [load, searchQuery]);
+
+    return useMemo(
+        () => ({
+            meetings,
+            searchQuery,
+            setSearchQuery,
+            isLoading,
+            error,
+            clearError,
+            reload,
+            deleteMeeting,
+            exportMeeting,
+        }),
+        [meetings, searchQuery, isLoading, error, clearError, reload, deleteMeeting, exportMeeting]
+    );
 }

@@ -102,6 +102,12 @@ pub fn bearer_or_protocol_token(headers: &HashMap<String, String>, websocket: bo
     bearer.or(protocol_token)
 }
 
+pub fn is_extension_origin(origin: &str) -> bool {
+    origin
+        .strip_prefix("chrome-extension://")
+        .is_some_and(|id| id.len() == 32 && id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)))
+}
+
 fn is_loopback_host(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost") || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
@@ -197,5 +203,14 @@ mod tests {
             assert!(config.host_allowed(Some(host)));
         }
         assert!(!config.host_allowed(Some("evil.test:48900")));
+    }
+
+    #[test]
+    fn only_well_formed_extension_origins_count() {
+        assert!(is_extension_origin("chrome-extension://dmijnjhcilliiapbkophmbnnednjpjfj"));
+        assert!(!is_extension_origin("chrome-extension://dmijnjhcilliiapbkophmbnnednjpjf"));
+        assert!(!is_extension_origin("chrome-extension://dmijnjhcilliiapbkophmbnnednjpjfz"));
+        assert!(!is_extension_origin("chrome-extension://DMIJNJHCILLIIAPBKOPHMBNNEDNJPJFJ"));
+        assert!(!is_extension_origin("https://dmijnjhcilliiapbkophmbnnednjpjfj"));
     }
 }

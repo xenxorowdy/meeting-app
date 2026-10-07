@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, Check, Copy, MessageSquareText, Search, Sparkles, TriangleAlert, User, X, Cpu } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { JumpingBalls } from '@/components/JumpingBalls';
 import { StreamingText } from '@/components/StreamingText';
 import { formatMs, getSpeakerStyle, initialsFor, languageName } from '@/lib/speakers';
+import { copyToClipboard } from '@/lib/clipboard';
+import { SpeakerEditor } from '@/components/SpeakerEditor';
 
 function countWords(text) {
     return text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -18,6 +20,96 @@ function turnDurationSeconds(turn) {
     const end = turn.endMs || turn.startMs;
     return Math.max(1, Math.round((end - turn.startMs) / 1000));
 }
+
+const TranscriptTurn = memo(function TranscriptTurn({ turn, isCopied, isCited, isEditing, canEditSpeaker, seekable, onToggleEdit, onSeek, onAsk, onCopy, editor }) {
+    const style = getSpeakerStyle(turn.speaker);
+    return (
+        <li
+            data-turn-id={turn.id}
+            className={cn(
+                'ks-transcript-turn turn-in group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60',
+                isCited && 'bg-primary/10 ring-1 ring-inset ring-primary/30'
+            )}
+        >
+            <div
+                className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold',
+                    style.avatar
+                )}
+                aria-hidden="true"
+            >
+                {style.isYou ? <User className="size-4" /> : initialsFor(turn.speaker)}
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                    <button
+                        type="button"
+                        onClick={() => onToggleEdit(turn.id)}
+                        disabled={!canEditSpeaker}
+                        aria-expanded={canEditSpeaker ? isEditing : undefined}
+                        title={canEditSpeaker ? 'Change speaker' : undefined}
+                        className="ks-speaker-name truncate text-left text-headline font-semibold transition-colors hover:text-primary disabled:hover:text-inherit"
+                    >
+                        {turn.speaker}
+                    </button>
+                    {seekable ? (
+                        <button
+                            type="button"
+                            onClick={() => onSeek(turn)}
+                            title="Play from here"
+                            className="tnum shrink-0 text-footnote text-muted-foreground transition-colors hover:text-primary"
+                        >
+                            {formatMs(turn.startMs)}
+                        </button>
+                    ) : (
+                        <span className="tnum shrink-0 text-footnote text-muted-foreground">{formatMs(turn.startMs)}</span>
+                    )}
+                    <span className="ks-transcript-source shrink-0 text-footnote text-muted-foreground">
+                        {turn.stream === 'mic' ? 'Microphone' : 'Meeting audio'}
+                    </span>
+
+                    <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+                        {onAsk && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="iconXs"
+                                        onClick={() => onAsk(turn)}
+                                        aria-label={`Ask AI about what ${turn.speaker} said`}
+                                        className="text-muted-foreground hover:text-primary"
+                                    >
+                                        <Sparkles aria-hidden="true" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Ask AI about this</TooltipContent>
+                            </Tooltip>
+                        )}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="iconXs"
+                                    onClick={() => onCopy(turn)}
+                                    aria-label={`Copy what ${turn.speaker} said`}
+                                    className="text-muted-foreground"
+                                >
+                                    {isCopied ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy turn</TooltipContent>
+                        </Tooltip>
+                    </div>
+                </div>
+
+                {editor}
+
+                <p className="mt-1 select-text text-body text-foreground">{turn.text}</p>
+            </div>
+        </li>
+    );
+});
 
 /**
  * The workspace transcript. One component serves the live meeting and the
@@ -36,6 +128,8 @@ export function TranscriptView({
     onSeek,
     onAsk,
     onRenameSpeaker,
+    onChangeTurnSpeaker,
+    suggestSpeakers,
     stt = null,
 }) {
     const [query, setQuery] = useState('');
@@ -46,9 +140,8 @@ export function TranscriptView({
     const [showJump, setShowJump] = useState(false);
     const [copiedId, setCopiedId] = useState(null);
     const [copiedAll, setCopiedAll] = useState(false);
-    const [renaming, setRenaming] = useState(null);
-    const [draftName, setDraftName] = useState('');
-    const [renameError, setRenameError] = useState('');
+    const [editingTurnId, setEditingTurnId] = useState(null);
+    const [speakerNotice, setSpeakerNotice] = useState('');
     const scrollRef = useRef(null);
     const endRef = useRef(null);
 
@@ -96,11 +189,11 @@ export function TranscriptView({
 
     // Follow the live feed until the reader scrolls away to look something up.
     useLayoutEffect(() => {
-        if (follow && scrollRef.current) {
+        if (follow && !editingTurnId && scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
             setShowJump(false);
         }
-    }, [filtered.length, pending.map(turn => turn.text).join(''), follow]);
+    }, [filtered.length, pending.map(turn => turn.text).join(''), follow, editingTurnId]);
 
     const handleScroll = useCallback(event => {
         const element = event.currentTarget;
@@ -120,7 +213,7 @@ export function TranscriptView({
     const handleCopyTurn = useCallback(async turn => {
         const text = `[${formatMs(turn.startMs)}] ${turn.speaker}: ${turn.text}`;
         try {
-            await navigator.clipboard.writeText(text);
+            await copyToClipboard(text);
             setCopiedId(turn.id);
             setTimeout(() => setCopiedId(current => (current === turn.id ? null : current)), 2000);
         } catch {
@@ -131,26 +224,50 @@ export function TranscriptView({
     const handleCopyAll = useCallback(async () => {
         const text = filtered.map(turn => `[${formatMs(turn.startMs)}] ${turn.speaker}:\n${turn.text}`).join('\n\n');
         try {
-            await navigator.clipboard.writeText(text);
+            await copyToClipboard(text);
             setCopiedAll(true);
             setTimeout(() => setCopiedAll(false), 2000);
         } catch {}
     }, [filtered]);
 
-    const startRename = useCallback(speaker => {
-        if (!isConnected || !onRenameSpeaker) return;
-        setRenaming(speaker);
-        setDraftName(speaker);
-        setRenameError('');
-    }, [isConnected, onRenameSpeaker]);
+    const lineCounts = useMemo(() => {
+        const counts = new Map();
+        for (const turn of turns) counts.set(turn.speaker, (counts.get(turn.speaker) || 0) + 1);
+        return counts;
+    }, [turns]);
 
-    const submitRename = useCallback(
-        async next => {
-            const result = await onRenameSpeaker?.(renaming, next);
-            if (result?.ok) setRenaming(null);
-            else setRenameError(result?.message || 'Could not rename this speaker.');
+    useEffect(() => {
+        if (speakerFilter !== 'ALL' && !speakers.includes(speakerFilter)) setSpeakerFilter('ALL');
+    }, [speakers, speakerFilter]);
+
+    useEffect(() => {
+        if (!speakerNotice) return undefined;
+        const timer = setTimeout(() => setSpeakerNotice(''), 6000);
+        return () => clearTimeout(timer);
+    }, [speakerNotice]);
+
+    const toggleSpeakerEditor = useCallback(turnId => {
+        setEditingTurnId(current => (current === turnId ? null : turnId));
+    }, []);
+
+    const closeSpeakerEditor = useCallback(turnId => {
+        setEditingTurnId(null);
+        requestAnimationFrame(() => {
+            const selector = `[data-turn-id="${CSS.escape(turnId)}"] .ks-speaker-name`;
+            scrollRef.current?.querySelector(selector)?.focus();
+        });
+    }, []);
+
+    const finishSpeakerEdit = useCallback(
+        (turnId, { scope, name, from, count }) => {
+            closeSpeakerEditor(turnId);
+            setSpeakerNotice(
+                scope === 'all'
+                    ? `${from} is now ${name} in ${count === 1 ? '1 line' : `${count} lines`}. Tasks follow the new name; regenerate the summary to update its wording.`
+                    : `This line is now ${name}.`
+            );
         },
-        [renaming, onRenameSpeaker]
+        [closeSpeakerEditor]
     );
 
     // The transcript is only as live as the engine behind it, so say which one
@@ -158,12 +275,12 @@ export function TranscriptView({
     const detected = stt?.languageMode === 'auto' ? languageName(stt.detectedLanguage) : languageName(stt?.language);
     const sttNotice = !stt
         ? null
-        : stt.engine === 'unavailable'
+        : stt.engine === 'unavailable' || stt.status === 'unavailable' || stt.available === false
           ? {
                 variant: 'warning',
                 icon: TriangleAlert,
                 label: 'No transcription engine',
-                hint: 'Add your transcription API key in Settings to start live transcription.',
+                hint: 'Sign in with Google to use transcription. If it remains unavailable, contact Kesami support.',
             }
           : stt.status === 'ready'
             ? {
@@ -219,7 +336,7 @@ export function TranscriptView({
                             onClick={() => setFollow(value => !value)}
                             aria-pressed={follow}
                         >
-                            {follow ? 'Following' : 'Paused'}
+                            {follow ? 'Following' : 'Follow'}
                         </Button>
                     )}
                     <Button variant="outline" size="xs" onClick={handleCopyAll} disabled={turns.length === 0}>
@@ -270,6 +387,12 @@ export function TranscriptView({
                 </SegmentedControl>
             </div>}
 
+            {speakerNotice && (
+                <p className="ks-speaker-notice hairline-bottom px-4 py-2 text-footnote text-muted-foreground" role="status">
+                    {speakerNotice}
+                </p>
+            )}
+
             <div ref={scrollRef} onScroll={handleScroll} className="ks-transcript-list min-h-0 flex-1 overflow-y-auto">
                 {filtered.length === 0 && pending.length === 0 ? (
                     <div className="flex h-full flex-col justify-center px-8 py-16">
@@ -285,121 +408,38 @@ export function TranscriptView({
                 ) : (
                     <ul className="divide-y divide-border">
                         {filtered.map(turn => {
-                            const style = getSpeakerStyle(turn.speaker);
-                            const isCopied = copiedId === turn.id;
+                            const canRenameAll = Boolean(onRenameSpeaker) && !getSpeakerStyle(turn.speaker).isYou;
+                            const canChangeLine = Boolean(onChangeTurnSpeaker);
+                            const isEditing = editingTurnId === turn.id;
                             return (
-                                <li
+                                <TranscriptTurn
                                     key={turn.id}
-                                    data-turn-id={turn.id}
-                                    className={cn(
-                                        'ks-transcript-turn turn-in group flex items-start gap-4 px-4 py-4 transition-colors hover:bg-muted/60',
-                                        citationFocus?.turnIds?.includes(turn.id) && 'bg-primary/10 ring-1 ring-inset ring-primary/30'
-                                    )}
-                                >
-                                    <div
-                                        className={cn(
-                                            'flex size-8 shrink-0 items-center justify-center rounded-full text-footnote font-semibold',
-                                            style.avatar
-                                        )}
-                                        aria-hidden="true"
-                                    >
-                                        {style.isYou ? <User className="size-4" /> : initialsFor(turn.speaker)}
-                                    </div>
-
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-baseline gap-2">
-                                            {renaming === turn.speaker ? (
-                                                <form
-                                                    className="flex items-center gap-1"
-                                                    onSubmit={event => {
-                                                        event.preventDefault();
-                                                        submitRename(draftName);
-                                                    }}
-                                                >
-                                                    <Input
-                                                        aria-label="Speaker name"
-                                                        autoFocus
-                                                        value={draftName}
-                                                        onChange={event => setDraftName(event.target.value)}
-                                                        className="h-7 w-40 text-callout"
-                                                    />
-                                                    <Button type="submit" variant="ghost" size="iconXs" aria-label="Save speaker name">
-                                                        <Check />
-                                                    </Button>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="iconXs"
-                                                        aria-label="Cancel speaker rename"
-                                                        onClick={() => setRenaming(null)}
-                                                    >
-                                                        <X />
-                                                    </Button>
-                                                </form>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => startRename(turn.speaker)}
-                                                    disabled={!isConnected || !onRenameSpeaker}
-                                                    title={onRenameSpeaker ? 'Rename speaker' : undefined}
-                                                    className="truncate text-left text-headline font-semibold transition-colors hover:text-primary disabled:hover:text-inherit"
-                                                >
-                                                    {turn.speaker}
-                                                </button>
-                                            )}
-                                            {seekable ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleSeek(turn)}
-                                                    title="Play from here"
-                                                    className="tnum shrink-0 text-footnote text-muted-foreground transition-colors hover:text-primary"
-                                                >
-                                                    {formatMs(turn.startMs)}
-                                                </button>
-                                            ) : (
-                                                <span className="tnum shrink-0 text-footnote text-muted-foreground">{formatMs(turn.startMs)}</span>
-                                            )}
-                                            <span className="ks-transcript-source shrink-0 text-footnote text-muted-foreground">
-                                                {turn.stream === 'mic' ? 'Microphone' : 'Meeting audio'}
-                                            </span>
-
-                                            <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
-                                                {onAsk && (
-                                                    <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="iconXs"
-                                                                onClick={() => onAsk(turn)}
-                                                                aria-label={`Ask AI about what ${turn.speaker} said`}
-                                                                className="text-muted-foreground hover:text-primary"
-                                                            >
-                                                                <Sparkles aria-hidden="true" />
-                                                            </Button>
-                                                        </TooltipTrigger>
-                                                        <TooltipContent>Ask AI about this</TooltipContent>
-                                                    </Tooltip>
-                                                )}
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="iconXs"
-                                                            onClick={() => handleCopyTurn(turn)}
-                                                            aria-label={`Copy what ${turn.speaker} said`}
-                                                            className="text-muted-foreground"
-                                                        >
-                                                            {isCopied ? <Check className="text-success" aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                                                        </Button>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>Copy turn</TooltipContent>
-                                                </Tooltip>
-                                            </div>
-                                        </div>
-
-                                        <p className="mt-1 select-text text-body text-foreground">{turn.text}</p>
-                                    </div>
-                                </li>
+                                    turn={turn}
+                                    isCopied={copiedId === turn.id}
+                                    isCited={Boolean(citationFocus?.turnIds?.includes(turn.id))}
+                                    isEditing={isEditing}
+                                    canEditSpeaker={isConnected && (canRenameAll || canChangeLine)}
+                                    seekable={seekable}
+                                    onToggleEdit={toggleSpeakerEditor}
+                                    onSeek={handleSeek}
+                                    onAsk={onAsk}
+                                    onCopy={handleCopyTurn}
+                                    editor={
+                                        isEditing ? (
+                                            <SpeakerEditor
+                                                turn={turn}
+                                                lineCount={lineCounts.get(turn.speaker) || 1}
+                                                canRenameAll={canRenameAll}
+                                                canChangeLine={canChangeLine}
+                                                suggest={suggestSpeakers}
+                                                onRenameAll={name => onRenameSpeaker(turn.speaker, name)}
+                                                onChangeLine={name => onChangeTurnSpeaker(turn.id, name)}
+                                                onDone={result => finishSpeakerEdit(turn.id, result)}
+                                                onCancel={() => closeSpeakerEditor(turn.id)}
+                                            />
+                                        ) : null
+                                    }
+                                />
                             );
                         })}
 
@@ -432,20 +472,26 @@ export function TranscriptView({
                 )}
 
                 {isLive && !pending.length && filtered.length > 0 && (
-                    <div className="flex items-center gap-2 px-4 pb-3 pt-1 text-footnote text-muted-foreground" role="status">
-                        <JumpingBalls size="sm" className="text-primary" />
-                        Listening
+                    <div className="ks-transcript-turn ks-transcribing turn-in flex items-start gap-4 px-4 py-4" role="status">
+                        <span className="ks-transcribing-avatar" aria-hidden="true">
+                            <User />
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-3 pt-1">
+                            <span className="ks-transcribing-lines" aria-hidden="true">
+                                <i />
+                                <i />
+                            </span>
+                            <span className="flex items-center gap-2">
+                                <JumpingBalls className="ks-transcribing-dots" />
+                                <span className="ks-transcribing-label">Transcribing</span>
+                            </span>
+                        </div>
                     </div>
-                )}
-                {renameError && (
-                    <p className="px-4 pb-3 text-footnote text-destructive" role="alert">
-                        {renameError}
-                    </p>
                 )}
                 <div ref={endRef} />
             </div>
 
-            {showJump && (
+            {showJump && !editingTurnId && (
                 <Button
                     variant="outline"
                     size="sm"

@@ -11,7 +11,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{broadcast, mpsc, Mutex, Notify, RwLock, Semaphore},
+    sync::{broadcast, mpsc, watch, Mutex, Notify, RwLock, Semaphore},
 };
 use uuid::Uuid;
 
@@ -32,28 +32,26 @@ mod mcp;
 use connectors::ConnectorService;
 
 mod security;
-use futures_util::{SinkExt, StreamExt};
 use security::{
-    bearer_or_protocol_token, SecurityConfig, MAX_BODY_BYTES, MAX_HEADER_BYTES, MAX_WS_BYTES,
-};
-use tokio_tungstenite::{
-    tungstenite::{
-        protocol::{Role, WebSocketConfig},
-        Message,
-    },
-    WebSocketStream,
+    bearer_or_protocol_token, is_extension_origin, SecurityConfig, MAX_BODY_BYTES,
+    MAX_HEADER_BYTES, MAX_WS_BYTES,
 };
 
 mod accounts;
-mod billing;
+use kesami_core_backend::{billing, plans};
+mod cloud_billing;
 mod google_auth;
-mod plans;
 mod supabase;
 mod supabase_auth;
 use accounts::AccountStore;
 use supabase::SupabaseDb;
 
 mod chat;
+mod memory;
+mod commitments;
+mod actions;
+mod action_providers;
+use actions::ActionProvider;
 mod library;
 mod podcast;
 mod sarvam;
@@ -89,6 +87,7 @@ const CLIENT_DROPOUT: Duration = Duration::from_secs(15);
 /// One unscheduled-call notice per meeting URL per cooldown, no matter how
 /// often the browser re-reports the same call.
 const UNSCHEDULED_COOLDOWN_MS: i64 = 10 * 60 * 1000;
+const MAX_SPEAKING_SPANS: usize = 5_000;
 const BILLING_MIRROR_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Whether an idle observation warrants an unscheduled-call notice: the first
@@ -194,6 +193,8 @@ struct TranscriptTurn {
     /// stored before detection was surfaced, hence the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     language: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    speaker_edited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,6 +292,8 @@ struct Session {
     client_last_seen: Option<Instant>,
     client_end: Option<PendingClientEnd>,
     last_unscheduled_notice: Option<(String, i64)>,
+    meeting_client_seen: Option<(String, i64)>,
+    speaker_renames: HashMap<String, String>,
     /// Entitlement tier decided when this meeting started. `finish` reads it
     /// because the stop can arrive from routes, the socket, or the watchdog —
     /// none of which carry the account's session token.
@@ -333,12 +336,53 @@ impl Store {
         Ok(meeting)
     }
 
+    /// Apply local review/edit mutations to the latest saved record, atomically
+    /// with summary application. Never overwrite a newer user review snapshot.
+    async fn update(
+        &self,
+        id: &str,
+        edit: impl FnOnce(&mut Meeting) -> Result<(), (u16, String)>,
+    ) -> Result<Meeting, (u16, String)> {
+        let mut library = self.library.write().await;
+        let mut meetings = self.meetings.write().await;
+        let mut meeting = meetings.get(id).cloned().ok_or((404, "Meeting not found".into()))?;
+        edit(&mut meeting)?;
+        library.save(&mut meeting).await.map_err(|e| (500, e.to_string()))?;
+        meetings.insert(id.to_string(), meeting.clone());
+        Ok(meeting)
+    }
+
+    async fn apply_summary(&self, id: &str, summary: &MeetingSummary, expected: &str) -> io::Result<Meeting> {
+        // Serialize against Store writes, then merge the latest user-owned task
+        // state. A slow model must not revive a deleted/edited source snapshot.
+        let mut library = self.library.write().await;
+        let mut meetings = self.meetings.write().await;
+        let Some(mut meeting) = meetings.get(id).cloned() else {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "Meeting was deleted during summary generation."));
+        };
+        if memory::summary_revision(&meeting) != expected {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Meeting sources changed during summary generation. Retry with the latest transcript."));
+        }
+        meeting.summary_markdown = summary.summary_markdown.clone();
+        meeting.summary_sections = summary.summary_sections.clone();
+        meeting.key_decisions = summary.key_decisions.clone();
+        meeting.action_items = memory::merge_actions(&meeting.action_items, &summary.action_items);
+        meeting.topics = summary.topics.clone();
+        meeting.email_draft = summary.email_draft.clone();
+        memory::persist(&mut meeting, &summary.memory_facts, &summary.provider);
+        commitments::detect(&mut meeting);
+        library.save(&mut meeting).await?;
+        meetings.insert(id.to_string(), meeting.clone());
+        Ok(meeting)
+    }
+
     async fn put_documents(&self, meeting: &Meeting) -> io::Result<()> {
         self.library.read().await.save_documents(meeting).await
     }
 
     async fn adopt_recording(&self, meeting: &mut Meeting) -> io::Result<bool> {
-        let root = kesami_core_backend::env_compat::var_os("KESAMI_RECORDINGS_DIR").map(PathBuf::from);
+        let root =
+            kesami_core_backend::env_compat::var_os("KESAMI_RECORDINGS_DIR").map(PathBuf::from);
         self.library
             .read()
             .await
@@ -349,8 +393,10 @@ impl Store {
         self.meetings.read().await.get(id).cloned()
     }
     async fn delete(&self, id: &str) -> io::Result<bool> {
-        let removed = self.meetings.write().await.remove(id).is_some();
-        let discarded = self.library.write().await.remove(id).await?;
+        let mut library = self.library.write().await;
+        let mut meetings = self.meetings.write().await;
+        let discarded = library.remove(id).await?;
+        let removed = meetings.remove(id).is_some();
         Ok(removed || discarded)
     }
     async fn list(&self, search: &str, limit: usize, offset: usize) -> Vec<Meeting> {
@@ -424,6 +470,7 @@ fn posted_transcript(payload: &Value) -> Vec<TranscriptTurn> {
                     .get("language")
                     .and_then(Value::as_str)
                     .map(str::to_string),
+                speaker_edited: turn.get("speakerEdited").and_then(Value::as_bool) == Some(true),
             })
         })
         .collect()
@@ -461,7 +508,14 @@ async fn deliver_to_connector(
     provider: &str,
 ) -> Result<Value, String> {
     let delivery = connectors.send(provider, meeting).await;
-    record_deliveries(store, events, meeting_id, &[(provider, delivery.clone())], false).await?;
+    record_deliveries(
+        store,
+        events,
+        meeting_id,
+        &[(provider, delivery.clone())],
+        false,
+    )
+    .await?;
     Ok(delivery)
 }
 
@@ -472,18 +526,26 @@ async fn record_deliveries(
     deliveries: &[(&str, Value)],
     automatic: bool,
 ) -> Result<(), String> {
-    if let Some(mut latest) = store.get(meeting_id).await {
-        let mut recorded = latest
-            .metadata
-            .get("connectorDeliveries")
-            .filter(|value| value.is_object())
-            .cloned()
-            .unwrap_or_else(|| json!({}));
-        for (provider, delivery) in deliveries {
-            recorded[*provider] = delivery.clone();
-        }
-        set_meeting_metadata(&mut latest, "connectorDeliveries", recorded);
-        store.put(latest).await.map_err(|error| error.to_string())?;
+    // Receipts may finish alongside a user confirmation. Mutate only receipt
+    // metadata on the latest record; never overwrite a whole stale snapshot.
+    match store
+        .update(meeting_id, |latest| {
+            let mut recorded = latest
+                .metadata
+                .get("connectorDeliveries")
+                .filter(|value| value.is_object())
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            for (provider, delivery) in deliveries {
+                recorded[*provider] = delivery.clone();
+            }
+            set_meeting_metadata(latest, "connectorDeliveries", recorded);
+            Ok(())
+        })
+        .await
+    {
+        Ok(_) | Err((404, _)) => {} // A deleted meeting must not be revived.
+        Err((_, error)) => return Err(error),
     }
     for (_, delivery) in deliveries {
         let _ = events.send(
@@ -532,9 +594,176 @@ fn rename_meeting_speakers(
     for turn in &mut meeting.transcript {
         if let Some(next) = cleaned.get(&turn.speaker) {
             turn.speaker = next.clone();
+            turn.speaker_edited = true;
             changed += 1;
         }
     }
+    for item in &mut meeting.action_items {
+        let owner = item.get("owner").and_then(Value::as_str).map(str::trim);
+        if let Some(next) = owner.and_then(|owner| cleaned.get(owner)).cloned() {
+            item["owner"] = json!(next);
+        }
+    }
+    Ok(changed)
+}
+
+fn reassign_turn_speakers(
+    meeting: &mut Meeting,
+    assignments: &serde_json::Map<String, Value>,
+) -> Result<usize, String> {
+    if assignments.is_empty() || assignments.len() > 1_000 {
+        return Err("provide between 1 and 1000 transcript lines to change".into());
+    }
+    let mut cleaned = HashMap::new();
+    for (turn_id, next) in assignments {
+        let next = next
+            .as_str()
+            .ok_or_else(|| "speaker names must be strings".to_string())?
+            .trim();
+        if next.is_empty() {
+            return Err("speaker names cannot be empty".into());
+        }
+        if next.chars().count() > 80 {
+            return Err("speaker names cannot exceed 80 characters".into());
+        }
+        if !meeting.transcript.iter().any(|turn| &turn.id == turn_id) {
+            return Err("a transcript line to change was not found".into());
+        }
+        cleaned.insert(turn_id.as_str(), next.to_string());
+    }
+    let mut changed = 0;
+    for turn in &mut meeting.transcript {
+        if let Some(next) = cleaned.get(turn.id.as_str()) {
+            if turn.speaker != *next {
+                turn.speaker = next.clone();
+                changed += 1;
+            }
+            turn.speaker_edited = true;
+        }
+    }
+    Ok(changed)
+}
+
+fn remember_speaker_edits(session: &mut Session, body: &Value) {
+    if let Some(renames) = body.get("speakerRenames").and_then(Value::as_object) {
+        for (from, to) in renames {
+            let (from, Some(to)) = (from.trim(), to.as_str().map(str::trim)) else {
+                continue;
+            };
+            for target in session.speaker_renames.values_mut() {
+                if target == from {
+                    *target = to.to_string();
+                }
+            }
+            session.speaker_renames.insert(from.to_string(), to.to_string());
+        }
+    }
+}
+
+fn edit_meeting(meeting: &mut Meeting, body: &Value) -> Result<usize, String> {
+    let edits = body.as_object().ok_or("meeting edits must be an object")?;
+    if edits.is_empty()
+        || edits.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "speakerRenames"
+                    | "turnSpeakers"
+                    | "title"
+                    | "summaryMarkdown"
+                    | "keyDecisions"
+                    | "actionItems"
+                    | "emailDraft"
+            )
+        })
+    {
+        return Err("provide supported meeting edits".into());
+    }
+    let mut updated = meeting.clone();
+    if edits
+        .get("summaryMarkdown")
+        .and_then(Value::as_str)
+        .is_some_and(|text| text != meeting.summary_markdown)
+    {
+        updated.summary_sections.clear();
+    }
+    for (key, destination) in [
+        ("title", &mut updated.title),
+        ("summaryMarkdown", &mut updated.summary_markdown),
+        ("emailDraft", &mut updated.email_draft),
+    ] {
+        if let Some(value) = edits.get(key) {
+            let text = value
+                .as_str()
+                .ok_or_else(|| format!("{key} must be a string"))?;
+            if (key == "title" && (text.trim().is_empty() || text.chars().count() > 240))
+                || text.len() > 200_000
+            {
+                return Err(format!("{key} has an invalid length"));
+            }
+            *destination = if key == "title" {
+                text.trim().to_string()
+            } else {
+                text.to_string()
+            };
+        }
+    }
+    if let Some(value) = edits.get("keyDecisions") {
+        let decisions = value
+            .as_array()
+            .filter(|list| list.len() <= 1_000)
+            .ok_or("keyDecisions must be an array of strings")?;
+        updated.key_decisions = decisions
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .filter(|text| text.len() <= 20_000)
+                    .map(str::to_string)
+                    .ok_or("keyDecisions must be an array of strings")
+            })
+            .collect::<Result<_, _>>()?;
+    }
+    if let Some(value) = edits.get("actionItems") {
+        let items = value
+            .as_array()
+            .filter(|items| items.len() <= 1_000)
+            .ok_or("actionItems must be an array of tasks")?;
+        for item in items {
+            // Older summaries stored plain strings; retain compatibility when
+            // a task list containing those entries is edited.
+            let task = item
+                .as_str()
+                .or_else(|| item.get("task").and_then(Value::as_str));
+            if task.is_none_or(|text| text.trim().is_empty() || text.len() > 20_000)
+                || ["owner", "deadline", "id"].iter().any(|key| {
+                    item.get(key)
+                        .is_some_and(|value| !value.is_string() && !value.is_null())
+                })
+                || item
+                    .get("completed")
+                    .is_some_and(|value| !value.is_boolean())
+            {
+                return Err("actionItems contains an invalid task".into());
+            }
+        }
+        updated.action_items = items.clone();
+    }
+    let mut changed = if let Some(value) = edits.get("speakerRenames") {
+        rename_meeting_speakers(
+            &mut updated,
+            value
+                .as_object()
+                .ok_or("speakerRenames must be an object")?,
+        )?
+    } else {
+        0
+    };
+    if let Some(value) = edits.get("turnSpeakers") {
+        changed += reassign_turn_speakers(
+            &mut updated,
+            value.as_object().ok_or("turnSpeakers must be an object")?,
+        )?;
+    }
+    *meeting = updated;
     Ok(changed)
 }
 
@@ -584,6 +813,7 @@ fn resolve_batch_recording(root: &Path, relative: &Path) -> Result<PathBuf, Stri
 struct AppState {
     started_at: i64,
     session: Arc<Mutex<Session>>,
+    finish_lock: Arc<Mutex<()>>,
     store: Store,
     events: broadcast::Sender<String>,
     security: Arc<SecurityConfig>,
@@ -600,11 +830,14 @@ struct AppState {
     supabase: Arc<SupabaseDb>,
     supabase_auth: Arc<supabase_auth::SupabaseAuth>,
     billing_mirror: Arc<Notify>,
+    billing_checkout_lock: Arc<Mutex<()>>,
+    billing_cache_lock: Arc<Mutex<()>>,
+    summary_cancellations: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
 }
 
 impl AppState {
     async fn stt_status(&self, active_provider: Option<&str>) -> Value {
-        let configured = match active_provider.filter(|value| !value.is_empty()) {
+        let mut configured = match active_provider.filter(|value| !value.is_empty()) {
             Some(provider) => provider.to_string(),
             None => self
                 .settings
@@ -612,9 +845,20 @@ impl AppState {
                 .await
                 .unwrap_or_else(|| "sarvam-realtime".into()),
         };
+        if supabase_auth::cloud_origin().is_some() {
+            configured = "sarvam-realtime".into();
+        }
         let cloud_ready = supabase_auth::cloud_realtime_url().is_some()
-            && self.settings.credential("supabaseCloudSession").await.is_some();
-        let available = self.sarvam.has_key().await || cloud_ready;
+            && self
+                .settings
+                .credential("supabaseCloudSession")
+                .await
+                .is_some();
+        let available = if supabase_auth::cloud_origin().is_some() {
+            cloud_ready
+        } else {
+            self.sarvam.has_key().await
+        };
         let mut status = json!({
             "engine": "sarvam", "status": if available { "ready" } else { "unavailable" },
             "available": available, "model": sarvam_live::model_name(),
@@ -629,7 +873,9 @@ impl AppState {
                 .get_bool("sarvamDiarizeAfterMeeting")
                 .await
                 .unwrap_or(true)
-                && !self.security.hosted;
+                && !self.security.hosted
+                && supabase_auth::cloud_origin().is_none()
+                && self.sarvam.has_key().await;
             status["sarvam"]["mode"] = json!("realtime");
             status["sarvam"]["model"] = json!(sarvam_live::model_name());
             status["sarvam"]["diarization"] = json!(diarize);
@@ -662,7 +908,7 @@ impl AppState {
             "names": session.participants.roster(),
             "observations": session.participants.observations(),
         });
-        let state = json!({ "state": session.state.as_str(), "meetingId": session.current.as_ref().map(|m| &m.id), "meetingTitle": session.current.as_ref().map(|m| &m.title), "durationSeconds": session.current.as_ref().map(|m| (now_ms() - m.started_at).max(0) / 1000).unwrap_or(0), "turnsCount": turns, "audioLevels": { "mic": session.mic_rms * 100.0, "system": session.system_rms * 100.0 }, "clientMicMuted": session.client_mic_muted, "meetingEndPending": session.client_end.as_ref().map(|end| json!({"source": end.source, "reason": end.reason})) });
+        let state = json!({ "state": session.state.as_str(), "meetingId": session.current.as_ref().map(|m| &m.id), "meetingTitle": session.current.as_ref().map(|m| &m.title), "durationSeconds": session.current.as_ref().map(|m| (now_ms() - m.started_at).max(0) / 1000).unwrap_or(0), "turnsCount": turns, "audioLevels": { "mic": session.mic_rms * 100.0, "system": session.system_rms * 100.0 }, "clientMicMuted": session.client_mic_muted, "meetingEndPending": session.client_end.as_ref().map(|end| json!({"source": end.source, "reason": end.reason})), "meetingClient": session.meeting_client_seen.as_ref().map(|(source, at)| json!({"source": source, "lastSeenAt": at})) });
         drop(session);
 
         let mut status = state;
@@ -691,13 +937,55 @@ impl AppState {
         let Some(account) = self.session_account(req).await else {
             return "free";
         };
-        let subscription = self.billing.active_subscription(&account.id).await;
+        let subscription = match self.account_subscription(&account.id).await {
+            Ok(sub) => sub,
+            Err(_) => self.billing.active_subscription(&account.id).await,
+        };
         billing::tier_for(subscription.as_ref())
+    }
+
+    async fn account_subscription(&self, account_id: &str) -> Result<Option<billing::Subscription>, (u16, String)> {
+        let _cache_lock = self.billing_cache_lock.lock().await;
+        if supabase_auth::cloud_origin().is_some() {
+            let value = cloud_billing::request(&self.supabase_auth, &self.settings, Some(account_id), reqwest::Method::GET, "/v1/billing/subscription", None).await?;
+            let subscription = cloud_billing::subscription(account_id, &value)?;
+            self.billing.cache_subscription(account_id, subscription.clone()).await?;
+            return Ok(subscription);
+        }
+        let mut local = self.billing.latest_subscription(account_id).await?;
+        if let Some(sub) = local.as_ref().filter(|sub| sub.provider=="razorpay" && sub.status!="canceled" && billing::tier_for(Some(sub))!="pro" && self.billing_config.razorpay_ready()) {
+            billing::sync_razorpay_subscription(&self.billing_config,&self.billing,account_id,&sub.provider_subscription_id).await?;
+            self.billing_mirror.notify_one();
+            local=self.billing.latest_subscription(account_id).await?;
+        }
+        if local.is_none() && self.supabase.configured() {
+            if let Some(google_sub) = self.accounts.google_sub(account_id).await? {
+                let sub = self.supabase.subscription_for_google(&google_sub,account_id).await
+                    .map_err(|_| (503,"Could not read your account plan. Please try again.".into()))?;
+                if let Some(sub) = sub.as_ref() { self.billing.apply_subscription(sub.clone()).await?; }
+                return Ok(sub);
+            }
+        }
+        Ok(local)
+    }
+
+    async fn billing_confirmation(&self, account_id: &str) -> Value {
+        self.billing_mirror.notify_one();
+        let synced = if self.supabase.configured() {
+            self.supabase.mirror_billing(&self.billing, &self.accounts).await.is_ok()
+                && self.billing.unmirrored_subscriptions().await.is_ok_and(|rows| !rows.iter().any(|(sub,_)| sub.account_id==account_id))
+        } else { false };
+        let subscription = self.billing.latest_subscription(account_id).await.ok().flatten();
+        json!({"tier":billing::tier_for(subscription.as_ref()),"subscription":subscription.as_ref().map(billing::BillingStore::subscription_value),"accountSynced":synced})
     }
 
     async fn mirror_billing_to_supabase(&self) {
         loop {
-            if let Err(error) = self.supabase.mirror_billing(&self.billing, &self.accounts).await {
+            if let Err(error) = self
+                .supabase
+                .mirror_billing(&self.billing, &self.accounts)
+                .await
+            {
                 eprintln!("[Kesami Core Backend] Supabase billing: {error}");
             }
             tokio::select! {
@@ -723,8 +1011,13 @@ impl AppState {
             / 60
     }
 
-    async fn start(&self, payload: &Value, tier: &'static str, account_id: Option<&str>) -> Result<Meeting, String> {
-        let provider = self
+    async fn start(
+        &self,
+        payload: &Value,
+        tier: &'static str,
+        account_id: Option<&str>,
+    ) -> Result<Meeting, String> {
+        let mut provider = self
             .settings
             .get_str("transcriptionProvider")
             .await
@@ -737,8 +1030,15 @@ impl AppState {
         if self.security.hosted && provider == "sarvam" {
             return Err("Hosted meetings require Sarvam realtime; batch transcription needs a recording on the backend machine.".into());
         }
-        let local_sarvam_key = self.sarvam.api_key().await;
         let cloud_url = supabase_auth::cloud_realtime_url();
+        let local_sarvam_key = if cloud_url.is_some() {
+            None
+        } else {
+            self.sarvam.api_key().await
+        };
+        if cloud_url.is_some() {
+            provider = "sarvam-realtime".into();
+        }
         if provider == "sarvam" && local_sarvam_key.is_none() {
             return Err("Batch transcription needs a locally configured Sarvam key. Choose realtime transcription instead.".into());
         }
@@ -770,16 +1070,21 @@ impl AppState {
             _ => None,
         };
         let live_key = if provider == "sarvam-realtime" {
-            if let Some(key) = local_sarvam_key {
-                key
+            if let Some(key) = &local_sarvam_key {
+                key.clone()
             } else {
                 let account_id = account_id.ok_or("Sign in with Google to start transcription.")?;
-                let token = self.supabase_auth.cloud_access_token(&self.settings, account_id).await?;
+                let token = self
+                    .supabase_auth
+                    .cloud_access_token(&self.settings, account_id)
+                    .await?;
                 self.supabase_auth.cloud_transcription_ready(&token).await?;
                 token
             }
-        } else { String::new() };
-        if self.sarvam.api_key().await.is_none() {
+        } else {
+            String::new()
+        };
+        if local_sarvam_key.is_none() {
             if let (Some(config), Some(url)) = (&mut live_config, cloud_url) {
                 config.endpoint = url;
                 config.cloud = true;
@@ -810,6 +1115,7 @@ impl AppState {
         session.client_mic_muted = None;
         session.client_last_seen = None;
         session.client_end = None;
+        session.speaker_renames.clear();
         session.speaker_labels = NumberedSpeakers::default();
         session.voices = VoiceRoster::default();
         session.mic_epoch_ms = None;
@@ -885,22 +1191,32 @@ impl AppState {
     }
 
     async fn finish(&self, payload: &Value) -> Result<Meeting, String> {
+        // A lost HTTP response may cause a retry while finalization is still
+        // running. Wait for it, then return the saved result exactly once.
+        let _finish = self.finish_lock.lock().await;
+        {
+            let session = self.session.lock().await;
+            let current = session
+                .current
+                .as_ref()
+                .ok_or("No meeting session is active")?;
+            if payload
+                .get("meetingId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id != current.id)
+            {
+                return Err("The stop request does not match the current meeting".into());
+            }
+            if matches!(session.state, SessionState::Completed) {
+                return Ok(current.clone());
+            }
+        }
         // Realtime closes its sockets; batch waits for the complete recording.
         let mut tail_voice = None;
         let (provider, live, mic_speech, participants) = {
             let mut session = self.session.lock().await;
-            let meeting_id = match session.current.as_ref() {
-                Some(meeting) => meeting.id.clone(),
-                None => return Err("No meeting session is active".into()),
-            };
-            if matches!(
-                session.state,
-                SessionState::ProcessingStt | SessionState::Summarizing
-            ) {
-                return session
-                    .current
-                    .clone()
-                    .ok_or_else(|| "No meeting session is active".to_string());
+            if session.current.is_none() {
+                return Err("No meeting session is active".into());
             }
             session.state = SessionState::ProcessingStt;
             let provider = if session.transcription_provider.is_empty() {
@@ -934,6 +1250,7 @@ impl AppState {
                 .unwrap_or_else(now_ms);
             let mut participants = std::mem::take(&mut session.participants);
             participants.close((now_ms() - started_at).max(0));
+            session.speaker_renames.clear();
             let mic_tail = session.echo.flush_microphone();
             let live = session.live.take();
             if let Some(live) = live.as_ref() {
@@ -979,6 +1296,8 @@ impl AppState {
 
         let mut transcription_warning = None;
         let diarize_recording = !self.security.hosted
+            && supabase_auth::cloud_origin().is_none()
+            && self.sarvam.has_key().await
             && (provider == "sarvam"
                 || (provider == "sarvam-realtime"
                     && self.settings.get_bool("sarvamDiarizeAfterMeeting").await != Some(false)));
@@ -1060,6 +1379,7 @@ impl AppState {
                             text: turn.text,
                             confidence: 1.0,
                             language: turn.language.or_else(|| batch.language.clone()),
+                            speaker_edited: false,
                         })
                         .collect();
                     set_meeting_metadata(&mut meeting, "transcriptionProvider", json!(provider));
@@ -1096,7 +1416,7 @@ impl AppState {
 
         if !participants.is_empty() {
             for turn in meeting.transcript.iter_mut() {
-                if turn.channel != "system" {
+                if turn.channel != "system" || turn.speaker_edited {
                     continue;
                 }
                 if let Some(name) = participants.speaker_during(turn.start_ms, turn.end_ms) {
@@ -1108,6 +1428,18 @@ impl AppState {
         }
         if !participants.roster().is_empty() {
             set_meeting_metadata(&mut meeting, "participants", json!(participants.roster()));
+        }
+        if !participants.spans().is_empty() {
+            let activity: Vec<Value> = participants
+                .spans()
+                .iter()
+                .take(MAX_SPEAKING_SPANS)
+                .map(|span| json!({"name": span.name, "startMs": span.start_ms, "endMs": span.end_ms}))
+                .collect();
+            set_meeting_metadata(&mut meeting, "speakingActivity", json!(activity));
+        }
+        if let Some(self_name) = participants.self_name() {
+            set_meeting_metadata(&mut meeting, "participantSelf", json!(self_name));
         }
 
         let mut session = self.session.lock().await;
@@ -1160,10 +1492,13 @@ impl AppState {
             self.summarize_into(&mut meeting).await
         };
 
+        commitments::detect(&mut meeting);
         let mut meeting = match self.store.put(meeting).await {
             Ok(meeting) => meeting,
             Err(error) => {
-                if let Some(key) = free_auto_key { self.billing.release_free_ai_use(key).await; }
+                if let Some(key) = free_auto_key {
+                    self.billing.release_free_ai_use(key).await;
+                }
                 return Err(error.to_string());
             }
         };
@@ -1219,7 +1554,8 @@ impl AppState {
             return;
         };
         let notes = connectors::MeetingNotes::from_meeting(&value);
-        targets.retain(|provider| notes.wants(provider));
+        // External tasks always require a reviewed per-action confirmation.
+        targets.retain(|provider| connectors::allows_automatic_delivery(provider) && notes.wants(provider));
         if targets.is_empty() {
             return;
         }
@@ -1232,7 +1568,9 @@ impl AppState {
                 .iter()
                 .map(|provider| async { (*provider, connectors.send(provider, &value).await) });
             let deliveries = futures_util::future::join_all(sends).await;
-            if let Err(cause) = record_deliveries(&store, &events, &meeting_id, &deliveries, true).await {
+            if let Err(cause) =
+                record_deliveries(&store, &events, &meeting_id, &deliveries, true).await
+            {
                 eprintln!("[Kesami Core Backend] auto-push to {targets:?} failed: {cause}");
             }
         });
@@ -1272,9 +1610,10 @@ impl AppState {
         meeting.summary_markdown = summary.summary_markdown.clone();
         meeting.summary_sections = summary.summary_sections.clone();
         meeting.key_decisions = summary.key_decisions.clone();
-        meeting.action_items = summary.action_items.clone();
+        meeting.action_items = memory::merge_actions(&meeting.action_items, &summary.action_items);
         meeting.topics = summary.topics.clone();
         meeting.email_draft = summary.email_draft.clone();
+        memory::persist(meeting, &summary.memory_facts, &summary.provider);
         summary
     }
 
@@ -1313,6 +1652,11 @@ impl AppState {
             } else {
                 session.system_rms = level;
             }
+            let pcm = if stream_id == STREAM_MIC && client_mic_muted {
+                vec![0u8; pcm.len()]
+            } else {
+                pcm
+            };
 
             if recording && live_sarvam && stream_id != STREAM_MIC {
                 if let Some(live) = session.live.as_ref() {
@@ -1337,7 +1681,7 @@ impl AppState {
                         session.echo.append_played(played_at, &pcm);
                     }
                     session.system_samples += pcm.len() as i64 / 2;
-                } else if live_sarvam && !client_mic_muted {
+                } else if live_sarvam {
                     let heard_at = epoch + session.mic_samples * 1000 / dsp::SAMPLE_RATE as i64;
                     session.mic_samples += pcm.len() as i64 / 2;
                     if session.echo_suppression {
@@ -1352,14 +1696,7 @@ impl AppState {
                 }
 
                 let utterances = if stream_id == STREAM_MIC {
-                    if client_mic_muted {
-                        // Dropping the open utterance keeps the mute from
-                        // gluing pre- and post-mute speech into one turn.
-                        session.mic_vad.reset();
-                        Vec::new()
-                    } else {
-                        session.mic_vad.feed(&pcm)
-                    }
+                    session.mic_vad.feed(&pcm)
                 } else if separate_voices {
                     session.system_vad.feed(&pcm)
                 } else {
@@ -1448,6 +1785,10 @@ impl AppState {
             .to_string();
 
         let mut session = self.session.lock().await;
+        session.meeting_client_seen = Some((
+            source.clone().unwrap_or_else(|| "meeting-client".into()),
+            now_ms(),
+        ));
         let state = session.state.as_str();
 
         // No meeting is running: a browser sitting in a call anyway is an
@@ -1634,6 +1975,67 @@ impl AppState {
         }
     }
 
+    async fn refresh_completed_meeting(&self, id: &str) {
+        let mut session = self.session.lock().await;
+        if matches!(session.state, SessionState::Idle | SessionState::Completed)
+            && session.current.as_ref().is_some_and(|meeting| meeting.id == id) {
+            session.current = self.store.get(id).await;
+        }
+    }
+
+    async fn edit_meeting_record(
+        &self,
+        id: &str,
+        body: &Value,
+    ) -> Result<(usize, Meeting), (u16, String)> {
+        let live = {
+            let mut session = self.session.lock().await;
+            let state = session.state;
+            let live = match session.current.as_mut().filter(|current| current.id == id) {
+                Some(current) => match state {
+                    SessionState::Recording | SessionState::Paused => {
+                        let changed = edit_meeting(current, body).map_err(|cause| (400, cause))?;
+                        Some((changed, current.clone()))
+                    }
+                    SessionState::Starting
+                    | SessionState::ProcessingStt
+                    | SessionState::Summarizing => {
+                        return Err((
+                            409,
+                            "This meeting is still being processed. Try again in a moment.".into(),
+                        ));
+                    }
+                    SessionState::Idle | SessionState::Completed => {
+                        let _ = edit_meeting(current, body);
+                        None
+                    }
+                },
+                None => None,
+            };
+            if live.is_some() {
+                remember_speaker_edits(&mut session, body);
+            }
+            live
+        };
+        let (changed, meeting) = match live {
+            Some((changed, meeting)) => {
+                let meeting = self.store.put(meeting).await.map_err(|cause| (500, cause.to_string()))?;
+                (changed, meeting)
+            }
+            None => {
+                let mut changed = 0;
+                let meeting = self.store.update(id, |meeting| {
+                    changed = edit_meeting(meeting, body).map_err(|cause| (400, cause))?;
+                    Ok(())
+                }).await?;
+                (changed, meeting)
+            }
+        };
+        let _ = self.store.put_documents(&meeting).await;
+        self.refresh_completed_meeting(id).await;
+        Ok((changed, meeting))
+    }
+
     /// Attach a transcribed utterance to the meeting it belongs to and tell the
     /// clients about it.
     async fn add_note(&self, meeting_id: &str, text: &str) -> Result<Value, String> {
@@ -1655,7 +2057,7 @@ impl AppState {
 
         {
             let mut session = self.session.lock().await;
-            if let Some(meeting) = session.current.as_mut() {
+            if let Some(meeting) = session.current.as_mut().filter(|meeting| meeting.ended_at.is_none()) {
                 if meeting.id == meeting_id {
                     note["atMs"] = json!((created_at - meeting.started_at).max(0));
                     meeting.notes.push(note.clone());
@@ -1669,17 +2071,12 @@ impl AppState {
             }
         }
 
-        let mut meeting = self
-            .store
-            .get(meeting_id)
-            .await
-            .ok_or_else(|| "Meeting not found".to_string())?;
-        note["atMs"] = json!((created_at - meeting.started_at).max(0));
-        meeting.notes.push(note.clone());
-        self.store
-            .put(meeting)
-            .await
-            .map_err(|cause| cause.to_string())?;
+        self.store.update(meeting_id, |meeting| {
+            note["atMs"] = json!((created_at - meeting.started_at).max(0));
+            meeting.notes.push(note.clone());
+            Ok(())
+        }).await.map_err(|(_, cause)| cause)?;
+        self.refresh_completed_meeting(meeting_id).await;
         self.emit("note_added", json!({"meetingId": meeting_id, "note": note}))
             .await;
         Ok(note)
@@ -1688,7 +2085,7 @@ impl AppState {
     async fn remove_note(&self, meeting_id: &str, note_id: &str) -> Result<(), String> {
         {
             let mut session = self.session.lock().await;
-            if let Some(meeting) = session.current.as_mut() {
+            if let Some(meeting) = session.current.as_mut().filter(|meeting| meeting.ended_at.is_none()) {
                 if meeting.id == meeting_id {
                     meeting
                         .notes
@@ -1701,19 +2098,12 @@ impl AppState {
             }
         }
 
-        let mut meeting = self
-            .store
-            .get(meeting_id)
-            .await
-            .ok_or_else(|| "Meeting not found".to_string())?;
-        meeting
-            .notes
-            .retain(|note| note.get("id").and_then(Value::as_str) != Some(note_id));
-        self.store
-            .put(meeting)
-            .await
-            .map(|_| ())
-            .map_err(|cause| cause.to_string())
+        self.store.update(meeting_id, |meeting| {
+            meeting.notes.retain(|note| note.get("id").and_then(Value::as_str) != Some(note_id));
+            Ok(())
+        }).await.map_err(|(_, cause)| cause)?;
+        self.refresh_completed_meeting(meeting_id).await;
+        Ok(())
     }
 
     async fn commit_live_turn(
@@ -1738,6 +2128,7 @@ impl AppState {
             text,
             confidence: 1.0,
             language,
+            speaker_edited: false,
         };
 
         let snapshot = {
@@ -1768,6 +2159,10 @@ impl AppState {
                 if session.echo_suppression {
                     session.echo.remember_text(turn.start_ms, &turn.text);
                 }
+            }
+            if let Some(renamed) = session.speaker_renames.get(&turn.speaker) {
+                turn.speaker = renamed.clone();
+                turn.speaker_edited = true;
             }
             match session.current.as_mut() {
                 Some(meeting) if meeting.id == meeting_id => {
@@ -1943,6 +2338,11 @@ async fn main() -> io::Result<()> {
             podcast.set_gemini_key(Some(key)).await;
         }
     }
+    if kesami_core_backend::env_compat::var("KESAMI_OPENAI_API_KEY").is_err() {
+        if let Some(key) = settings.openai_key().await {
+            summarizer.set_openai_key(Some(key)).await;
+        }
+    }
     if kesami_core_backend::env_compat::var("KESAMI_SARVAM_API_KEY").is_err() {
         if let Some(key) = settings.sarvam_key().await {
             sarvam.set_api_key(Some(key)).await;
@@ -1954,12 +2354,13 @@ async fn main() -> io::Result<()> {
     let session = Arc::new(Mutex::new(Session::default()));
     chat.start(store.clone(), session.clone());
     let accounts = Arc::new(AccountStore::load().await?);
-    let billing = Arc::new(billing::BillingStore::load().await?);
+    let billing = Arc::new(billing::BillingStore::load(settings::data_dir().join("billing.sqlite3")).await?);
     let billing_config = billing::ProviderConfig::from_env();
     let supabase = Arc::new(SupabaseDb::detect());
     let state = AppState {
         started_at: now_ms(),
         session,
+        finish_lock: Arc::new(Mutex::new(())),
         store,
         chat,
         events,
@@ -1976,7 +2377,11 @@ async fn main() -> io::Result<()> {
         supabase: supabase.clone(),
         supabase_auth: Arc::new(supabase_auth::SupabaseAuth::from_env()),
         billing_mirror: Arc::new(Notify::new()),
+        billing_checkout_lock: Arc::new(Mutex::new(())),
+        billing_cache_lock: Arc::new(Mutex::new(())),
+        summary_cancellations: Arc::new(Mutex::new(HashMap::new())),
     };
+    summarizer.use_cloud(settings.clone(), state.supabase_auth.clone());
 
     println!("[Kesami Core Backend] Rust API listening on http://{host}:{port}");
     println!(
@@ -2011,8 +2416,10 @@ async fn main() -> io::Result<()> {
                     }
                 }
             });
-            let mirror = state.clone();
-            tokio::spawn(async move { mirror.mirror_billing_to_supabase().await });
+            if supabase_auth::cloud_origin().is_none() {
+                let mirror = state.clone();
+                tokio::spawn(async move { mirror.mirror_billing_to_supabase().await });
+            }
         }
     }
 
@@ -2021,10 +2428,17 @@ async fn main() -> io::Result<()> {
     let supervisor = state.clone();
     tokio::spawn(async move { supervisor.watch_client_end().await });
 
+    let connections = Arc::new(Semaphore::new(128));
     loop {
+        let permit = connections
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(io::Error::other)?;
         let (stream, _) = listener.accept().await?;
         let state = state.clone();
         tokio::spawn(async move {
+            let _permit = permit;
             if let Err(err) = handle_connection(stream, state).await {
                 eprintln!("[Rust Core Backend] connection error: {err}");
             }
@@ -2084,7 +2498,10 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
     }
     if websocket {
         let tier = state.session_tier(&request).await;
-        let account_id = state.session_account(&request).await.map(|account| account.id);
+        let account_id = state
+            .session_account(&request)
+            .await
+            .map(|account| account.id);
         return websocket_session(
             stream,
             request
@@ -2092,7 +2509,12 @@ async fn handle_connection(mut stream: TcpStream, state: AppState) -> io::Result
                 .get("sec-websocket-key")
                 .map(String::as_str)
                 .unwrap_or(""),
-            offered_protocol(request.headers.get("sec-websocket-protocol").map(String::as_str)),
+            offered_protocol(
+                request
+                    .headers
+                    .get("sec-websocket-protocol")
+                    .map(String::as_str),
+            ),
             state,
             tier,
             account_id,
@@ -2157,11 +2579,28 @@ fn access_decision(
     if !security.host_allowed(req.headers.get("host").map(String::as_str)) {
         return Some((403, "Unrecognized Host header".into()));
     }
-    if !security.origin_allowed(req.headers.get("origin").map(String::as_str)) {
+    if !security.origin_allowed(req.headers.get("origin").map(String::as_str))
+        && !meeting_client_request(req, security)
+    {
         return Some((
             403,
             "This origin is not allowed to connect to this backend".into(),
         ));
+    }
+    if websocket
+        && (req.method != "GET"
+            || req.headers.get("sec-websocket-version").map(String::as_str) != Some("13")
+            || !req.headers.get("connection").is_some_and(|value| {
+                value
+                    .split(',')
+                    .any(|part| part.trim().eq_ignore_ascii_case("upgrade"))
+            })
+            || !req
+                .headers
+                .get("sec-websocket-key")
+                .is_some_and(|value| BASE64.decode(value).is_ok_and(|bytes| bytes.len() == 16)))
+    {
+        return Some((400, "Invalid WebSocket upgrade".into()));
     }
     if req.method == "OPTIONS" {
         return None; // Preflights carry no credentials by design.
@@ -2176,6 +2615,21 @@ fn access_decision(
         ));
     }
     None
+}
+
+fn meeting_client_request(req: &HttpRequest, security: &SecurityConfig) -> bool {
+    if security.hosted || !req.headers.get("origin").is_some_and(|origin| is_extension_origin(origin)) {
+        return false;
+    }
+    match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/api/status") => true,
+        ("POST", "/api/session/participants") => req
+            .headers
+            .get("content-type")
+            .and_then(|value| value.split(';').next())
+            .is_some_and(|kind| kind.trim().eq_ignore_ascii_case("application/json")),
+        _ => false,
+    }
 }
 
 /// CORS for allowed browser origins only. Native clients send no Origin and
@@ -2213,7 +2667,17 @@ impl From<io::Error> for ReadRequestError {
     }
 }
 
-async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, ReadRequestError> {
+async fn read_http_request<R: AsyncReadExt + Unpin>(
+    stream: &mut R,
+) -> Result<HttpRequest, ReadRequestError> {
+    tokio::time::timeout(Duration::from_secs(15), read_http_request_inner(stream))
+        .await
+        .unwrap_or_else(|_| Err(ReadRequestError::Rejected(408, "Request timed out".into())))
+}
+
+async fn read_http_request_inner<R: AsyncReadExt + Unpin>(
+    stream: &mut R,
+) -> Result<HttpRequest, ReadRequestError> {
     let mut buffer = Vec::with_capacity(4096);
     let mut header_end = None;
     loop {
@@ -2224,6 +2688,12 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, ReadRe
         }
         buffer.extend_from_slice(&chunk[..n]);
         if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+            if pos + 4 > MAX_HEADER_BYTES {
+                return Err(ReadRequestError::Rejected(
+                    431,
+                    "Request headers are too large".into(),
+                ));
+            }
             header_end = Some(pos + 4);
             break;
         }
@@ -2236,22 +2706,54 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, ReadRe
     }
     let header_end = header_end
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "incomplete request"))?;
-    let header_text = String::from_utf8_lossy(&buffer[..header_end]);
+    let bad_request = || ReadRequestError::Rejected(400, "Malformed HTTP request".into());
+    let header_text = std::str::from_utf8(&buffer[..header_end]).map_err(|_| bad_request())?;
     let mut lines = header_text.split("\r\n");
     let request_line = lines.next().unwrap_or("");
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
     let target = parts.next().unwrap_or("/");
+    if method.is_empty()
+        || !method.bytes().all(|byte| byte.is_ascii_uppercase())
+        || !target.starts_with('/')
+        || target.contains('#')
+        || !matches!(parts.next(), Some("HTTP/1.1" | "HTTP/1.0"))
+        || parts.next().is_some()
+    {
+        return Err(bad_request());
+    }
     let mut headers = HashMap::new();
     for line in lines.filter(|l| !l.is_empty()) {
-        if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.trim().to_lowercase(), value.trim().to_string());
+        let (key, value) = line.split_once(':').ok_or_else(bad_request)?;
+        if key.is_empty()
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+            || value
+                .bytes()
+                .any(|byte| byte.is_ascii_control() && byte != b'\t')
+        {
+            return Err(bad_request());
+        }
+        if headers
+            .insert(key.to_ascii_lowercase(), value.trim().to_string())
+            .is_some()
+        {
+            return Err(bad_request());
         }
     }
-    let content_length = headers
-        .get("content-length")
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(0);
+    // This connection handles one content-length-framed request. Reject other
+    // framing instead of disagreeing with a reverse proxy about body boundaries.
+    if headers.contains_key("transfer-encoding") {
+        return Err(bad_request());
+    }
+    let content_length = match headers.get("content-length") {
+        Some(value) if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) => {
+            value.parse::<usize>().map_err(|_| bad_request())?
+        }
+        Some(_) => return Err(bad_request()),
+        None => 0,
+    };
     if content_length > MAX_BODY_BYTES {
         return Err(ReadRequestError::Rejected(
             413,
@@ -2263,7 +2765,7 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, ReadRe
         let mut chunk = vec![0u8; content_length - body.len()];
         let n = stream.read(&mut chunk).await?;
         if n == 0 {
-            break;
+            return Err(bad_request());
         }
         body.extend_from_slice(&chunk[..n]);
     }
@@ -2287,22 +2789,28 @@ fn parse_target(target: &str) -> (String, HashMap<String, String>) {
     (path.to_string(), query)
 }
 fn percent_decode(value: &str) -> String {
-    value
-        .replace('+', " ")
-        .split('%')
-        .enumerate()
-        .map(|(i, part)| {
-            if i == 0 {
-                part.to_string()
-            } else {
-                u8::from_str_radix(&part[..2.min(part.len())], 16)
-                    .ok()
-                    .map(|b| (b as char).to_string())
-                    .unwrap_or_default()
-                    + &part[2.min(part.len())..]
+    let mut decoded = Vec::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (
+                (bytes[index + 1] as char).to_digit(16),
+                (bytes[index + 2] as char).to_digit(16),
+            ) {
+                decoded.push((high * 16 + low) as u8);
+                index += 3;
+                continue;
             }
-        })
-        .collect()
+        }
+        decoded.push(if bytes[index] == b'+' {
+            b' '
+        } else {
+            bytes[index]
+        });
+        index += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
 }
 /// The payload a successful register or login returns. The token is shown once
 /// here and never again — the backend only stores its hash.
@@ -2426,7 +2934,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Ok(grant) => {
                     state.supabase_auth.clear_cloud_grant(&state.settings).await;
                     json_response(200, auth_grant_json(grant))
-                },
+                }
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
@@ -2446,7 +2954,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Ok(grant) => {
                     state.supabase_auth.clear_cloud_grant(&state.settings).await;
                     json_response(200, auth_grant_json(grant))
-                },
+                }
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
@@ -2489,7 +2997,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Ok(tokens) => tokens,
                 Err(error) => return json_response(401, json!({"error":error})),
             };
-            let id_token = tokens.get("id_token").and_then(Value::as_str).unwrap_or_default();
+            let id_token = tokens
+                .get("id_token")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let identity = match google_auth::verify_id_token(id_token, &client_id, nonce).await {
                 Ok(identity) => identity,
                 Err(error) => return json_response(401, json!({"error":error})),
@@ -2512,7 +3023,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Ok(grant) => {
                     state.supabase_auth.clear_cloud_grant(&state.settings).await;
                     json_response(200, auth_grant_json(grant))
-                },
+                }
                 Err((status, error)) => json_response(status, json!({"error":error})),
             }
         }
@@ -2547,12 +3058,16 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             {
                 Ok(grant) => {
                     if supabase_auth::cloud_realtime_url().is_some() {
-                        if let Err(error) = state.supabase_auth.store_cloud_grant(&state.settings, &identity, &grant.account.id).await {
+                        if let Err(error) = state
+                            .supabase_auth
+                            .store_cloud_grant(&state.settings, &identity, &grant.account.id)
+                            .await
+                        {
                             return json_response(503, json!({"error": error}));
                         }
                     }
                     json_response(200, auth_grant_json(grant))
-                },
+                }
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
@@ -2568,7 +3083,9 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
         ("GET", "/api/auth/config") => {
             let google_client_id = google_sign_in_client_id(&state.settings).await;
             let google_calendar = match google_client_id.as_deref() {
-                Some(client_id) if !state.security.hosted => state.calendar.wants_google_sign_in(client_id).await,
+                Some(client_id) if !state.security.hosted => {
+                    state.calendar.wants_google_sign_in(client_id).await
+                }
                 _ => false,
             };
             json_response(
@@ -2576,6 +3093,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 json!({
                     "registrationAllowed": state.security.authorized(&req.headers, false),
                     "localAccess": !state.security.hosted,
+                    "cloudManaged": supabase_auth::cloud_origin().is_some(),
                     "workspaceScope": "shared",
                     "googleClientId": google_client_id,
                     "googleCalendar": google_calendar,
@@ -2584,19 +3102,60 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             )
         }
         ("GET", "/api/plans") => {
+            if supabase_auth::cloud_origin().is_some() {
+                return match cloud_billing::request(&state.supabase_auth, &state.settings, None, reqwest::Method::GET, "/v1/plans", None).await {
+                    Ok(value) => json_response(200,value),
+                    Err((code,error)) => json_response(code,json!({"error":error})),
+                };
+            }
             let mut catalog = plans::catalog(state.billing_config.billing_enabled());
             catalog["billing"] = state.billing_config.public_status();
             json_response(200, catalog)
         }
         ("POST", "/api/billing/checkout") => {
+            if supabase_auth::cloud_origin().is_some() {
+                let Some(account) = state.session_account(&req).await else { return json_response(401,json!({"error":"Sign in to start a subscription."})); };
+                return match cloud_billing::request(&state.supabase_auth, &state.settings, Some(&account.id), reqwest::Method::POST, "/v1/billing/checkout", Some(&body)).await {
+                    Ok(value) => json_response(200,value),
+                    Err((code,error)) => json_response(code,json!({"error":error})),
+                };
+            }
             if !state.billing_config.billing_enabled() {
-                return json_response(503, json!({"error": "Billing is not configured on this backend."}));
+                return json_response(
+                    503,
+                    json!({"error": "Billing is not configured on this backend."}),
+                );
             }
             let Some(account) = state.session_account(&req).await else {
                 return json_response(401, json!({"error": "Sign in to start a subscription."}));
             };
-            if state.billing.active_subscription(&account.id).await.is_some() {
-                return json_response(409, json!({"error": "Your Pro subscription is already active."}));
+            let _checkout_lock = state.billing_checkout_lock.lock().await;
+            let current = match state.account_subscription(&account.id).await {
+                Ok(sub) => sub,
+                Err((code,error)) => return json_response(code,json!({"error":error})),
+            };
+            if let Some(current) = current.filter(|sub| sub.provider=="razorpay" && sub.status!="canceled") {
+                if let Err((code,error)) = billing::sync_razorpay_subscription(&state.billing_config,&state.billing,&account.id,&current.provider_subscription_id).await {
+                    return json_response(code,json!({"error":error}));
+                }
+                if body["currency"]=="INR" && body["plan"]=="pro" {
+                    if let Ok(Some(pending)) = state.billing.latest_subscription(&account.id).await {
+                        if pending.status=="incomplete" {
+                            return json_response(200,json!({"provider":"razorpay","keyId":state.billing_config.razorpay_key_id,"subscriptionId":pending.provider_subscription_id}));
+                        }
+                    }
+                }
+            }
+            if state
+                .billing
+                .active_subscription(&account.id)
+                .await
+                .is_some()
+            {
+                return json_response(
+                    409,
+                    json!({"error": "Your Pro subscription is already active."}),
+                );
             }
             let plan = body.get("plan").and_then(Value::as_str).unwrap_or_default();
             let currency = body
@@ -2614,18 +3173,49 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             )
             .await
             {
-                Ok(value) => json_response(200, value),
+                Ok(value) => {
+                    if value["provider"]=="razorpay" {
+                        let pending = billing::subscription_from_payload("razorpay", account.id, value["subscriptionId"].as_str().unwrap_or_default(), "created", &json!({}));
+                        if let Err((code,error)) = state.billing.apply_subscription(pending).await { return json_response(code,json!({"error":error})); }
+                        state.billing_mirror.notify_one();
+                    }
+                    json_response(200,value)
+                },
                 Err((status, error)) => json_response(status, json!({"error": error})),
             }
         }
-        ("POST", "/api/billing/razorpay/sync") => {
+        ("POST", "/api/billing/razorpay/sync" | "/api/billing/razorpay/confirm") => {
             let Some(account) = state.session_account(&req).await else {
-                return json_response(401, json!({"error": "Sign in to confirm your subscription."}));
+                return json_response(
+                    401,
+                    json!({"error": "Sign in to confirm your subscription."}),
+                );
             };
             let subscription_id = body
                 .get("subscriptionId")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
+            let _cache_lock = state.billing_cache_lock.lock().await;
+            if supabase_auth::cloud_origin().is_some() {
+                let path = if req.path.ends_with("/confirm") { "/v1/billing/razorpay/confirm" } else { "/v1/billing/razorpay/sync" };
+                return match cloud_billing::request(&state.supabase_auth, &state.settings, Some(&account.id), reqwest::Method::POST, path, Some(&body)).await {
+                    Ok(value) => match cloud_billing::subscription(&account.id,&value) {
+                        Ok(sub) => match state.billing.cache_subscription(&account.id,sub).await {
+                            Ok(()) => json_response(200,value), Err((code,error)) => json_response(code,json!({"error":error})),
+                        },
+                        Err((code,error)) => json_response(code,json!({"error":error})),
+                    },
+                    Err((code,error)) => json_response(code,json!({"error":error})),
+                };
+            }
+            if req.path.ends_with("/confirm") {
+                if state.billing.account_for_subscription("razorpay",subscription_id).await.as_deref()!=Some(&account.id) {
+                    return json_response(404,json!({"error":"That subscription does not belong to this account."}));
+                }
+                if let Err((code,error)) = billing::verify_razorpay_checkout(&state.billing_config,subscription_id,body["paymentId"].as_str().unwrap_or_default(),body["signature"].as_str().unwrap_or_default()) {
+                    return json_response(code,json!({"error":error}));
+                }
+            }
             if let Err((status, error)) = billing::sync_razorpay_subscription(
                 &state.billing_config,
                 &state.billing,
@@ -2636,15 +3226,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             {
                 return json_response(status, json!({"error": error}));
             }
-            state.billing_mirror.notify_one();
-            let subscription = state.billing.active_subscription(&account.id).await;
-            json_response(
-                200,
-                json!({
-                    "tier": billing::tier_for(subscription.as_ref()),
-                    "subscription": subscription.as_ref().map(billing::BillingStore::subscription_value),
-                }),
-            )
+            if req.path.ends_with("/confirm") {
+                if let Err((code,error)) = state.billing.record_event("razorpay",&format!("checkout:{}",body["paymentId"].as_str().unwrap_or_default())).await { return json_response(code,json!({"error":error})); }
+            }
+            json_response(200,state.billing_confirmation(&account.id).await)
         }
         // Webhooks authenticate by their HMAC signatures, not by the workspace
         // token, so they are exempt from it (see is_public_path) and must
@@ -2674,13 +3259,8 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             };
             match billing::parse_stripe_event(&event) {
                 Ok((_, event_id, payload)) => {
-                    match billing::apply_webhook(
-                        &state.billing,
-                        "stripe",
-                        &event_id,
-                        &payload,
-                    )
-                    .await
+                    match billing::apply_webhook(&state.billing, "stripe", &event_id, &payload)
+                        .await
                     {
                         Ok(value) => {
                             state.billing_mirror.notify_one();
@@ -2724,15 +3304,15 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     json!({"error": "The Razorpay webhook carries no event id."}),
                 );
             }
-            let payload = billing::razorpay_subscription_entity(&event);
-            match billing::apply_webhook(
-                &state.billing,
-                "razorpay",
-                &event_id,
-                &payload,
-            )
-            .await
-            {
+            let payload = if event["event"].as_str().is_some_and(|event| event.starts_with("subscription.")) {
+                let entity = billing::razorpay_subscription_entity(&event);
+                let Some(id) = entity["id"].as_str() else { return json_response(400,json!({"error":"The webhook has no subscription."})); };
+                match billing::fetch_razorpay_subscription(&state.billing_config,id).await {
+                    Ok(snapshot) => snapshot,
+                    Err((code,error)) => return json_response(code,json!({"error":error})),
+                }
+            } else { json!({}) };
+            match billing::apply_webhook(&state.billing, "razorpay", &event_id, &payload).await {
                 Ok(value) => {
                     state.billing_mirror.notify_one();
                     json_response(200, value)
@@ -2744,7 +3324,10 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             let Some(account) = state.session_account(&req).await else {
                 return json_response(401, json!({"error": "Sign in to read your subscription."}));
             };
-            let subscription = state.billing.active_subscription(&account.id).await;
+            let subscription = match state.account_subscription(&account.id).await {
+                Ok(sub) => sub,
+                Err((code,error)) => return json_response(code,json!({"error":error})),
+            };
             let tier = billing::tier_for(subscription.as_ref());
             let minutes_used = state.month_minutes_used().await;
             let ai_uses = match state.billing.free_ai_uses().await {
@@ -2911,13 +3494,23 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             });
             settings["supportsLocalRecording"] = json!(!state.security.hosted);
             settings["calendarConnectSupported"] = json!(!state.security.hosted);
-            settings["geminiApiKeySet"] =
-                state.summarizer.status_value().await["geminiKeySet"].clone();
-            settings["sarvamApiKeySet"] = json!(state.sarvam.has_key().await || (
-                supabase_auth::cloud_realtime_url().is_some()
-                    && state.settings.credential("supabaseCloudSession").await.is_some()));
-            if state.security.hosted {
+            let cloud_managed = supabase_auth::cloud_origin().is_some();
+            settings["cloudManaged"] = json!(cloud_managed);
+            let summary = state.summarizer.status_value().await;
+            settings["geminiApiKeySet"] = summary["geminiKeySet"].clone();
+            settings["openaiApiKeySet"] = summary["openaiKeySet"].clone();
+            settings["sarvamApiKeySet"] = json!(
+                state.sarvam.has_key().await
+                    || (supabase_auth::cloud_realtime_url().is_some()
+                        && state
+                            .settings
+                            .credential("supabaseCloudSession")
+                            .await
+                            .is_some())
+            );
+            if state.security.hosted || cloud_managed {
                 settings["sarvamDiarizeAfterMeeting"] = json!(false);
+                settings["transcriptionProvider"] = json!("sarvam-realtime");
             }
             if settings.get("sarvamLanguage").is_none() {
                 settings["sarvamLanguage"] = json!("unknown");
@@ -2944,14 +3537,26 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             let Some(object) = incoming.as_object() else {
                 return json_response(400, json!({"error": "settings must be an object"}));
             };
+            let sets_provider_key = ["sarvamApiKey", "geminiApiKey", "openaiApiKey"]
+                .iter()
+                .any(|key| object.contains_key(*key));
+            if supabase_auth::cloud_origin().is_some() && sets_provider_key {
+                return json_response(
+                    403,
+                    json!({"error": "Provider credentials are managed by the Kesami service."}),
+                );
+            }
             // Hosted users share one provider configuration. An account session
             // may change preferences, but only the deployment owner may replace
             // the server's provider credentials.
             if state.security.hosted
-                && (object.contains_key("sarvamApiKey") || object.contains_key("geminiApiKey"))
+                && sets_provider_key
                 && !state.security.authorized(&req.headers, false)
             {
-                return json_response(403, json!({"error": "Only the workspace administrator can update provider credentials."}));
+                return json_response(
+                    403,
+                    json!({"error": "Only the workspace administrator can update provider credentials."}),
+                );
             }
             let mut warnings = Vec::new();
 
@@ -3063,6 +3668,12 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     Err(cause) => warnings.push(format!("could not store the Gemini key: {cause}")),
                 }
             }
+            if let Some(key) = object.get("openaiApiKey").and_then(Value::as_str) {
+                match state.settings.set_openai_key(Some(key)).await {
+                    Ok(stored) => state.summarizer.set_openai_key(stored).await,
+                    Err(cause) => warnings.push(format!("could not store the OpenAI key: {cause}")),
+                }
+            }
             if let Some(key) = object.get("sarvamApiKey").and_then(Value::as_str) {
                 match state.settings.set_sarvam_key(Some(key)).await {
                     Ok(stored) => state.sarvam.set_api_key(stored).await,
@@ -3134,10 +3745,15 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             json_response(200, status)
         }
         ("POST", "/api/connectors/save") => {
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let config = body.get("config").cloned().unwrap_or_else(|| json!({}));
             match state.connectors.save(provider, &config).await {
-                Ok(connector) => json_response(200, json!({"success": true, "connector": connector})),
+                Ok(connector) => {
+                    json_response(200, json!({"success": true, "connector": connector}))
+                }
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
@@ -3148,32 +3764,50 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     json!({"error": "Google sign-in requires the local backend. Hosted OAuth is not configured."}),
                 );
             }
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             match state.connectors.connect(provider).await {
                 Ok(value) => json_response(200, value),
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
         ("POST", "/api/connectors/disconnect") => {
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             match state.connectors.disconnect(provider).await {
                 Ok(()) => json_response(200, json!({"success": true, "provider": provider})),
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
         ("POST", "/api/connectors/test") => {
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             match state.connectors.test(provider).await {
                 Ok(message) => json_response(200, json!({"success": true, "message": message})),
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
         ("POST", "/api/connectors/send") => {
-            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
-            let meeting_id = body.get("meetingId").and_then(Value::as_str).unwrap_or_default();
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let meeting_id = body
+                .get("meetingId")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let force = body.get("force").and_then(Value::as_bool).unwrap_or(false);
             if connectors::spec_for(provider).is_none() {
-                return json_response(400, json!({"error": format!("unknown connector: {provider}")}));
+                return json_response(
+                    400,
+                    json!({"error": format!("unknown connector: {provider}")}),
+                );
             }
             let Some(meeting) = state.store.get(meeting_id).await else {
                 return json_response(404, json!({"error": "Meeting not found"}));
@@ -3185,9 +3819,22 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     json!({"error": "Already sent. Send again to create another copy.", "code": "ALREADY_SENT"}),
                 );
             }
-            match deliver_to_connector(&state.connectors, &state.store, &state.events, meeting_id, &value, provider).await {
+            match deliver_to_connector(
+                &state.connectors,
+                &state.store,
+                &state.events,
+                meeting_id,
+                &value,
+                provider,
+            )
+            .await
+            {
                 Ok(delivery) => json_response(
-                    if delivery["ok"] == json!(true) { 200 } else { 502 },
+                    if delivery["ok"] == json!(true) {
+                        200
+                    } else {
+                        502
+                    },
                     json!({"delivery": delivery, "error": delivery.get("error")}),
                 ),
                 Err(cause) => json_response(500, json!({"error": cause})),
@@ -3436,9 +4083,135 @@ async fn route_meeting(
     let parts: Vec<_> = req.path.trim_matches('/').split('/').collect();
     if parts.len() >= 3 && parts[0] == "api" && parts[1] == "meetings" {
         let id = parts[2];
+        if parts.len() >= 4 && parts[3] == "actions" {
+            if req.method == "GET" && parts.len() == 4 {
+                return match state.store.get(id).await {
+                    Some(meeting) => {
+                        let providers = action_providers::ExistingProviders {
+                            calendar: &state.calendar,
+                            connectors: &state.connectors,
+                        }
+                        .targets()
+                        .await;
+                        let suggestions = actions::suggestions(&meeting);
+                        let partial = meeting.action_items.len() > 100
+                            || meeting.metadata["meetingCommitments"]["coverage"] == "partial"
+                            || suggestions.iter().filter(|s| !s.kind.starts_with("summary_")).count() >= 200;
+                        json_response(
+                            200,
+                            json!({"suggestions":suggestions,"history":actions::ledger(&meeting),"providers":providers,"coverage":if partial { "partial" } else { "complete" }}),
+                        )
+                    }
+                    None => json_response(404, json!({"error":"Meeting not found"})),
+                };
+            }
+            if req.method == "POST" && parts.len() == 5 {
+                let review: actions::Review = match serde_json::from_value(body.clone()) {
+                    Ok(review) => review,
+                    Err(_) => {
+                        return json_response(
+                            400,
+                            json!({"error":"Provide the reviewed action fields and explicit confirmation."}),
+                        )
+                    }
+                };
+                let action_id = parts[4];
+                let reserved = match state
+                    .store
+                    .update(id, |meeting| actions::reserve(meeting, action_id, &review))
+                    .await
+                {
+                    Ok(meeting) => meeting,
+                    Err((status, error)) => return json_response(status, json!({"error":error})),
+                };
+                let external = matches!(
+                    review.destination,
+                    actions::Destination::GoogleCalendar | actions::Destination::Jira | actions::Destination::Slack
+                );
+                let executing = actions::ledger(&reserved)
+                    .iter()
+                    .any(|item| item["id"] == action_id && item["status"] == "executing");
+                if external && executing {
+                    // Detached task survives a disconnected/cancelled HTTP client.
+                    // The durable reservation blocks duplicate sends and crash retries.
+                    let store = state.store.clone();
+                    let calendar = state.calendar.clone();
+                    let connectors = state.connectors.clone();
+                    let meeting_id = id.to_string();
+                    let action_id = action_id.to_string();
+                    let delivery = tokio::spawn(async move {
+                        let result = action_providers::ExistingProviders {
+                            calendar: &calendar,
+                            connectors: &connectors,
+                        }
+                        .execute(&review)
+                        .await;
+                        store
+                            .update(&meeting_id, |meeting| {
+                                actions::finish(meeting, &action_id, result)
+                            })
+                            .await
+                    })
+                    .await;
+                    match delivery {
+                        Ok(Ok(_)) => {}
+                        _ => {
+                            return json_response(
+                                503,
+                                json!({"error":"The action outcome could not be saved. Reload and check the provider before taking further action."}),
+                            )
+                        }
+                    }
+                }
+                state.refresh_completed_meeting(id).await;
+                return match state.store.get(id).await {
+                    Some(meeting) => {
+                        let _ = state.store.put_documents(&meeting).await;
+                        json_response(200, json!({"meeting":meeting}))
+                    }
+                    None => json_response(
+                        404,
+                        json!({"error":"Meeting was deleted; check the provider for the action outcome."}),
+                    ),
+                };
+            }
+        }
+        if parts.len() >= 4 && parts[3] == "commitments" {
+            if req.method == "GET" && parts.len() == 4 {
+                return match state.store.get(id).await {
+                    Some(meeting) => json_response(200, json!({
+                        "current":commitments::current(&meeting),
+                        "transcriptRevision":memory::transcript_revision(&meeting),
+                        "candidates":commitments::candidates(&meeting),
+                        "coverage":meeting.metadata["meetingCommitments"]["coverage"],
+                    })),
+                    None => json_response(404, json!({"error":"Meeting not found"})),
+                };
+            }
+            if (req.method == "POST" && parts.len() == 4) || (req.method == "PATCH" && parts.len() == 5) {
+                let result = state.store.update(id, |meeting| {
+                    if meeting.ended_at.is_none() {
+                        return Err((409, "Finish the meeting before detecting or reviewing commitments.".into()));
+                    }
+                    if req.method == "POST" { commitments::detect(meeting); Ok(()) }
+                    else { commitments::review(meeting, parts[4], body) }
+                }).await;
+                return match result {
+                    Ok(meeting) => {
+                        state.refresh_completed_meeting(id).await;
+                        let _ = state.store.put_documents(&meeting).await;
+                        json_response(200, json!({"meeting":meeting}))
+                    }
+                    Err((status, cause)) => json_response(status, json!({"error":cause})),
+                };
+            }
+        }
         if req.method == "PATCH" && parts.len() == 4 && parts[3] == "folder" {
             return match workspace::move_meeting(&state.store, id, body).await {
-                Ok(meeting) => json_response(200, json!({"meeting":meeting})),
+                Ok(meeting) => {
+                    state.refresh_completed_meeting(id).await;
+                    json_response(200, json!({"meeting":meeting}))
+                }
                 Err(error) => json_response(400, json!({"error":error})),
             };
         }
@@ -3456,25 +4229,13 @@ async fn route_meeting(
             };
         }
         if req.method == "PATCH" && parts.len() == 3 {
-            let Some(mut meeting) = state.store.get(id).await else {
-                return json_response(404, json!({"error":"Meeting not found"}));
+            return match state.edit_meeting_record(id, body).await {
+                Ok((changed, meeting)) => json_response(
+                    200,
+                    json!({"success":true,"changedTurns":changed,"meeting":meeting}),
+                ),
+                Err((status, cause)) => json_response(status, json!({"error": cause})),
             };
-            let Some(renames) = body.get("speakerRenames").and_then(Value::as_object) else {
-                return json_response(400, json!({"error":"speakerRenames must be an object"}));
-            };
-            let changed = match rename_meeting_speakers(&mut meeting, renames) {
-                Ok(changed) => changed,
-                Err(cause) => return json_response(400, json!({"error": cause})),
-            };
-            let meeting = match state.store.put(meeting).await {
-                Ok(meeting) => meeting,
-                Err(cause) => return json_response(500, json!({"error": cause.to_string()})),
-            };
-            let _ = state.store.put_documents(&meeting).await;
-            return json_response(
-                200,
-                json!({"success":true,"changedTurns":changed,"meeting":meeting}),
-            );
         }
         if req.method == "DELETE" && parts.len() == 3 {
             return match state.store.delete(id).await {
@@ -3490,6 +4251,18 @@ async fn route_meeting(
                 ),
                 None => json_response(404, json!({"error":"Meeting not found"})),
             };
+        }
+        if req.method == "POST"
+            && parts.get(3) == Some(&"summarize")
+            && parts.get(4) == Some(&"cancel")
+        {
+            let cancelled = state
+                .summary_cancellations
+                .lock()
+                .await
+                .get(id)
+                .is_some_and(|sender| sender.send(true).is_ok());
+            return json_response(200, json!({"success":true,"cancelled":cancelled}));
         }
         if req.method == "POST" && parts.get(3) == Some(&"summarize") {
             let Some(mut meeting) = state.store.get(id).await else {
@@ -3513,27 +4286,73 @@ async fn route_meeting(
                 let key = format!("summary:manual:{}", Uuid::new_v4());
                 match state.billing.reserve_free_ai_use(key.clone()).await {
                     Ok(true) => Some(key),
-                    Ok(false) => return json_response(402, json!({"error":plans::free_ai_limit_message(),"code":"FREE_AI_LIMIT"})),
+                    Ok(false) => {
+                        return json_response(
+                            402,
+                            json!({"error":plans::free_ai_limit_message(),"code":"FREE_AI_LIMIT"}),
+                        )
+                    }
                     Err((status, error)) => return json_response(status, json!({"error":error})),
                 }
-            } else { None };
+            } else {
+                None
+            };
             let mut provider = "stored".to_string();
             let mut warning = None;
             if !meeting.transcript.is_empty() && (regenerate || meeting.summary_markdown.is_empty())
             {
-                let summary = state.summarize_into(&mut meeting).await;
-                provider = summary.provider;
-                warning = summary.warning;
-                if meeting.summary_markdown.is_empty() {
-                    if let Some(key) = &free_use_key { state.billing.release_free_ai_use(key.clone()).await; }
+                let source_revision = memory::summary_revision(&meeting);
+                let (cancel_sender, mut cancel_receiver) = watch::channel(false);
+                let already_running = {
+                    let mut active = state.summary_cancellations.lock().await;
+                    if active.contains_key(id) {
+                        true
+                    } else {
+                        active.insert(id.to_string(), cancel_sender);
+                        false
+                    }
+                };
+                if already_running {
+                    if let Some(key) = free_use_key {
+                        state.billing.release_free_ai_use(key).await;
+                    }
+                    return json_response(
+                        409,
+                        json!({"error":"Summary generation is already running.","code":"SUMMARY_IN_PROGRESS"}),
+                    );
                 }
-                match state.store.put(meeting.clone()).await {
+                let summary = tokio::select! {
+                    summary = state.summarize_into(&mut meeting) => Some(summary),
+                    _ = cancel_receiver.changed() => None,
+                };
+                state.summary_cancellations.lock().await.remove(id);
+                let Some(summary) = summary else {
+                    if let Some(key) = free_use_key {
+                        state.billing.release_free_ai_use(key).await;
+                    }
+                    return json_response(
+                        409,
+                        json!({"error":"Summary generation stopped.","code":"SUMMARY_CANCELLED"}),
+                    );
+                };
+                provider = summary.provider.clone();
+                warning = summary.warning.clone();
+                if meeting.summary_markdown.is_empty() {
+                    if let Some(key) = &free_use_key {
+                        state.billing.release_free_ai_use(key.clone()).await;
+                    }
+                }
+                match state.store.apply_summary(id, &summary, &source_revision).await {
                     Ok(stored) => {
                         let _ = state.store.put_documents(&stored).await;
+                        meeting = stored;
                     }
                     Err(cause) => {
-                        if let Some(key) = free_use_key { state.billing.release_free_ai_use(key).await; }
-                        return json_response(500, json!({"error": cause.to_string()}));
+                        if let Some(key) = free_use_key {
+                            state.billing.release_free_ai_use(key).await;
+                        }
+                        let status = if matches!(cause.kind(), io::ErrorKind::NotFound | io::ErrorKind::InvalidData) { 409 } else { 500 };
+                        return json_response(status, json!({"error": cause.to_string()}));
                     }
                 }
             }
@@ -3582,8 +4401,14 @@ fn export_markdown(meeting: &Meeting) -> String {
 }
 
 fn offered_protocol(header: Option<&str>) -> Option<&'static str> {
-    let offered: Vec<&str> = header.unwrap_or_default().split(',').map(str::trim).collect();
-    ["kesami", "alpha"].into_iter().find(|protocol| offered.contains(protocol))
+    let offered: Vec<&str> = header
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .collect();
+    ["kesami", "alpha"]
+        .into_iter()
+        .find(|protocol| offered.contains(protocol))
 }
 
 async fn websocket_session(
@@ -3608,7 +4433,7 @@ async fn websocket_session(
         json!({"type":"connection_established","status":state.status().await}).to_string();
     write_ws_text(&mut writer, &initial).await?;
 
-    let (pongs, mut pong_queue) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (pongs, mut pong_queue) = mpsc::channel::<Vec<u8>>(8);
     let outbound = tokio::spawn(async move {
         loop {
             let written = tokio::select! {
@@ -3631,12 +4456,15 @@ async fn websocket_session(
     loop {
         match read_ws_frame(&mut reader).await {
             Ok(Some(WsFrame::Binary(bytes))) => state.feed_audio(&bytes).await,
-            Ok(Some(WsFrame::Text(text))) => handle_ws_message(&state, &text, tier, account_id.as_deref()).await,
+            Ok(Some(WsFrame::Text(text))) => {
+                handle_ws_message(&state, &text, tier, account_id.as_deref()).await
+            }
             Ok(Some(WsFrame::Ping(payload))) => {
-                if pongs.send(payload).is_err() {
+                if pongs.try_send(payload).is_err() {
                     break;
                 }
             }
+            Ok(Some(WsFrame::Pong)) => {}
             Ok(Some(WsFrame::Close)) | Ok(None) => break,
             Err(_) => break,
         }
@@ -3647,7 +4475,12 @@ async fn websocket_session(
     Ok(())
 }
 
-async fn handle_ws_message(state: &AppState, text: &str, tier: &'static str, account_id: Option<&str>) {
+async fn handle_ws_message(
+    state: &AppState,
+    text: &str,
+    tier: &'static str,
+    account_id: Option<&str>,
+) {
     if let Ok(mut msg) = serde_json::from_str::<Value>(text) {
         let action = msg
             .get("action")
@@ -3661,6 +4494,14 @@ async fn handle_ws_message(state: &AppState, text: &str, tier: &'static str, acc
             .unwrap_or_else(|| msg.clone());
         match action.as_str() {
             "start_meeting" => {
+                let tier = match account_id {
+                    Some(account) => billing::tier_for(state.account_subscription(account).await.ok().flatten().as_ref()),
+                    None => tier,
+                };
+                if !plans::can_record(tier,state.month_minutes_used().await) {
+                    state.emit("error",json!({"message":"Your free recording minutes are used. Upgrade to Pro to keep recording."})).await;
+                    return;
+                }
                 let _ = state.start(&payload, tier, account_id).await;
             }
             "pause_meeting" => {
@@ -3690,6 +4531,7 @@ enum WsFrame {
     Text(String),
     Binary(Vec<u8>),
     Ping(Vec<u8>),
+    Pong,
     Close,
 }
 async fn read_ws_frame<R: AsyncReadExt + Unpin>(stream: &mut R) -> io::Result<Option<WsFrame>> {
@@ -3699,7 +4541,23 @@ async fn read_ws_frame<R: AsyncReadExt + Unpin>(stream: &mut R) -> io::Result<Op
     };
     let opcode = head[0] & 0x0f;
     let masked = head[1] & 0x80 != 0;
+    if !masked
+        || head[0] & 0x70 != 0
+        || head[0] & 0x80 == 0
+        || !matches!(opcode, 1 | 2 | 8 | 9 | 10)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid websocket frame",
+        ));
+    }
     let mut len = (head[1] & 0x7f) as usize;
+    if opcode >= 8 && len > 125 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid websocket control frame",
+        ));
+    }
     if len == 126 {
         let mut b = [0u8; 2];
         stream.read_exact(&mut b).await?;
@@ -3707,13 +4565,14 @@ async fn read_ws_frame<R: AsyncReadExt + Unpin>(stream: &mut R) -> io::Result<Op
     } else if len == 127 {
         let mut b = [0u8; 8];
         stream.read_exact(&mut b).await?;
-        len = u64::from_be_bytes(b) as usize;
-        if len > MAX_WS_BYTES {
+        let length = u64::from_be_bytes(b);
+        if length > MAX_WS_BYTES as u64 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "websocket frame too large",
             ));
         }
+        len = length as usize;
     }
     let mut mask = [0u8; 4];
     if masked {
@@ -3727,10 +4586,15 @@ async fn read_ws_frame<R: AsyncReadExt + Unpin>(stream: &mut R) -> io::Result<Op
         }
     }
     Ok(Some(match opcode {
-        1 => WsFrame::Text(String::from_utf8_lossy(&data).into()),
+        1 => {
+            WsFrame::Text(String::from_utf8(data).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "invalid websocket text")
+            })?)
+        }
         2 => WsFrame::Binary(data),
         8 => WsFrame::Close,
         9 => WsFrame::Ping(data),
+        10 => WsFrame::Pong,
         _ => return Ok(None),
     }))
 }
@@ -3947,8 +4811,14 @@ mod tests {
 
     #[test]
     fn the_websocket_protocol_prefers_kesami_and_still_accepts_alpha() {
-        assert_eq!(offered_protocol(Some("kesami, kesami-token.abc")), Some("kesami"));
-        assert_eq!(offered_protocol(Some("alpha, alpha-token.abc")), Some("alpha"));
+        assert_eq!(
+            offered_protocol(Some("kesami, kesami-token.abc")),
+            Some("kesami")
+        );
+        assert_eq!(
+            offered_protocol(Some("alpha, alpha-token.abc")),
+            Some("alpha")
+        );
         assert_eq!(offered_protocol(Some("alpha, kesami")), Some("kesami"));
         assert_eq!(offered_protocol(Some("chat")), None);
         assert_eq!(offered_protocol(None), None);
@@ -4063,6 +4933,7 @@ mod tests {
             text: "Hello".into(),
             confidence: 1.0,
             language: None,
+            speaker_edited: false,
         });
         meeting.transcript.push(TranscriptTurn {
             id: "third".into(),
@@ -4073,6 +4944,7 @@ mod tests {
             text: "Again".into(),
             confidence: 1.0,
             language: None,
+            speaker_edited: false,
         });
 
         let renames = json!({"Speaker 1":"Riya"}).as_object().unwrap().clone();
@@ -4082,6 +4954,112 @@ mod tests {
 
         let blank = json!({"Riya":"  "}).as_object().unwrap().clone();
         assert!(rename_meeting_speakers(&mut meeting, &blank).is_err());
+    }
+
+    #[test]
+    fn single_lines_change_speaker_and_renames_carry_to_task_owners() {
+        let mut meeting: Meeting = serde_json::from_str(LEGACY_MEETING).unwrap();
+        meeting.transcript.push(TranscriptTurn {
+            id: "second".into(),
+            channel: "system".into(),
+            speaker: "Speaker 1".into(),
+            start_ms: 12_000,
+            end_ms: 13_000,
+            text: "Hello".into(),
+            confidence: 1.0,
+            language: None,
+            speaker_edited: false,
+        });
+        meeting.action_items = vec![
+            json!({"task": "Send the deck", "owner": "Speaker 1"}),
+            json!("Legacy task"),
+            json!({"task": "Book the room", "owner": "You"}),
+        ];
+
+        assert_eq!(edit_meeting(&mut meeting, &json!({"turnSpeakers": {"second": " Aditi "}})).unwrap(), 1);
+        assert_eq!(meeting.transcript[1].speaker, "Aditi");
+        assert!(meeting.transcript[1].speaker_edited);
+        assert_eq!(meeting.transcript[0].speaker, "You");
+        assert!(!meeting.transcript[0].speaker_edited);
+        let stored = serde_json::to_value(&meeting.transcript).unwrap();
+        assert_eq!(stored[1]["speakerEdited"], true);
+        assert!(stored[0].get("speakerEdited").is_none());
+        for bad in [
+            json!({"turnSpeakers": {"missing": "Aditi"}}),
+            json!({"turnSpeakers": {"second": "  "}}),
+            json!({"turnSpeakers": {"second": 7}}),
+            json!({"turnSpeakers": []}),
+            json!({"turnSpeakers": {}}),
+        ] {
+            assert!(edit_meeting(&mut meeting, &bad).is_err(), "{bad}");
+        }
+        assert_eq!(meeting.transcript[1].speaker, "Aditi");
+
+        meeting.transcript[1].speaker = "Speaker 1".into();
+        edit_meeting(&mut meeting, &json!({"speakerRenames": {"Speaker 1": "Aditi Sharma"}})).unwrap();
+        assert_eq!(meeting.transcript[1].speaker, "Aditi Sharma");
+        assert_eq!(meeting.action_items[0]["owner"], "Aditi Sharma");
+        assert_eq!(meeting.action_items[1], "Legacy task");
+        assert_eq!(meeting.action_items[2]["owner"], "You");
+    }
+
+    #[test]
+    fn renames_made_while_recording_follow_later_turns() {
+        let mut session = Session::default();
+        remember_speaker_edits(&mut session, &json!({"speakerRenames": {"Speaker 1": "Aditi"}}));
+        remember_speaker_edits(&mut session, &json!({"speakerRenames": {"Aditi": "Aditi Sharma"}}));
+        assert_eq!(session.speaker_renames.get("Speaker 1").map(String::as_str), Some("Aditi Sharma"));
+        assert_eq!(session.speaker_renames.get("Aditi").map(String::as_str), Some("Aditi Sharma"));
+    }
+
+    #[test]
+    fn meeting_edits_save_fields_and_reject_bad_input_without_partial_changes() {
+        let mut meeting: Meeting = serde_json::from_str(LEGACY_MEETING).unwrap();
+        meeting.summary_markdown = "Original".into();
+        meeting.summary_sections = vec![json!({"heading": "Plan", "bullets": []})];
+
+        let edited = json!({
+            "title": "  Launch review  ",
+            "actionItems": [{"id": "t1", "task": "Send notes", "owner": "You", "completed": true}],
+            "keyDecisions": ["Ship Friday"],
+        });
+        edit_meeting(&mut meeting, &edited).unwrap();
+        assert_eq!(meeting.title, "Launch review");
+        assert_eq!(meeting.action_items[0]["completed"], true);
+        assert_eq!(meeting.key_decisions, vec!["Ship Friday".to_string()]);
+        assert_eq!(
+            meeting.summary_sections.len(),
+            1,
+            "untouched summaries keep their sections"
+        );
+
+        edit_meeting(&mut meeting, &json!({"summaryMarkdown": "Original"})).unwrap();
+        assert_eq!(
+            meeting.summary_sections.len(),
+            1,
+            "saving an unchanged summary keeps its sections"
+        );
+        edit_meeting(&mut meeting, &json!({"summaryMarkdown": "Edited by hand"})).unwrap();
+        assert_eq!(meeting.summary_markdown, "Edited by hand");
+        assert!(
+            meeting.summary_sections.is_empty(),
+            "an edited summary is shown as written"
+        );
+
+        let before = serde_json::to_value(&meeting).unwrap();
+        for bad in [
+            json!({"title": "   "}),
+            json!({"title": "Fine", "actionItems": [{"task": ""}]}),
+            json!({"keyDecisions": "not a list"}),
+            json!({"unknown": true}),
+            json!({}),
+        ] {
+            assert!(
+                edit_meeting(&mut meeting, &bad).is_err(),
+                "{bad} is rejected"
+            );
+        }
+        assert_eq!(serde_json::to_value(&meeting).unwrap(), before);
     }
 
     #[test]
@@ -4216,24 +5194,77 @@ mod tests {
         fn a_websocket_needs_the_token_even_though_it_is_not_a_health_route() {
             use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
             let security = hosted();
-            let host = [("host", "backend.example.com")];
+            let upgrade = [
+                ("host", "backend.example.com"),
+                ("connection", "Upgrade"),
+                ("sec-websocket-version", "13"),
+                ("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            ];
             assert_eq!(
-                access_decision(&request("GET", "/ws", &host), &security, true)
+                access_decision(&request("GET", "/ws", &upgrade), &security, true)
                     .map(|(status, _)| status),
                 Some(401)
+            );
+            assert_eq!(
+                access_decision(&request("GET", "/ws", &upgrade[..1]), &security, true)
+                    .map(|(status, _)| status),
+                Some(400)
             );
             let subprotocol = (
                 "sec-websocket-protocol",
                 format!("kesami, kesami-token.{}", URL_SAFE_NO_PAD.encode(TOKEN)),
             );
-            let authorized = [
-                ("host", "backend.example.com"),
-                (subprotocol.0, subprotocol.1.as_str()),
-            ];
+            let mut authorized = upgrade.to_vec();
+            authorized.push((subprotocol.0, subprotocol.1.as_str()));
             assert_eq!(
                 access_decision(&request("GET", "/ws", &authorized), &security, true),
                 None
             );
+        }
+
+        #[test]
+        fn the_meeting_extension_may_report_and_read_status_but_nothing_else() {
+            let local = SecurityConfig::new("127.0.0.1", None, None, None).unwrap();
+            let extension = "chrome-extension://dmijnjhcilliiapbkophmbnnednjpjfj";
+            let host = ("host", "127.0.0.1:48900");
+            let report = request(
+                "POST",
+                "/api/session/participants",
+                &[host, ("origin", extension), ("content-type", "application/json; charset=utf-8")],
+            );
+            assert_eq!(access_decision(&report, &local, false), None);
+            let status = request("GET", "/api/status", &[host, ("origin", extension)]);
+            assert_eq!(access_decision(&status, &local, false), None);
+            for (method, path, content_type) in [
+                ("GET", "/api/meetings", "application/json"),
+                ("POST", "/api/meetings/stop", "application/json"),
+                ("POST", "/api/session/participants", "text/plain"),
+                ("OPTIONS", "/api/session/participants", "application/json"),
+            ] {
+                let other = request(method, path, &[host, ("origin", extension), ("content-type", content_type)]);
+                assert_eq!(
+                    access_decision(&other, &local, false).map(|(status, _)| status),
+                    Some(403),
+                    "{method} {path} {content_type}"
+                );
+            }
+            let malformed = request(
+                "POST",
+                "/api/session/participants",
+                &[host, ("origin", "chrome-extension://not-an-extension"), ("content-type", "application/json")],
+            );
+            assert_eq!(access_decision(&malformed, &local, false).map(|(status, _)| status), Some(403));
+            let remote = request(
+                "POST",
+                "/api/session/participants",
+                &[
+                    ("host", "backend.example.com"),
+                    ("origin", extension),
+                    ("content-type", "application/json"),
+                    ("authorization", &format!("Bearer {TOKEN}")),
+                ],
+            );
+            assert_eq!(access_decision(&remote, &hosted(), false).map(|(status, _)| status), Some(403));
         }
 
         #[test]

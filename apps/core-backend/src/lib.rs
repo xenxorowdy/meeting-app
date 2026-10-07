@@ -43,8 +43,12 @@ pub mod env_compat {
         }
     }
 }
+pub mod billing;
+pub mod billing_db;
+pub mod plans;
 pub mod dsp;
 pub mod echo;
+pub mod openai;
 pub mod voiceprint;
 
 pub mod audio {

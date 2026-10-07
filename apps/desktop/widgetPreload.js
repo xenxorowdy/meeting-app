@@ -8,11 +8,16 @@ contextBridge.exposeInMainWorld('kesamiWidget', {
     setExpanded: expanded => ipcRenderer.invoke('widget:set-expanded', Boolean(expanded)),
     openMain: () => ipcRenderer.invoke('widget:open-main'),
     hide: () => ipcRenderer.invoke('widget:hide'),
-    sendCommand: action => ipcRenderer.invoke('widget:command', action),
+    sendCommand: (action, promptId) => ipcRenderer.invoke('widget:command', action, promptId),
     onState: handler => {
         if (typeof handler !== 'function') return () => {};
-        const listener = (_event, state) => handler(state);
-        ipcRenderer.on('widget:state', listener);
-        return () => ipcRenderer.removeListener('widget:state', listener);
+        let subscribed = true;
+        let received = false;
+        const trackedListener = (_event, state) => { received = true; handler(state); };
+        ipcRenderer.on('widget:state', trackedListener);
+        ipcRenderer.invoke('widget:get-state').then(state => {
+            if (subscribed && !received && state) handler(state);
+        }).catch(() => {});
+        return () => { subscribed = false; ipcRenderer.removeListener('widget:state', trackedListener); };
     },
 });

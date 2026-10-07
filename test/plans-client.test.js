@@ -135,3 +135,60 @@ test('waitForPro gives up quietly while Razorpay is still confirming and stops o
         globalThis.fetch = originalFetch;
     }
 });
+
+test('checkout confirmation sends Razorpay proof for the subscription created by the backend', async () => {
+    const { confirmRazorpayPayment } = await import(moduleUrl);
+    const original = globalThis.fetch;
+    let request;
+    globalThis.fetch = async (url, init) => {
+        request = { url, body: JSON.parse(init.body) };
+        return { ok: true, text: async () => JSON.stringify({ tier: 'pro', accountSynced: true }) };
+    };
+    try {
+        const proof = { razorpay_subscription_id: 'sub_test', razorpay_payment_id: 'pay_test', razorpay_signature: 'provider-proof' };
+        assert.equal((await confirmRazorpayPayment('sub_test', proof)).tier, 'pro');
+        assert.match(request.url, /\/api\/billing\/razorpay\/confirm$/);
+        assert.deepEqual(request.body, { subscriptionId: 'sub_test', paymentId: 'pay_test', signature: 'provider-proof' });
+        await assert.rejects(confirmRazorpayPayment('sub_someoneelse', proof), /incomplete/);
+    } finally { globalThis.fetch = original; }
+});
+
+test('payment polling stops immediately when the pricing view closes', async () => {
+    const { waitForPro } = await import(moduleUrl);
+    const original = globalThis.fetch;
+    const controller = new AbortController();
+    let calls = 0;
+    globalThis.fetch = async () => {
+        calls++;
+        controller.abort();
+        return { ok: true, text: async () => JSON.stringify({ tier: 'free' }) };
+    };
+    try {
+        await assert.rejects(waitForPro('sub_test', { signal: controller.signal, intervalMs: 60000 }), { name: 'AbortError' });
+        assert.equal(calls, 1);
+    } finally { globalThis.fetch = original; }
+});
+
+test('closing checkout after authorization does not clear activation; payment failures are visible', async () => {
+    const { openRazorpayCheckout } = await import(moduleUrl);
+    const original = globalThis.Razorpay;
+    let options, failure, dismissed = 0, authorized;
+    globalThis.Razorpay = class {
+        constructor(value) { options = value; }
+        on(event, handler) { assert.equal(event, 'payment.failed'); failure = handler; }
+        open() {}
+    };
+    try {
+        await openRazorpayCheckout({ keyId: 'public', subscriptionId: 'sub_test' }, {
+            onAuthorized: response => { authorized = response; }, onDismiss: () => dismissed++,
+            onFailed: message => assert.match(message, /Payment failed/),
+        });
+        failure();
+        options.modal.ondismiss();
+        assert.equal(dismissed, 1);
+        options.handler({ razorpay_payment_id: 'pay_test' });
+        options.modal.ondismiss();
+        assert.equal(authorized.razorpay_payment_id, 'pay_test');
+        assert.equal(dismissed, 1);
+    } finally { globalThis.Razorpay = original; }
+});

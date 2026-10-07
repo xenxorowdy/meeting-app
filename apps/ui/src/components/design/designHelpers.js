@@ -25,13 +25,26 @@ export function durationLabel(seconds = 0) {
     return minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60} min` : ''}` : `${minutes} min`;
 }
 
+export function meetingCountLabel(count) {
+    return `${count} ${count === 1 ? 'meeting' : 'meetings'}`;
+}
+
 export function taskValue(item) {
     return typeof item === 'string' ? { task: item, completed: false, owner: 'You' } : item;
+}
+
+export function readingMinutes(...texts) {
+    const words = texts.join(' ').split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.round(words / 220));
 }
 
 export function leadParagraph(markdown = '') {
     const headingIndex = markdown.search(/\n#{1,6}\s/);
     return (headingIndex === -1 ? markdown : markdown.slice(0, headingIndex)).trim();
+}
+
+export function withoutNextSteps(markdown = '') {
+    return markdown.replace(/(^|\n)#{1,6}\s+Next steps\s*\n(?:(?!#{1,6}\s)[^\n]*(?:\n|$))*/i, '$1').trim();
 }
 
 export function turnIndex(transcript) {

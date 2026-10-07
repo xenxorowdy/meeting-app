@@ -588,6 +588,35 @@ impl CalendarService {
         normalize(provider, &created).ok_or_else(|| "the calendar returned an event Kesami could not read".to_string())
     }
 
+    /// One reviewed event, using existing consent/refresh credentials. No retries.
+    pub async fn create_reviewed_event(
+        &self,
+        expected_target: &str,
+        draft: &Value,
+    ) -> Result<Value, crate::actions::ActionError> {
+        use crate::actions::ActionError;
+        let mut target = self.oauth_status(GOOGLE).await;
+        target["label"] = json!("Google Calendar · primary calendar");
+        if crate::actions::target_revision(&target) != expected_target {
+            return Err(ActionError { code:"destination_changed".into(),message:"The Google Calendar connection changed. Reload actions and review the updated destination.".into(),retryable:true,uncertain:false });
+        }
+        let body = google_event_body(draft).map_err(|_| ActionError::response(400))?;
+        let token = self.access_token(GOOGLE).await.map_err(|_| ActionError::permission("Connect Google Calendar in Settings and grant event write access, then review and confirm again."))?;
+        let created = crate::action_providers::dispatch(
+            self.http
+                .post("https://www.googleapis.com/calendar/v3/calendars/primary/events")
+                .query(&[("sendUpdates", "all")])
+                .bearer_auth(token)
+                .json(&body),
+        )
+        .await?;
+        let event = normalize(GOOGLE, &created).ok_or_else(ActionError::uncertain)?;
+        if created["id"].as_str().is_none() {
+            return Err(ActionError::uncertain());
+        }
+        Ok(json!({"event":event,"id":created["id"],"url":created["htmlLink"]}))
+    }
+
     async fn fetch(&self, provider: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Value>, String> {
         let token = self.access_token(provider).await?;
         let request = match provider {
@@ -646,7 +675,7 @@ impl CalendarService {
     }
 }
 
-fn google_event_body(draft: &Value) -> Result<Value, String> {
+pub(crate) fn google_event_body(draft: &Value) -> Result<Value, String> {
     let title = draft
         .get("title")
         .and_then(Value::as_str)

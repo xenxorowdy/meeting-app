@@ -43,13 +43,14 @@ const KNOWN_SETTINGS: [&str; 20] = [
 ];
 
 const GEMINI_KEY: &str = "geminiApiKey";
+const OPENAI_KEY: &str = "openaiApiKey";
 const SARVAM_KEY: &str = "sarvamApiKey";
 
 /// Computed fields the UI reads back and then sends again on the next save. They
 /// are not settings, but they are not mistakes either, so accept them silently
 /// rather than warning the user about their own round trip.
-const IGNORED_ON_WRITE: [&str; 14] = [
-    GEMINI_KEY, "geminiApiKeySet", SARVAM_KEY, "sarvamApiKeySet",
+const IGNORED_ON_WRITE: [&str; 16] = [
+    GEMINI_KEY, "geminiApiKeySet", OPENAI_KEY, "openaiApiKeySet", SARVAM_KEY, "sarvamApiKeySet",
     // Calendar credentials are handled separately by the settings route.
     "googleCalendarClientId", "googleCalendarClientSecret",
     "googleCalendarClientIdSet", "googleCalendarClientSecretSet", "googleCalendarConnected",
@@ -123,20 +124,29 @@ pub(crate) async fn write_object(path: &Path, object: &Map<String, Value>, priva
     }
     let bytes =
         serde_json::to_vec_pretty(&Value::Object(object.clone())).map_err(io::Error::other)?;
-    let tmp = path.with_extension("json.tmp");
-    tokio::fs::write(&tmp, bytes).await?;
-
-    // Set the mode on the temp file: after the rename the permissions are already
-    // correct, so the key is never briefly world-readable.
+    let tmp = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    // Apply private permissions at creation, before any credential bytes exist.
     #[cfg(unix)]
     if private {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).await?;
+        options.mode(0o600);
     }
     #[cfg(not(unix))]
     let _ = private;
 
-    tokio::fs::rename(tmp, path).await
+    let result = async {
+        use tokio::io::AsyncWriteExt;
+        let mut file = options.open(&tmp).await?;
+        file.write_all(&bytes).await?;
+        file.sync_all().await?;
+        drop(file);
+        tokio::fs::rename(&tmp, path).await
+    }.await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+    result
 }
 
 impl SettingsStore {
@@ -160,6 +170,10 @@ impl SettingsStore {
         out.insert(
             "geminiApiKeySet".into(),
             Value::Bool(credentials.contains_key(GEMINI_KEY)),
+        );
+        out.insert(
+            "openaiApiKeySet".into(),
+            Value::Bool(credentials.contains_key(OPENAI_KEY)),
         );
         out.insert(
             "sarvamApiKeySet".into(),
@@ -203,6 +217,10 @@ impl SettingsStore {
         self.credential(GEMINI_KEY).await
     }
 
+    pub async fn openai_key(&self) -> Option<String> {
+        self.credential(OPENAI_KEY).await
+    }
+
     pub async fn sarvam_key(&self) -> Option<String> {
         self.credential(SARVAM_KEY).await
     }
@@ -221,30 +239,33 @@ impl SettingsStore {
     /// report them instead of pretending everything was stored.
     pub async fn merge(&self, incoming: &Map<String, Value>) -> (Vec<String>, io::Result<()>) {
         let mut rejected = Vec::new();
-        {
-            let mut settings = self.settings.write().await;
+        let mut settings = self.settings.write().await;
+        let mut snapshot = settings.clone();
             for (key, value) in incoming {
                 if IGNORED_ON_WRITE.contains(&key.as_str()) {
                     continue;
                 }
                 if KNOWN_SETTINGS.contains(&key.as_str()) {
-                    settings.insert(key.clone(), value.clone());
+                    snapshot.insert(key.clone(), value.clone());
                 } else {
                     rejected.push(key.clone());
                 }
             }
+        let result = write_object(&self.settings_path, &snapshot, false).await;
+        if result.is_ok() {
+            *settings = snapshot;
         }
-        let snapshot = self.settings.read().await.clone();
-        (
-            rejected,
-            write_object(&self.settings_path, &snapshot, false).await,
-        )
+        (rejected, result)
     }
 
     /// An empty or whitespace-only value clears the key rather than storing a
     /// blank one that would read as "configured".
     pub async fn set_gemini_key(&self, key: Option<&str>) -> io::Result<Option<String>> {
         self.set_credential(GEMINI_KEY, key).await
+    }
+
+    pub async fn set_openai_key(&self, key: Option<&str>) -> io::Result<Option<String>> {
+        self.set_credential(OPENAI_KEY, key).await
     }
 
     pub async fn set_sarvam_key(&self, key: Option<&str>) -> io::Result<Option<String>> {
@@ -256,15 +277,14 @@ impl SettingsStore {
             .map(str::trim)
             .filter(|k| !k.is_empty())
             .map(str::to_string);
-        {
-            let mut credentials = self.credentials.write().await;
+        let mut credentials = self.credentials.write().await;
+        let mut snapshot = credentials.clone();
             match &cleaned {
-                Some(value) => credentials.insert(name.into(), json!(value)),
-                None => credentials.remove(name),
+                Some(value) => snapshot.insert(name.into(), json!(value)),
+                None => snapshot.remove(name),
             };
-        }
-        let snapshot = self.credentials.read().await.clone();
         write_object(&self.credentials_path, &snapshot, true).await?;
+        *credentials = snapshot;
         Ok(cleaned)
     }
 }
@@ -272,6 +292,43 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn concurrent_credentials_are_all_persisted() {
+        let dir = scratch("concurrent");
+        let store = std::sync::Arc::new(store_in(&dir).await);
+        let mut writes = Vec::new();
+        for index in 0..32 {
+            let store = store.clone();
+            writes.push(tokio::spawn(async move {
+                store.set_credential(&format!("credential-{index}"), Some("test-value")).await.unwrap();
+            }));
+        }
+        for write in writes { write.await.unwrap(); }
+        let persisted = read_object(&dir.join("credentials.json")).await;
+        assert_eq!(persisted.len(), 32);
+        for index in 0..32 {
+            assert_eq!(persisted[&format!("credential-{index}")], "test-value");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_writes_do_not_change_live_settings_or_credentials() {
+        let dir = scratch("failed-write");
+        let store = store_in(&dir).await;
+        store.set_gemini_key(Some("original")).await.unwrap();
+        std::fs::remove_file(dir.join("credentials.json")).unwrap();
+        std::fs::create_dir(dir.join("credentials.json")).unwrap();
+        assert!(store.set_gemini_key(Some("replacement")).await.is_err());
+        assert_eq!(store.gemini_key().await.as_deref(), Some("original"));
+        std::fs::create_dir(dir.join("settings.json")).unwrap();
+        let incoming = json!({"autoSummarize": false});
+        assert!(store.merge(incoming.as_object().unwrap()).await.1.is_err());
+        assert_eq!(store.get_bool("autoSummarize").await, None);
+        assert!(std::fs::read_dir(&dir).unwrap().all(|entry| !entry.unwrap().path().extension().is_some_and(|ext| ext == "tmp")));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn a_legacy_folder_is_moved_once_and_never_over_a_new_one() {
@@ -388,13 +445,18 @@ mod tests {
         let store = store_in(&dir).await;
         store.set_gemini_key(Some("AIzaSUPERSECRET")).await.unwrap();
         store.set_sarvam_key(Some("sk_SARVAMSECRET")).await.unwrap();
+        assert!(store.public_value().await.to_string().contains("\"openaiApiKeySet\":false"));
+        store.set_openai_key(Some("sk-proj-OPENAISECRET")).await.unwrap();
 
         let public = store.public_value().await.to_string();
         assert!(public.contains("\"geminiApiKeySet\":true"));
+        assert!(public.contains("\"openaiApiKeySet\":true"));
         assert!(public.contains("\"sarvamApiKeySet\":true"));
         assert!(!public.contains("AIzaSUPERSECRET"));
+        assert!(!public.contains("OPENAISECRET"));
         assert!(!public.contains("sk_SARVAMSECRET"));
         assert_eq!(store.gemini_key().await.as_deref(), Some("AIzaSUPERSECRET"));
+        assert_eq!(store.openai_key().await.as_deref(), Some("sk-proj-OPENAISECRET"));
         assert_eq!(store.sarvam_key().await.as_deref(), Some("sk_SARVAMSECRET"));
     }
 
@@ -423,6 +485,8 @@ mod tests {
         let mut incoming = Map::new();
         incoming.insert("geminiApiKey".into(), json!("AIzaLEAKED"));
         incoming.insert("geminiApiKeySet".into(), json!(true));
+        incoming.insert("openaiApiKey".into(), json!("sk-proj-LEAKED"));
+        incoming.insert("openaiApiKeySet".into(), json!(true));
         incoming.insert("sarvamApiKey".into(), json!("sk_LEAKED"));
         incoming.insert("sarvamApiKeySet".into(), json!(true));
         incoming.insert("sarvamLanguage".into(), json!("hi"));
@@ -435,6 +499,8 @@ mod tests {
         assert!(!written.contains("AIzaLEAKED"));
         assert!(!written.contains("geminiApiKey"));
         assert!(!written.contains("geminiApiKeySet"));
+        assert!(!written.contains("sk-proj-LEAKED"));
+        assert!(!written.contains("openaiApiKey"));
         assert!(!written.contains("sk_LEAKED"));
         assert!(!written.contains("sarvamApiKey"));
         assert!(!written.contains("sarvamApiKeySet"));

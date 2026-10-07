@@ -19,14 +19,24 @@ pub fn free_ai_limit_message() -> String {
 }
 
 pub fn catalog(billing_enabled: bool) -> Value {
+    catalog_for(billing_enabled, crate::env_compat::var("KESAMI_CLOUD_URL").is_ok_and(|url| !url.trim().is_empty()))
+}
+
+pub fn catalog_for(billing_enabled: bool, cloud_managed: bool) -> Value {
     catalog_with(
         billing_enabled,
-        kesami_core_backend::env_compat::var("KESAMI_PRO_MONTHLY_MINOR").ok().as_deref(),
-        kesami_core_backend::env_compat::var("KESAMI_BILLING_CURRENCY").ok().as_deref(),
+        crate::env_compat::var("KESAMI_PRO_MONTHLY_MINOR").ok().as_deref(),
+        crate::env_compat::var("KESAMI_BILLING_CURRENCY").ok().as_deref(),
+        cloud_managed,
     )
 }
 
-fn catalog_with(billing_enabled: bool, amount: Option<&str>, currency: Option<&str>) -> Value {
+fn catalog_with(billing_enabled: bool, amount: Option<&str>, currency: Option<&str>, cloud_managed: bool) -> Value {
+    let free_note = if cloud_managed {
+        "Sign in with Google to transcribe meetings and use meeting AI. Your library stays on this computer."
+    } else {
+        "Provider API usage for local transcription may still be billed separately by your chosen provider."
+    };
     let mut pro_prices = vec![
         json!({"amountMinor":PRO_MONTHLY_MINOR_INR,"currency":"INR","interval":"month","provider":"razorpay"}),
         json!({"amountMinor":PRO_MONTHLY_MINOR_USD,"currency":"USD","interval":"month","provider":"stripe"}),
@@ -53,7 +63,7 @@ fn catalog_with(billing_enabled: bool, amount: Option<&str>, currency: Option<&s
              "prices":[{"amountMinor":0,"currency":"USD","interval":null}],
              "description":"Your meetings, on your device.",
              "features":[format!("{} hours of meeting recording per month", FREE_MONTHLY_MINUTES / 60),format!("{FREE_MONTHLY_AI_USES} shared AI summaries or chat replies per month"),"Keep and export your meeting library","Search and transcripts on your device"],
-             "note":"Provider API usage for local transcription may still be billed separately by your chosen provider."},
+             "note":free_note},
             {"id":"pro","name":"Pro","status":"available","requiresAccount":true,
              "prices":pro_prices,
              "description":"Unlimited recording and AI summaries, per user.",
@@ -63,7 +73,7 @@ fn catalog_with(billing_enabled: bool, amount: Option<&str>, currency: Option<&s
              "prices":[],
              "description":"Custom pricing for teams and organizations.",
              "features":["Volume and multi-workspace licensing","Custom contracts, invoicing, and procurement","Deployment and integration support","Dedicated support channel"],
-             "note":"Contact sales for a quote tailored to your team."}
+             "note":"Team plans are coming later."}
         ]
     })
 }
@@ -74,7 +84,7 @@ mod tests {
 
     #[test]
     fn the_catalog_matches_the_published_pricing() {
-        let catalog = catalog_with(false, None, None);
+        let catalog = catalog_with(false, None, None, false);
         assert_eq!(catalog["billingEnabled"], false);
         assert_eq!(catalog["freeMonthlyMinutes"], FREE_MONTHLY_MINUTES);
         let plans = catalog["plans"].as_array().unwrap();
@@ -99,7 +109,7 @@ mod tests {
 
     #[test]
     fn a_region_override_only_touches_its_own_price() {
-        let catalog = catalog_with(true, Some("70000"), Some("inr"));
+        let catalog = catalog_with(true, Some("70000"), Some("inr"), false);
         assert_eq!(catalog["billingEnabled"], true);
         let prices = catalog["plans"][1]["prices"].as_array().unwrap();
         assert_eq!(prices[0]["amountMinor"], 70_000);
@@ -111,7 +121,7 @@ mod tests {
             ("123", "XXX"),
             ("hello", "USD"),
         ] {
-            let catalog = catalog_with(false, Some(amount), Some(currency));
+            let catalog = catalog_with(false, Some(amount), Some(currency), false);
             let prices = catalog["plans"][1]["prices"].as_array().unwrap();
             assert_eq!(
                 prices[0]["amountMinor"], 49_900,
@@ -125,8 +135,19 @@ mod tests {
     }
 
     #[test]
+    fn cloud_builds_do_not_tell_users_to_bring_their_own_provider() {
+        let local = catalog_with(false, None, None, false);
+        let cloud = catalog_with(false, None, None, true);
+        assert!(local["plans"][0]["note"].as_str().unwrap().contains("chosen provider"));
+        let note = cloud["plans"][0]["note"].as_str().unwrap();
+        assert!(note.contains("Sign in with Google"));
+        assert!(!note.contains("provider"));
+        assert!(!cloud["plans"][2]["note"].as_str().unwrap().to_lowercase().contains("contact"));
+    }
+
+    #[test]
     fn the_free_plan_never_requires_an_account_or_billing() {
-        let catalog = catalog_with(true, None, None);
+        let catalog = catalog_with(true, None, None, false);
         assert_eq!(catalog["plans"][0]["requiresAccount"], false);
         assert_eq!(catalog["plans"][0]["prices"][0]["amountMinor"], 0);
     }

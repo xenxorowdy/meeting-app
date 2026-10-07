@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConnectorsPanel } from '@/components/ConnectorsPanel';
 import { useConnectors } from '@/hooks/useConnectors';
 import { usePreferences } from '@/hooks/usePreferences';
+import { apiRequest } from '@/lib/backend';
 import { isRemoteBackend } from '@/lib/connection';
 import { isRecordingSupported } from '@/lib/screenRecorder';
 import { listAudioInputs, systemAudioAvailability } from '@/lib/systemCapture';
@@ -72,6 +73,75 @@ function SettingRow({ id, label, description, badge, children, stacked = false }
     );
 }
 
+const MEETING_CLIENT_LIVE_MS = 15000;
+const MEETING_CLIENT_SOURCES = { 'google-meet': 'Google Meet', zoom: 'Zoom' };
+
+function sinceLabel(ms) {
+    const seconds = Math.max(0, Math.round(ms / 1000));
+    if (seconds < 5) return 'just now';
+    if (seconds < 60) return `${seconds} s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    return `${Math.round(minutes / 60)} h ago`;
+}
+
+function BrowserExtensionRow({ isConnected }) {
+    const [client, setClient] = useState(undefined);
+    const [checkedAt, setCheckedAt] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (!isConnected) return undefined;
+        let cancelled = false;
+        const load = async () => {
+            try {
+                const status = await apiRequest('/api/status');
+                if (!cancelled) setClient(status.meetingClient || null);
+            } catch {
+                if (!cancelled) setClient(undefined);
+            }
+            if (!cancelled) setCheckedAt(Date.now());
+        };
+        load();
+        const timer = setInterval(load, 3000);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [isConnected]);
+
+    const lastSeen = Number.isFinite(client?.lastSeenAt) ? client.lastSeenAt : null;
+    const live = lastSeen !== null && checkedAt - lastSeen <= MEETING_CLIENT_LIVE_MS;
+    const source = MEETING_CLIENT_SOURCES[client?.source] || 'a meeting tab';
+    const state = !isConnected
+        ? 'Kesami is offline'
+        : client === undefined
+          ? 'Checking…'
+          : lastSeen === null
+            ? 'Not detected yet'
+            : live
+              ? `${source} · ${sinceLabel(checkedAt - lastSeen)}`
+              : `Last seen ${sinceLabel(checkedAt - lastSeen)}`;
+
+    return (
+        <SettingRow
+            id="browser-extension"
+            label="Browser extension"
+            badge={
+                live ? (
+                    <Badge variant="success">Connected</Badge>
+                ) : (
+                    <Badge variant="outline">{lastSeen === null ? 'Not connected' : 'Idle'}</Badge>
+                )
+            }
+            description="Reads names, who is speaking and your mute state from Google Meet and Zoom calls in Chrome, Brave, Edge or Arc, so the transcript can name people and the meeting can stop when the call ends. To try it, open your browser’s extensions page (brave://extensions in Brave), turn on Developer mode, choose Load unpacked, and pick the apps/extension folder from Kesami’s source. It checks in here as soon as a call tab is open."
+        >
+            <span className="text-footnote text-muted-foreground" role="status">
+                {state}
+            </span>
+        </SettingRow>
+    );
+}
+
 export function SettingsModal({
     isOpen,
     onClose,
@@ -82,9 +152,11 @@ export function SettingsModal({
     onUpdateSettings,
     onActivateLicense,
     onConnectorConnection,
+    onOpenPlans,
+    initialTab = null,
     connectionLocked = false,
 }) {
-    const [activeTab, setActiveTab] = useState('personal');
+    const [activeTab, setActiveTab] = useState(initialTab || 'personal');
     const [preferences, setPreferences] = usePreferences();
     const connectors = useConnectors({ enabled: isOpen && isConnected && activeTab === 'connectors' });
     const handleConnectorConnection = connectors.handleConnectionEvent;
@@ -96,6 +168,7 @@ export function SettingsModal({
     }, [onConnectorConnection, handleConnectorConnection]);
     const remoteBackend = isRemoteBackend() || settings?.deploymentMode === 'hosted';
     const localMediaSupported = !remoteBackend && settings?.supportsLocalRecording !== false;
+    const localTranscriptionSupported = localMediaSupported && settings?.cloudManaged !== true;
     const [formData, setFormData] = useState(settings);
     const [licenseKey, setLicenseKey] = useState('');
     const [activation, setActivation] = useState(null);
@@ -148,16 +221,21 @@ export function SettingsModal({
         if (isOpen) {
             setFormData({
                 ...settings,
-                transcriptionProvider: settings?.transcriptionProvider === 'sarvam' && localMediaSupported ? 'sarvam' : 'sarvam-realtime',
-                sarvamDiarizeAfterMeeting: localMediaSupported && settings?.sarvamDiarizeAfterMeeting !== false,
+                transcriptionProvider: settings?.transcriptionProvider === 'sarvam' && localTranscriptionSupported ? 'sarvam' : 'sarvam-realtime',
+                sarvamDiarizeAfterMeeting: localTranscriptionSupported && settings?.sarvamDiarizeAfterMeeting !== false,
                 geminiApiKey: '',
+                openaiApiKey: '',
                 sarvamApiKey: '',
                 googleCalendarClientSecret: '',
             });
             setSaveState(null);
             setActivation(null);
         }
-    }, [isOpen, settings, localMediaSupported]);
+    }, [isOpen, settings, localTranscriptionSupported]);
+
+    useEffect(() => {
+        if (isOpen && initialTab) setActiveTab(initialTab);
+    }, [isOpen, initialTab]);
 
     useEffect(() => {
         if (!isOpen || !globalThis.kesamiRecorder) return;
@@ -206,16 +284,19 @@ export function SettingsModal({
         const payload = {
             ...formData,
             transcriptionProvider,
-            sarvamDiarizeAfterMeeting: localMediaSupported && formData.sarvamDiarizeAfterMeeting !== false,
+            sarvamDiarizeAfterMeeting: localTranscriptionSupported && formData.sarvamDiarizeAfterMeeting !== false,
         };
         delete payload.whisperModel;
         delete payload.sttLanguage;
         delete payload.deploymentMode;
         delete payload.supportsLocalRecording;
         delete payload.calendarConnectSupported;
+        delete payload.cloudManaged;
         if (!payload.geminiApiKey) delete payload.geminiApiKey;
+        if (!payload.openaiApiKey) delete payload.openaiApiKey;
         if (!payload.sarvamApiKey) delete payload.sarvamApiKey;
         delete payload.geminiApiKeySet;
+        delete payload.openaiApiKeySet;
         delete payload.sarvamApiKeySet;
         for (const provider of ['google', 'microsoft']) {
             for (const suffix of ['ClientId', 'ClientSecret']) {
@@ -243,9 +324,9 @@ export function SettingsModal({
         }
     };
 
-    const transcriptionProvider = formData.transcriptionProvider === 'sarvam' && localMediaSupported ? 'sarvam' : 'sarvam-realtime';
+    const transcriptionProvider = formData.transcriptionProvider === 'sarvam' && localTranscriptionSupported ? 'sarvam' : 'sarvam-realtime';
     const usesSarvamBatch = transcriptionProvider === 'sarvam';
-    const diarizeAfterMeeting = localMediaSupported && formData.sarvamDiarizeAfterMeeting !== false;
+    const diarizeAfterMeeting = localTranscriptionSupported && formData.sarvamDiarizeAfterMeeting !== false;
     const diarizes = usesSarvamBatch || diarizeAfterMeeting;
 
     const tier = license?.tier ? license.tier.charAt(0).toUpperCase() + license.tier.slice(1) : 'Unknown';
@@ -281,7 +362,7 @@ export function SettingsModal({
                                 Recording
                             </TabsTrigger>
                             <TabsTrigger value="license" className="h-9 flex-1">
-                                License
+                                Plan
                             </TabsTrigger>
                         </TabsList>
                     </div>
@@ -462,7 +543,7 @@ export function SettingsModal({
                                     </Select>
                                 </SettingRow>
 
-                                {!usesSarvamBatch && (
+                                {!usesSarvamBatch && localTranscriptionSupported && (
                                     <SettingRow
                                         id="sarvam-diarize-after"
                                         label="Separate speakers after the meeting"
@@ -540,7 +621,7 @@ export function SettingsModal({
                                                       ? provider.provider === 'google'
                                                           ? 'Opens your browser to sign in, then returns to Kesami. Requests permission to view, create, edit, and delete events.'
                                                           : 'Opens your browser to sign in, then returns to Kesami. Read-only access to events.'
-                                                      : 'Calendar sign-in isn’t set up for this workspace yet.'
+                                                      : 'Not available in this version of Kesami yet.'
                                             }
                                             badge={provider.connected ? <Badge variant="success">Connected</Badge> : null}
                                         >
@@ -611,6 +692,7 @@ export function SettingsModal({
                                         onCheckedChange={checked => setFormData({ ...formData, autoRecordMeetings: checked })}
                                     />
                                 </SettingRow>
+                                <BrowserExtensionRow isConnected={isConnected} />
                                 <SettingRow
                                     id="auto-stop-on-meeting-end"
                                     label="Stop recording when the meeting ends"
@@ -624,8 +706,8 @@ export function SettingsModal({
                                 </SettingRow>
                                 <SettingRow
                                     id="prompt-unscheduled-calls"
-                                    label="Prompt to record unscheduled calls"
-                                    description="A notification when a call that is not on your calendar is detected — in the browser, or from any app using your microphone. Clicking it starts the recording."
+                                    label="Prompt to record detected calls"
+                                    description="A floating card when a browser call or sustained microphone use is detected, including calendar meetings. Start records audio immediately; unanswered cards disappear after two minutes."
                                 >
                                     <Switch
                                         id="prompt-unscheduled-calls"
@@ -665,43 +747,11 @@ export function SettingsModal({
 
                             <SettingGroup>
                                 <SettingRow
-                                    id="record-screen"
-                                    label="Record the screen"
-                                    description={
-                                        transcriptionProvider === 'sarvam'
-                                            ? 'Required when transcripts are processed after the meeting: the recording carries the complete audio.'
-                                            : 'Keeps a video on this device for replay.'
-                                    }
-                                >
-                                    <Switch
-                                        id="record-screen"
-                                        disabled={!recordingSupported || transcriptionProvider === 'sarvam'}
-                                        checked={Boolean(formData.recordScreen)}
-                                        onCheckedChange={checked => setFormData({ ...formData, recordScreen: checked })}
-                                    />
-                                </SettingRow>
-
-                                <SettingRow
-                                    id="recording-source"
-                                    label="What to record"
-                                    description="Asking each time lets you share one window instead of the whole screen."
+                                    id="recording-bitrate"
+                                    label="Video quality"
+                                    description="Used when you record a screen. You choose sound only or screen and sound each time a meeting starts."
                                     stacked
                                 >
-                                    <Select
-                                        value={formData.recordingSource === 'ask' ? 'ask' : 'screen'}
-                                        onValueChange={value => setFormData({ ...formData, recordingSource: value === 'ask' ? 'ask' : 'screen' })}
-                                    >
-                                        <SelectTrigger id="recording-source" className="w-full" disabled={!recordingSupported}>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="ask">Ask me each time</SelectItem>
-                                            <SelectItem value="screen">Always the whole screen</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </SettingRow>
-
-                                <SettingRow id="recording-bitrate" label="Video quality" stacked>
                                     <Select
                                         value={String(formData.recordingBitsPerSecond || 800000)}
                                         onValueChange={value => setFormData({ ...formData, recordingBitsPerSecond: Number(value) })}
@@ -726,7 +776,7 @@ export function SettingsModal({
                                     : usageBytes === null
                                       ? 'Measuring recording storage…'
                                       : `Recordings are using ${formatBytes(usageBytes)}.`}
-                                {' Deleting a meeting from History deletes its recording too.'}
+                                {' Deleting a meeting from your library also deletes its recording.'}
                             </p>
 
                             {screenPermission === 'denied' && (
@@ -772,7 +822,20 @@ export function SettingsModal({
                                 </p>
                             )}
 
-                            {license?.licenseActivationSupported !== false ? (
+                            {license?.tier !== 'pro' && license?.tier !== 'enterprise' && typeof license?.usage?.minutesUsed === 'number' && (
+                                <p className="text-callout text-muted-foreground">
+                                    {license.usage.minutesUsed} of {license.usage.freeMonthlyMinutes} free recording minutes used this month.
+                                </p>
+                            )}
+
+                            {onOpenPlans && (
+                                <Button variant="outline" onClick={onOpenPlans}>
+                                    <Award aria-hidden="true" />
+                                    {license?.tier === 'pro' || license?.tier === 'enterprise' ? 'Manage plan' : 'See plans'}
+                                </Button>
+                            )}
+
+                            {license?.licenseActivationSupported === true && (
                                 <form onSubmit={handleActivateLicense} className="space-y-2">
                                     <Label htmlFor="license-key" className="text-body font-medium">
                                         License key
@@ -808,10 +871,6 @@ export function SettingsModal({
                                         </p>
                                     )}
                                 </form>
-                            ) : (
-                                <p className="text-callout text-muted-foreground">
-                                    Local features are free and require no account or license key. Paid plans are not available yet.{' '}
-                                </p>
                             )}
                         </TabsContent>
                     </div>
@@ -830,7 +889,7 @@ export function SettingsModal({
                         <Button variant="ghost" onClick={onClose}>
                             Close
                         </Button>
-                        {activeTab !== 'personal' && activeTab !== 'connectors' && (
+                        {!['personal', 'connectors', 'license'].includes(activeTab) && (
                             <Button onClick={handleSave} disabled={!isConnected || saveState?.status === 'saving'}>
                                 {saveState?.status === 'saved' && <Check aria-hidden="true" />}
                                 {saveState?.status === 'saving' ? 'Saving…' : saveState?.status === 'saved' ? 'Saved' : 'Save changes'}

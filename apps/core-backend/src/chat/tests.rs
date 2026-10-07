@@ -35,6 +35,25 @@ fn retrieves_middle_passage_without_sending_whole_meeting() {
 }
 
 #[test]
+fn reviewed_commitment_tasks_link_current_transcript_but_never_stale_quotes() {
+    let mut m = meeting("commitments", "I will send the proposal tomorrow.");
+    crate::commitments::detect(&mut m);
+    let candidate = crate::commitments::candidates(&m).remove(0);
+    let review = json!({"status":"confirmed","person":"Asha","targetAction":"Send the proposal","transcriptRevision":crate::memory::transcript_revision(&m)});
+    crate::commitments::review(&mut m, &candidate.id, &review).unwrap();
+    let chunks = index::chunks(&m);
+    let action = chunks.iter().find(|p| p.source_kind == "action").unwrap();
+    assert_eq!(action.turn_ids, ["t1"]);
+    assert_eq!(action.start_ms, Some(10));
+    assert!(action.excerpt.contains("human_reviewed"));
+    m.transcript[0].text = "I cannot send the proposal.".into();
+    let chunks = index::chunks(&m);
+    let action = chunks.iter().find(|p| p.source_kind == "action").unwrap();
+    assert!(action.turn_ids.is_empty());
+    assert!(action.excerpt.contains("original transcript has changed"));
+}
+
+#[test]
 fn edits_deletes_and_slow_embeddings_cannot_restore_stale_evidence() {
     let old = meeting("m1", "Zephyr ships Friday");
     let new = meeting("m1", "Zephyr ships Monday");
@@ -220,6 +239,100 @@ fn semantic_retrieval_can_find_a_paraphrase_without_keyword_overlap() {
         .retrieve("automobile maintenance", &[m], Some(&vector), false)
         .unwrap()
         .is_empty());
+}
+
+fn memory_meeting(id: &str) -> Meeting {
+    let mut m = meeting(id, "I will send Acme the API proposal on Friday.");
+    let request = crate::summarizer::SummaryRequest { title:m.title.clone(), started_at:m.started_at, duration_seconds:1, notes:vec![], attendees:vec![], turns:m.transcript.iter().map(|t|crate::summarizer::SummaryTurn { id:t.id.clone(), speaker:t.speaker.clone(), start_ms:t.start_ms, text:t.text.clone() }).collect() };
+    let records = json!([
+        {"kind":"company","name":"Acme","quote":"send Acme the API proposal","owner":"","date":"","sourceTurns":[0]},
+        {"kind":"commitment","name":"Send proposal","quote":"I will send Acme the API proposal on Friday.","owner":"Asha","date":"Friday","sourceTurns":[0]}
+    ]);
+    let facts = crate::memory::extract(&records, &request);
+    crate::memory::persist(&mut m, &facts, "test");
+    m
+}
+
+#[test]
+fn memory_schema_migrates_reopens_and_prunes_entities_and_facts() {
+    let root = std::env::temp_dir().join(format!("kesami-memory-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("search.sqlite");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch("CREATE TABLE meetings(id TEXT PRIMARY KEY,revision TEXT NOT NULL); INSERT INTO meetings VALUES('m1','old-v1'); PRAGMA user_version=1;").unwrap();
+    drop(db);
+    let mut index = Index::open(&path).unwrap();
+    let m = memory_meeting("m1");
+    index.sync(&[m.clone()], true).unwrap();
+    assert_eq!(index.db.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(), 2);
+    assert_eq!(index.db.query_row("SELECT count(*) FROM memory_facts",[],|r|r.get::<_,i64>(0)).unwrap(), 2);
+    assert_eq!(index.db.query_row("SELECT count(*) FROM entities WHERE kind='company' AND normalized_name='acme'",[],|r|r.get::<_,i64>(0)).unwrap(), 1);
+    assert!(index.retrieve("Acme", &[m.clone()], None, false).unwrap().iter().any(|p|p.source_kind == "commitment" && p.turn_ids == ["t1"]));
+    drop(index);
+    let mut index = Index::open(&path).unwrap();
+    index.sync(&[m.clone()], true).unwrap();
+    let mut edited = m;
+    edited.transcript[0].text = "We are only considering a proposal.".into();
+    assert!(crate::memory::facts(&edited).is_empty());
+    index.sync(&[edited], true).unwrap();
+    assert_eq!(index.db.query_row("SELECT count(*) FROM memory_facts",[],|r|r.get::<_,i64>(0)).unwrap(), 0);
+    index.sync(&[], true).unwrap();
+    for table in ["entities", "meeting_entities", "memory_facts", "chunks", "vectors"] {
+        assert_eq!(index.db.query_row(&format!("SELECT count(*) FROM {table}"),[],|r|r.get::<_,i64>(0)).unwrap(), 0);
+    }
+    drop(index); std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn memory_filters_match_entities_and_dates_without_inventing_attendees() {
+    let mut old = memory_meeting("old"); old.started_at = 1000;
+    let mut new = memory_meeting("new"); new.started_at = 5000;
+    let mut unrelated = meeting("unrelated", "Lunch today"); unrelated.transcript[0].speaker = "John".into();
+    unrelated.metadata = json!({"attendees":["Asha"]});
+    let store = Store { library:Arc::new(tokio::sync::RwLock::new(crate::library::Library::new(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string())))), meetings:Arc::new(tokio::sync::RwLock::new(HashMap::from([(old.id.clone(),old),(new.id.clone(),new),(unrelated.id.clone(),unrelated)]))) };
+    let matches = resolve_scope(&store, &json!({"type":"all","entity":{"kind":"company","name":" acme "},"fromMs":3000,"toMs":6000})).await.unwrap();
+    assert_eq!(matches.iter().map(|m|m.id.as_str()).collect::<Vec<_>>(), ["new"]);
+    assert_eq!(resolve_scope(&store,&json!({"type":"all","entity":{"kind":"person","name":"Asha"}})).await.unwrap().len(),2);
+    assert!(resolve_scope(&store,&json!({"type":"all","entity":{"kind":"company","name":"Imaginary"}})).await.unwrap().is_empty());
+    for invalid in [json!({"kind":"agent","name":"Asha"}),json!({"kind":"person","name":" "}),Value::Null] {
+        assert!(resolve_scope(&store,&json!({"type":"all","entity":invalid})).await.is_err());
+    }
+}
+
+#[test]
+fn recent_matches_rank_first_and_history_keeps_multiple_meetings() {
+    let mut old = meeting("old", "Pricing is thirty dollars."); old.started_at = 0;
+    let mut new = meeting("new", "Pricing is thirty dollars."); new.started_at = 365 * 86_400_000;
+    let mut index = Index::open(std::path::Path::new(":memory:")).unwrap();
+    index.sync(&[old.clone(),new.clone()], true).unwrap();
+    let passages = index.retrieve("pricing", &[old,new], None, false).unwrap();
+    assert_eq!(passages[0].meeting_id, "new");
+    assert_eq!(passages.iter().map(|p|&p.meeting_id).collect::<HashSet<_>>().len(), 2);
+    let packet = EvidencePacket::build("Pricing?",&[],passages,&json!({})).unwrap();
+    let payload:Value = serde_json::from_str(&packet.prompt).unwrap();
+    assert!(payload["sources"][0]["date"].is_string());
+}
+
+#[tokio::test]
+async fn summary_save_preserves_latest_task_state_and_rejects_changed_or_deleted_sources() {
+    let root = std::env::temp_dir().join(format!("kesami-memory-save-{}",uuid::Uuid::new_v4()));
+    let mut m = meeting("m1", "I will send a proposal.");
+    m.action_items = vec![json!({"id":"user-task","task":"Send proposal","owner":"Asha","completed":false})];
+    let expected = crate::memory::summary_revision(&m);
+    let store = Store { library:Arc::new(tokio::sync::RwLock::new(crate::library::Library::new(root.clone()))),meetings:Arc::new(tokio::sync::RwLock::new(HashMap::from([(m.id.clone(),m.clone())]))) };
+    // The user checks the task while an AI request is in flight.
+    m.action_items[0]["completed"] = json!(true);
+    store.meetings.write().await.insert(m.id.clone(),m.clone());
+    let summary = crate::summarizer::MeetingSummary { summary_markdown:"Proposal discussed.".into(), action_items:vec![json!({"task":"Send proposal","owner":"Asha"})],provider:"test".into(),..Default::default() };
+    let stored = store.apply_summary("m1", &summary, &expected).await.unwrap();
+    assert_eq!(stored.action_items[0]["completed"],true);
+    assert_eq!(stored.action_items[0]["id"],"user-task");
+    m.transcript[0].text = "There is no commitment.".into();
+    store.meetings.write().await.insert(m.id.clone(),m);
+    assert_eq!(store.apply_summary("m1",&summary,&expected).await.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+    store.meetings.write().await.clear();
+    assert_eq!(store.apply_summary("m1",&summary,&expected).await.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[tokio::test]

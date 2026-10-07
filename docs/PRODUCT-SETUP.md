@@ -1,6 +1,10 @@
 # Local accounts and pricing setup
 
-The desktop workspace is usable without signing in. Choose **Use it locally, no account** on the welcome screen. This keeps a configured local backend (or switches a remote connection to `http://127.0.0.1:48900`), clears the current connection token on this device, and remembers the local choice across launches. It does not copy remote meetings. Returning to welcome is available under **Workspace tools** or the account page.
+Release builds (any build with `KESAMI_CLOUD_URL`, which release packaging requires) offer **Continue with Google** as the only way in, because hosted transcription and meeting AI run on the user's Supabase Google session. The backend reports this as `cloudManaged: true` in `GET /api/auth/config`, and the welcome screen hides email/password sign-in and **Connection & preferences** in that mode.
+
+Development builds without a cloud URL keep email/password sign-in, Google sign-in when it is configured, and **Connection & preferences**, which opens the workspace without an account for that launch. An install that chose local use in an earlier version (`kesami.local-mode` in local storage) still opens the workspace directly. Returning to the welcome screen is available under **Workspace tools** or the account page.
+
+If the local engine is unreachable while a saved session is being restored, the app keeps the session and retries instead of signing the user out.
 
 Run `npm run dev` for desktop development. The standalone UI (`npm run start:ui`) needs the Rust backend (`npm run start:backend`) for meeting operations. Local mode still requires this local service. AI/transcription depend on the configured providers and may incur provider charges.
 

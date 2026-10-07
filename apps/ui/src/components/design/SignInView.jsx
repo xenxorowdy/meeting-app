@@ -1,84 +1,122 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Moon, Sun } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
-import { createAccount, signIn, signInWithGoogle } from '@/lib/auth.js';
+import { signInWithGoogle } from '@/lib/auth.js';
 import { apiRequest } from '@/lib/backend.js';
 
-const EMPTY_FORM = { name: '', email: '', password: '' };
+const CONFIG_TIMEOUT_MS = 8000;
+const CONFIG_RETRY_MS = 3000;
 
-export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onToggleTheme, notice }) {
-    const [mode, setMode] = useState('signin');
-    const [form, setForm] = useState(EMPTY_FORM);
-    const [reveal, setReveal] = useState(false);
+export function SignInView({ onAuthenticated, theme = 'dark', onToggleTheme, notice }) {
+    const busyRef = useRef(false);
+    const mountedRef = useRef(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    const [registrationAllowed, setRegistrationAllowed] = useState(null);
-    const [googleClientId, setGoogleClientId] = useState(null);
-    const [googleAuth, setGoogleAuth] = useState(null);
-    const [googleCalendar, setGoogleCalendar] = useState(false);
+    const [config, setConfig] = useState(null);
+    const [configState, setConfigState] = useState('loading');
+    const [configAttempt, setConfigAttempt] = useState(0);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+
     useEffect(() => {
         const controller = new AbortController();
-        apiRequest('/api/auth/config', { signal: controller.signal }).then(config => {
-            setRegistrationAllowed(config.registrationAllowed !== false);
-            setGoogleClientId(config.googleClientId || '');
-            setGoogleAuth(config.googleAuth || null);
-            setGoogleCalendar(config.googleCalendar === true);
-        }).catch(() => {});
-        return () => controller.abort();
-    }, []);
-    const continueLocal = async destination => {
-        if (busy) return;
-        setBusy(true);
-        setError('');
-        try { await onContinue(destination); }
-        catch (cause) { setError(cause.message || 'Could not open the local workspace.'); }
-        finally { setBusy(false); }
-    };
+        let active = true;
+        setConfigState('loading');
+        const timeout = setTimeout(() => {
+            controller.abort();
+            if (active) setConfigState('offline');
+        }, CONFIG_TIMEOUT_MS);
+        apiRequest('/api/auth/config', { signal: controller.signal })
+            .then(value => {
+                if (!active || controller.signal.aborted) return;
+                setConfig(value || {});
+                setConfigState('ready');
+            })
+            .catch(() => {
+                if (active) setConfigState('offline');
+            })
+            .finally(() => clearTimeout(timeout));
+        return () => { active = false; clearTimeout(timeout); controller.abort(); };
+    }, [configAttempt]);
 
-    const creating = mode === 'create';
+    useEffect(() => {
+        if (configState !== 'offline') return undefined;
+        const timer = setTimeout(() => setConfigAttempt(value => value + 1), CONFIG_RETRY_MS);
+        return () => clearTimeout(timer);
+    }, [configState, configAttempt]);
+
+    const googleAuth = config?.googleAuth || null;
+    const googleClientId = config?.googleClientId || '';
+    const desktopGoogle = Boolean(globalThis.kesamiGoogleSignIn?.start);
+    const googleConfigured = googleAuth ? googleAuth.configured === true : Boolean(googleClientId);
+    const googleReady = desktopGoogle && googleConfigured;
+
     const dark = theme === 'dark';
 
-    const toggleMode = () => {
-        setMode(creating ? 'signin' : 'create');
-        setError('');
-    };
-
-    const update = field => event => {
-        setForm(current => ({ ...current, [field]: event.target.value }));
-    };
-
-    const submit = async event => {
-        event.preventDefault();
-        if (busy) return;
-        if (!form.email || !form.password) {
-            setError('Enter your email and password.');
-            return;
-        }
-        setBusy(true);
-        setError('');
-        try {
-            const account = creating ? await createAccount(form) : await signIn(form);
-            onAuthenticated?.(account);
-        } catch (cause) {
-            setError(cause.message || 'Something went wrong. Try again.');
-        } finally {
-            setBusy(false);
-        }
-    };
-
     const submitGoogle = async () => {
-        if (busy) return;
+        if (busyRef.current || !googleReady) return;
+        busyRef.current = true;
         setBusy(true);
         setError('');
         try {
-            const account = await signInWithGoogle(googleAuth || { clientId: googleClientId, calendar: googleCalendar });
-            onAuthenticated?.(account);
+            const account = await signInWithGoogle(googleAuth || { clientId: googleClientId, calendar: config?.googleCalendar === true });
+            if (mountedRef.current) onAuthenticated?.(account);
         } catch (cause) {
-            setError(cause.message || 'Google sign-in failed. Try again.');
+            if (mountedRef.current) setError(cause.message || 'Google sign-in failed. Try again.');
         } finally {
-            setBusy(false);
+            busyRef.current = false;
+            if (mountedRef.current) setBusy(false);
         }
     };
+
+    const feedback = (error || notice) && (
+        <p className="ks-welcome-error" role="alert">
+            {error || notice}
+        </p>
+    );
+
+    let panel;
+    if (configState === 'loading') {
+        panel = <p className="ks-welcome-note" role="status">Connecting to Kesami…</p>;
+    } else if (configState === 'offline') {
+        panel = (
+            <>
+                <p className="ks-welcome-error" role="alert">
+                    Kesami’s engine isn’t responding yet. It restarts on its own, so this usually clears in a few seconds.
+                </p>
+                <div className="ks-welcome-links">
+                    <button type="button" onClick={() => setConfigAttempt(value => value + 1)}>
+                        Try again now
+                    </button>
+                </div>
+                {notice && <p className="ks-welcome-note">{notice}</p>}
+            </>
+        );
+    } else {
+        panel = (
+            <>
+                <button type="button" className="ks-welcome-primary" disabled={busy || !googleReady} aria-busy={busy} onClick={submitGoogle}>
+                    <ArrowRight aria-hidden="true" />
+                    {busy ? 'Waiting for Google…' : 'Continue with Google'}
+                </button>
+                <p className="ks-welcome-note">
+                    Sign in or create your account with Google in your browser. Your meeting library and recordings stay on this computer.
+                </p>
+                {!googleReady && (
+                    <p className="ks-welcome-error" role="alert">
+                        {desktopGoogle
+                            ? 'Google sign-in isn’t configured for this build. Check again or contact support.'
+                            : 'Open the Kesami desktop app to sign in with Google.'}
+                    </p>
+                )}
+                {desktopGoogle && !googleConfigured && <div className="ks-welcome-links"><button type="button" onClick={() => setConfigAttempt(value => value + 1)}>Check again</button></div>}
+                {feedback}
+            </>
+        );
+    }
 
     return (
         <main className="ks-welcome">
@@ -102,7 +140,7 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
             </section>
             <section className="ks-welcome-panel" aria-labelledby="welcome-title">
                 <div className="ks-welcome-head">
-                    <h2 id="welcome-title">{creating ? 'Create account.' : 'Get in.'}</h2>
+                    <h2 id="welcome-title">Get in.</h2>
                     <button
                         type="button"
                         className="ks-welcome-theme"
@@ -115,97 +153,10 @@ export function SignInView({ onContinue, onAuthenticated, theme = 'dark', onTogg
                 </div>
                 <div className="ks-welcome-divider">
                     <i />
-                    {creating ? 'NEW ACCOUNT' : 'SIGN IN'}
+                    SIGN IN
                     <i />
                 </div>
-                <form onSubmit={submit}>
-                    {creating && (
-                        <input
-                            type="text"
-                            name="name"
-                            autoComplete="name"
-                            aria-label="Full name"
-                            placeholder="Full name"
-                            maxLength={80}
-                            value={form.name}
-                            onChange={update('name')}
-                            disabled={busy}
-                            required
-                        />
-                    )}
-                    <input
-                        type="email"
-                        name="email"
-                        autoComplete="email"
-                        aria-label="Email"
-                        placeholder="you@work.com"
-                        disabled={busy}
-                        maxLength={254}
-                        value={form.email}
-                        onChange={update('email')}
-                        required
-                    />
-                    <div className="ks-welcome-password">
-                        <input
-                            type={reveal ? 'text' : 'password'}
-                            name="password"
-                            autoComplete={creating ? 'new-password' : 'current-password'}
-                            aria-label="Password"
-                            placeholder={creating ? 'At least 8 characters' : 'Password'}
-                            minLength={creating ? 8 : undefined}
-                            maxLength={512}
-                            value={form.password}
-                            onChange={update('password')}
-                            disabled={busy}
-                            required
-                        />
-                        <button type="button" className="ks-welcome-reveal" onClick={() => setReveal(!reveal)}>
-                            {reveal ? 'Hide' : 'Show'}
-                        </button>
-                    </div>
-                    <button type="submit" className="ks-welcome-submit" disabled={busy}>
-                        {busy ? (creating ? 'Creating account…' : 'Signing in…') : creating ? 'Create account' : 'Continue to workspace'}
-                    </button>
-                </form>
-                {globalThis.kesamiGoogleSignIn?.start && (
-                    <div className="ks-oauth">
-                        <span>OR</span>
-                        <button type="button" disabled={busy || (googleAuth ? !googleAuth.configured : !googleClientId)} onClick={submitGoogle}>
-                            {busy ? 'Waiting for Google…' : creating ? 'Create account with Google' : 'Sign in with Google'}
-                        </button>
-                        {googleAuth && !googleAuth.configured && <p className="ks-welcome-note">Google sign-in is unavailable. You can continue locally.</p>}
-                        {!googleAuth && googleClientId === '' && (
-                            <p className="ks-welcome-note">
-                                Google sign-in needs a Desktop app client ID. Open{' '}
-                                <button type="button" className="ks-welcome-inline-link" disabled={busy} onClick={() => continueLocal('settings')}>
-                                    Connection &amp; preferences
-                                </button>{' '}
-                                to add it, then return here.
-                            </p>
-                        )}
-                    </div>
-                )}
-                {(error || notice) && (
-                    <p className="ks-welcome-error" role="alert">
-                        {error || notice}
-                    </p>
-                )}
-                {registrationAllowed === false && <p className="ks-welcome-note">Ask your workspace owner for account access, or continue locally.</p>}
-                <div className="ks-welcome-links">
-                    <button type="button" disabled={busy || (!creating && registrationAllowed === false)} onClick={toggleMode}>
-                        {creating ? 'I already have an account' : 'Create account'}
-                    </button>
-                    <button type="button" disabled={busy} onClick={() => continueLocal('settings')}>
-                        Connection &amp; preferences
-                    </button>
-                </div>
-                {/* <button type="button" className="ks-welcome-local" disabled={busy} onClick={() => continueLocal()}>
-                    <ArrowRight aria-hidden="true" />
-                    Use it locally, no account
-                </button>
-                <p className="ks-welcome-note">
-                    Local use is free. AI providers may charge for usage. Signing in does not sync your meetings.
-                </p>*/}
+                {panel}
             </section>
         </main>
     );

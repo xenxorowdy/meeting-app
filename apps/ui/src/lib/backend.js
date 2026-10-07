@@ -36,6 +36,7 @@ export async function apiRequest(path, { method = 'GET', body, signal } = {}) {
             signal,
         });
     } catch (cause) {
+        if (signal?.aborted || cause?.name === 'AbortError') throw cause;
         throw new BackendError(`Cannot reach the backend at ${getBackendUrl()}`, 0);
     }
 
@@ -72,6 +73,9 @@ export function encodeAudioPacket(streamId, timestampMs, pcm) {
 }
 
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
+// Bound queued PCM on slow connections instead of retaining an entire meeting
+// in renderer memory. Local recordings remain independent of this live stream.
+const MAX_SOCKET_BUFFER_BYTES = 512 * 1024;
 
 /**
  * WebSocket to the core backend. Reconnects on its own so the UI can report a
@@ -82,6 +86,7 @@ export function createBackendSocket({ onEvent, onConnectionChange } = {}) {
     let attempt = 0;
     let reconnectTimer = null;
     let disposed = false;
+    let warnedAboutBackpressure = false;
 
     const notify = state => {
         if (onConnectionChange) onConnectionChange(state);
@@ -109,6 +114,7 @@ export function createBackendSocket({ onEvent, onConnectionChange } = {}) {
 
         socket.onopen = () => {
             attempt = 0;
+            warnedAboutBackpressure = false;
             notify('online');
         };
 
@@ -141,19 +147,27 @@ export function createBackendSocket({ onEvent, onConnectionChange } = {}) {
         isOpen,
         send(action, payload = {}) {
             if (!isOpen()) return false;
-            socket.send(JSON.stringify({ action, payload }));
-            return true;
+            try { socket.send(JSON.stringify({ action, payload })); return true; }
+            catch { return false; }
         },
         sendAudio(streamId, pcm, timestampMs = Date.now()) {
             if (!isOpen()) return false;
-            socket.send(encodeAudioPacket(streamId, timestampMs, pcm));
-            return true;
+            if (socket.bufferedAmount + PACKET_HEADER_SIZE + pcm.byteLength > MAX_SOCKET_BUFFER_BYTES) {
+                if (!warnedAboutBackpressure) {
+                    warnedAboutBackpressure = true;
+                    onEvent?.({ type: 'warning', data: { message: 'The connection is too slow for live transcription. Some audio could not be sent; local recording continues if enabled.' } });
+                }
+                return false;
+            }
+            if (socket.bufferedAmount < MAX_SOCKET_BUFFER_BYTES / 2) warnedAboutBackpressure = false;
+            try { socket.send(encodeAudioPacket(streamId, timestampMs, pcm)); return true; }
+            catch { return false; }
         },
         close() {
             disposed = true;
             if (reconnectTimer) clearTimeout(reconnectTimer);
             if (socket) {
-                socket.onclose = null;
+                socket.onopen = socket.onclose = socket.onerror = socket.onmessage = null;
                 socket.close();
                 socket = null;
             }
@@ -190,10 +204,18 @@ export function normalizeTurn(turn, index = 0) {
     // there the backend's speaker is all there is.
     const supplied = typeof turn.speaker === 'string' ? turn.speaker.trim() : '';
     const placeholder = !supplied || /^(others?|speaker|unknown)$/i.test(supplied);
-    const speaker = stream === 'mic' ? 'You' : (stream === 'system' && supplied === 'You') || placeholder ? 'Speaker 1' : supplied;
+    const speakerEdited = turn.speakerEdited === true && Boolean(supplied);
+    const speaker = speakerEdited
+        ? supplied
+        : stream === 'mic'
+          ? 'You'
+          : (stream === 'system' && supplied === 'You') || placeholder
+            ? 'Speaker 1'
+            : supplied;
     return {
         id: turn.id || `turn-${index}-${turn.startMs ?? 0}`,
         speaker,
+        speakerEdited,
         stream,
         startMs: turn.startMs ?? 0,
         endMs: turn.endMs ?? turn.startMs ?? 0,

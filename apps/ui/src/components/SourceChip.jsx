@@ -1,7 +1,7 @@
 import React from 'react';
 import { Quote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { citationTime } from '@/lib/chat';
+import { citationTime, citationDate } from '@/lib/chat';
 
 export function SourceChip({ citation, onOpen }) {
     const time = citationTime(citation.startMs);
@@ -23,6 +23,7 @@ export function SourceChip({ citation, onOpen }) {
             </TooltipTrigger>
             <TooltipContent className="ks-source-preview" side="top">
                 <strong>{citation.title}</strong>
+                {citationDate(citation.startedAt) && <span className="ks-source-preview-time">{citationDate(citation.startedAt)}</span>}
                 {time && <span className="ks-source-preview-time">Transcript · {time}</span>}
                 <p>{citation.excerpt || 'Open the supporting passage'}</p>
             </TooltipContent>
