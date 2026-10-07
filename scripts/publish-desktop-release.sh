@@ -37,27 +37,34 @@ done
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/kesami-release.XXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT
-gh run download "$run_id" --repo "$source_repo" --dir "$tmp_dir/artifacts"
+artifact_dir=${KESAMI_ARTIFACTS_DIR:-}
+if [[ -z $artifact_dir ]]; then
+    artifact_dir="$tmp_dir/artifacts"
+    gh run download "$run_id" --repo "$source_repo" --dir "$artifact_dir"
+elif [[ ! -d $artifact_dir ]]; then
+    echo "Artifact directory does not exist: $artifact_dir" >&2
+    exit 1
+fi
 
 files=(
-    "$tmp_dir/artifacts/mac/Kesami-arm64.dmg"
-    "$tmp_dir/artifacts/mac/latest-mac.yml"
-    "$tmp_dir/artifacts/windows/Kesami-Setup-x64.exe"
-    "$tmp_dir/artifacts/windows/latest.yml"
+    "$artifact_dir/mac/Kesami-arm64.dmg"
+    "$artifact_dir/mac/latest-mac.yml"
+    "$artifact_dir/windows/Kesami-Setup-x64.exe"
+    "$artifact_dir/windows/latest.yml"
 )
-mac_zip=$(find "$tmp_dir/artifacts/mac" -maxdepth 1 -type f -name 'Kesami-*-arm64-mac.zip' -print -quit)
+mac_zip=$(find "$artifact_dir/mac" -maxdepth 1 -type f -name 'Kesami-*-arm64-mac.zip' -print -quit)
 if [[ -n $mac_zip ]]; then files+=("$mac_zip"); fi
 for required in "${files[@]}"; do
     if [[ ! -f $required ]]; then
         echo "Expected release artifact is missing: $required" >&2
-        find "$tmp_dir/artifacts" -maxdepth 3 -type f -print >&2
+        find "$artifact_dir" -maxdepth 3 -type f -print >&2
         exit 1
     fi
 done
 
 for platform_dir in mac windows; do
     while IFS= read -r -d '' file; do files+=("$file"); done \
-        < <(find "$tmp_dir/artifacts/$platform_dir" -maxdepth 1 -type f \
+        < <(find "$artifact_dir/$platform_dir" -maxdepth 1 -type f \
             -name '*.blockmap' -print0)
 done
 
