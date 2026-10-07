@@ -132,6 +132,9 @@ async function startBackend() {
             env.KESAMI_SUPABASE_PUBLISHABLE_KEY = auth.publishableKey;
         }
         if (auth.cloudUrl && !env.KESAMI_CLOUD_URL && !env.ALPHA_CLOUD_URL) env.KESAMI_CLOUD_URL = auth.cloudUrl;
+        if (auth.googleCalendarClientId && !env.KESAMI_GOOGLE_CALENDAR_CLIENT_ID) {
+            env.KESAMI_GOOGLE_CALENDAR_CLIENT_ID = auth.googleCalendarClientId;
+        }
     }
 
     const options = { cwd: CORE_BACKEND_DIR, env, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true };

@@ -20,14 +20,18 @@ function readSettings(file) {
 
 function buildConfig(settings, environment = process.env) {
     settings = { ...settings };
-    for (const name of ['KESAMI_AUTH_PROVIDER', 'KESAMI_SUPABASE_URL', 'KESAMI_SUPABASE_PUBLISHABLE_KEY', 'KESAMI_CLOUD_URL']) {
+    for (const name of ['KESAMI_AUTH_PROVIDER', 'KESAMI_SUPABASE_URL', 'KESAMI_SUPABASE_PUBLISHABLE_KEY', 'KESAMI_CLOUD_URL', 'KESAMI_GOOGLE_CALENDAR_CLIENT_ID']) {
         if (environment[name]) settings[name] = environment[name];
     }
     const provider = settings.KESAMI_AUTH_PROVIDER;
     const url = settings.KESAMI_SUPABASE_URL;
     const publishableKey = settings.KESAMI_SUPABASE_PUBLISHABLE_KEY;
     const cloudUrl = settings.KESAMI_CLOUD_URL || '';
+    const googleCalendarClientId = settings.KESAMI_GOOGLE_CALENDAR_CLIENT_ID || '';
     if (!cloudUrl) throw new Error('Release builds require KESAMI_CLOUD_URL: the public HTTPS origin of the Kesami cloud relay. Provider keys belong on that server.');
+    if (!/^\S+\.apps\.googleusercontent\.com$/.test(googleCalendarClientId)) {
+        throw new Error('Release builds require KESAMI_GOOGLE_CALENDAR_CLIENT_ID: the public Google OAuth Desktop client ID. Never package a client secret.');
+    }
     const parsed = new URL(url);
     if (provider !== 'supabase' || parsed.protocol !== 'https:' || parsed.username || parsed.password
         || parsed.pathname !== '/' || parsed.search || parsed.hash || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishableKey)) {
@@ -36,7 +40,7 @@ function buildConfig(settings, environment = process.env) {
     const cloud = new URL(cloudUrl);
     if (cloud.protocol !== 'https:' || cloud.username || cloud.password || cloud.pathname !== '/'
         || cloud.search || cloud.hash) throw new Error('KESAMI_CLOUD_URL must be a bare HTTPS origin');
-    return { provider, url: parsed.origin, publishableKey, cloudUrl: cloud.origin };
+    return { provider, url: parsed.origin, publishableKey, cloudUrl: cloud.origin, googleCalendarClientId };
 }
 
 if (require.main === module) try {
