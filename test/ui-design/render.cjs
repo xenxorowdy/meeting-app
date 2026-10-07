@@ -244,6 +244,19 @@ async function run() {
     await click('Product1');
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 1);
     await evaluate('document.querySelector(\'[aria-label="New folder"]\').click()');
+    for (const theme of ['light', 'dark']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await settle();
+        assert(await evaluate(`(() => {
+            const dialog = document.querySelector('[role="dialog"].ks-modal');
+            if (!dialog?.closest('.ks-app')) return false;
+            const style = getComputedStyle(dialog);
+            const swatches = [...dialog.querySelectorAll('.ks-color-picker button')];
+            return style.backgroundColor.startsWith('rgb(') && swatches.length === 5
+                && swatches.every(button => getComputedStyle(button).backgroundColor.startsWith('rgb('));
+        })()`), `${theme} folder dialog has an opaque surface and visible color choices`);
+        await capture(`02-new-folder-${theme}`);
+    }
     await settle();
     await evaluate(`(() => {
         const input = document.querySelector('[role="dialog"] input');

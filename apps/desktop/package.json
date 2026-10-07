@@ -105,7 +105,8 @@
             }
         },
         "dmg": {
-            "title": "Kesami"
+            "title": "Kesami",
+            "artifactName": "${productName}-${arch}.${ext}"
         },
         "win": {
             "target": [

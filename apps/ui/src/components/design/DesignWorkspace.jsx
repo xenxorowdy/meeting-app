@@ -1,8 +1,8 @@
 import { PricingView } from './PricingView';
 import { AccountSecurity } from './AccountSecurity';
 import { PlanBilling } from './PlanBilling';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, CalendarDays, ExternalLink, FileText, Home, Library, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, Search, Settings, Sparkles, Star, Sun, UserRound, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowUpRight, CalendarDays, ExternalLink, FileText, Folder, Home, Library, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, Search, Settings, Sparkles, Star, Sun, UserRound, X } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
@@ -142,6 +142,10 @@ export function DesignWorkspace({
     onPlanChanged,
 }) {
     const [folders, setFolders] = useState([]);
+    const [portalContainer, setPortalContainer] = useState();
+    const bindWorkspace = useCallback(node => {
+        if (node) setPortalContainer(node.closest('.ks-app') || undefined);
+    }, []);
     const [folderId, setFolderId] = useState('all');
     const [query, setQuery] = useState('');
     const [creating, setCreating] = useState(false);
@@ -266,7 +270,7 @@ export function DesignWorkspace({
                 : null;
 
     return (
-        <div className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}`}>
+        <div ref={bindWorkspace} className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}`}>
             <aside className="ks-sidebar" aria-label="Workspace navigation">
                 <div className={`ks-traffic drag-region${isDesktop ? ' ks-traffic-desktop' : ''}`}>
                     <span className="ks-sidebar-brand"><LogoMark size={24} /> Kesami</span>
@@ -301,7 +305,7 @@ export function DesignWorkspace({
                         Ask Kesami
                     </button>
                     <div className="ks-folder-heading">
-                        <span>FOLDERS</span>
+                        <span>Folders</span>
                         <button
                             aria-label="New folder"
                             disabled={!isConnected}
@@ -320,7 +324,7 @@ export function DesignWorkspace({
                             className={activeTab === 'history' && folderId === item.id ? 'is-active' : ''}
                             onClick={() => openFolder(item.id)}
                         >
-                            <i className="ks-folder-dot" style={{ background: item.color }} />
+                            <Folder className="ks-folder-icon" style={{ color: item.color }} aria-hidden="true" />
                             <span>{item.name}</span>
                             <small>{history.meetings.filter(meeting => meeting.metadata?.collectionId === item.id).length}</small>
                         </button>
@@ -395,7 +399,7 @@ export function DesignWorkspace({
                         >
                             <Star aria-hidden="true" />
                             <span>
-                                Upgrade to Pro<small>Explore plans</small>
+                                Upgrade to Pro
                             </span>
                         </button>
                     )}
@@ -672,7 +676,7 @@ export function DesignWorkspace({
                 )}
             </main>
             <Dialog open={creating} onOpenChange={setCreating}>
-                <DialogContent className="ks-modal">
+                <DialogContent portalContainer={portalContainer} className="ks-modal">
                     <DialogTitle>New folder</DialogTitle>
                     <DialogDescription>Keep related meetings together.</DialogDescription>
                     <form onSubmit={create}>
@@ -721,7 +725,7 @@ export function DesignWorkspace({
                     if (!busy && !open) setDeleting(null);
                 }}
             >
-                <DialogContent className="ks-modal">
+                <DialogContent portalContainer={portalContainer} className="ks-modal">
                     <DialogTitle>Delete meeting?</DialogTitle>
                     <DialogDescription>“{deleting?.title}” and its transcript, notes, and recording will be permanently deleted.</DialogDescription>
                     {error && (
