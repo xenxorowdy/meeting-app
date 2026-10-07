@@ -69,6 +69,8 @@ const DEFAULT_SARVAM_MODEL: &str = "saaras:v3-realtime";
 const DEFAULT_SUMMARY_MODEL: &str = "gemini-2.5-flash";
 const DEFAULT_DAILY_AI_LIMIT: u64 = 100;
 const GEMINI_ORIGIN: &str = "https://generativelanguage.googleapis.com";
+const GOOGLE_TOKEN_PATH: &str = "/v1/calendar/google/token";
+const MAX_CALENDAR_BODY: usize = 16 * 1024;
 const REALTIME_PATH: &str = "/v1/transcription/realtime";
 const MODES: [&str; 5] = ["transcribe", "translate", "verbatim", "translit", "codemix"];
 const AI_UNAVAILABLE: &str = "Meeting AI is unavailable. Try again.";
@@ -95,6 +97,48 @@ struct Config {
     openai_usage_file: Option<std::path::PathBuf>,
     summary_model: String,
     daily_ai_limit: u64,
+    google_calendar: Option<GoogleCalendarApp>,
+}
+
+#[derive(Clone)]
+struct GoogleCalendarApp {
+    client_id: String,
+    client_secret: String,
+    token_url: String,
+}
+
+impl GoogleCalendarApp {
+    fn from_env(value: impl Fn(&str) -> Option<String>) -> Option<Self> {
+        let client_id = value("KESAMI_GOOGLE_CALENDAR_CLIENT_ID")?.trim().to_owned();
+        let client_secret = value("KESAMI_GOOGLE_CALENDAR_CLIENT_SECRET")?.trim().to_owned();
+        if client_id.is_empty() || client_secret.is_empty() { return None; }
+        Some(Self { client_id, client_secret, token_url: "https://oauth2.googleapis.com/token".into() })
+    }
+
+    fn fields(&self, body: &Value) -> Option<Vec<(&'static str, String)>> {
+        let object = body.as_object()?;
+        let text = |key: &str, max: usize| -> Option<String> {
+            let value = object.get(key)?.as_str()?;
+            (!value.is_empty() && value.len() <= max && !value.chars().any(char::is_control)).then(|| value.to_owned())
+        };
+        if text("client_id", 256)? != self.client_id { return None; }
+        let grant = text("grant_type", 32)?;
+        let mut fields = vec![("client_id", self.client_id.clone()), ("client_secret", self.client_secret.clone()), ("grant_type", grant.clone())];
+        match grant.as_str() {
+            "authorization_code" => {
+                let verifier = text("code_verifier", 128)?;
+                if verifier.len() < 43 || !verifier.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b)) { return None; }
+                let redirect = text("redirect_uri", 256)?;
+                let url = Url::parse(&redirect).ok()?;
+                if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port().is_none_or(|port| port == 0)
+                    || url.path() != "/" || !bare(&url) || url.query().is_some() { return None; }
+                fields.extend([("code", text("code", 2048)?), ("code_verifier", verifier), ("redirect_uri", redirect)]);
+            }
+            "refresh_token" => fields.push(("refresh_token", text("refresh_token", 8192)?)),
+            _ => return None,
+        }
+        Some(fields)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -158,6 +202,7 @@ impl Config {
             openai_usage_file: value("KESAMI_OPENAI_USAGE_FILE").map(std::path::PathBuf::from),
             summary_model: value("KESAMI_SUMMARY_MODEL")
                 .unwrap_or_else(|| DEFAULT_SUMMARY_MODEL.into()),
+            google_calendar: GoogleCalendarApp::from_env(&value),
             daily_ai_limit: value("KESAMI_CLOUD_DAILY_AI_LIMIT")
                 .and_then(|raw| positive_integer(&raw))
                 .unwrap_or(DEFAULT_DAILY_AI_LIMIT),
@@ -193,6 +238,7 @@ struct Ledger {
     audio: HashMap<String, (String, u64)>,
     ai: HashMap<String, (String, u64)>,
     ai_active: HashSet<String>,
+    calendar_requests: HashMap<String, (String, u64)>,
 }
 
 impl Ledger {
@@ -219,6 +265,7 @@ struct Relay {
     http: reqwest::Client,
     stopping: AtomicBool,
     authenticating: AtomicUsize,
+    calendar_active: AtomicUsize,
     ledger: Mutex<Ledger>,
     shutdown: watch::Sender<bool>,
     billing: cloud_billing_server::Billing,
@@ -266,6 +313,7 @@ enum Route {
     Health,
     Generate,
     Capabilities,
+    GoogleCalendarToken,
     Missing,
 }
 
@@ -287,6 +335,7 @@ impl Relay {
             http,
             stopping: AtomicBool::new(false),
             authenticating: AtomicUsize::new(0),
+            calendar_active: AtomicUsize::new(0),
             ledger: Mutex::default(),
             shutdown: watch::Sender::new(false),
             billing,
@@ -312,6 +361,7 @@ impl Relay {
         let mut ledger = self.ledger();
         ledger.audio.retain(|_, (day, _)| *day == today);
         ledger.ai.retain(|_, (day, _)| *day == today);
+        ledger.calendar_requests.retain(|_, (day, _)| *day == today);
     }
 
     async fn serve(self: Arc<Self>, listener: TcpListener) {
@@ -364,6 +414,7 @@ impl Relay {
         }
         let route = match (req.method(), req.uri().path(), req.uri().query()) {
             (&Method::GET, "/health", None) => Route::Health,
+            (&Method::POST, GOOGLE_TOKEN_PATH, None) => Route::GoogleCalendarToken,
             (&Method::POST, "/v1/ai/generate", None) => Route::Generate,
             (&Method::GET, "/v1/capabilities", None) => Route::Capabilities,
             _ => Route::Missing,
@@ -374,10 +425,71 @@ impl Relay {
                 json!({ "status": "stopping" }),
             ),
             Route::Health => json_response(StatusCode::OK, json!({ "status": "ok" })),
+            Route::GoogleCalendarToken => self.google_calendar_token(req).await,
             Route::Generate => self.generate(req).await,
             Route::Capabilities => self.capabilities(req.headers()).await,
             Route::Missing => error(StatusCode::NOT_FOUND, "Not found"),
         })
+    }
+
+
+    async fn google_calendar_token(&self, req: Request<Incoming>) -> Response<Body> {
+        // Limit simultaneous exchanges as well as daily requests for each authenticated user.
+        if self.calendar_active.fetch_add(1, Ordering::SeqCst) >= 32 {
+            self.calendar_active.fetch_sub(1, Ordering::SeqCst);
+            return error(StatusCode::TOO_MANY_REQUESTS, "Calendar service is busy. Try again.");
+        }
+        let _active = InFlight(&self.calendar_active);
+        let user = match self.identity(req.headers()).await {
+            Ok(Some(user)) => user,
+            Ok(None) => return error(StatusCode::UNAUTHORIZED, "Sign in with Google again to connect Calendar."),
+            Err(_) => return error(StatusCode::SERVICE_UNAVAILABLE, "Sign-in service is unavailable. Try again."),
+        };
+        let Some(app) = &self.config.google_calendar else {
+            return error(StatusCode::SERVICE_UNAVAILABLE, "Google Calendar is not configured on the Kesami server.");
+        };
+        {
+            let mut ledger = self.ledger();
+            let day = today();
+            let entry = ledger.calendar_requests.entry(user).or_insert((day.clone(), 0));
+            if entry.0 != day { *entry = (day, 0); }
+            if entry.1 >= 500 { return error(StatusCode::TOO_MANY_REQUESTS, "Calendar request limit reached. Try again later."); }
+            entry.1 += 1;
+        }
+        let bytes = match timeout(REQUEST_TIMEOUT, Limited::new(req.into_body(), MAX_CALENDAR_BODY).collect()).await {
+            Ok(Ok(body)) => body.to_bytes(),
+            _ => return error(StatusCode::BAD_REQUEST, "Invalid Calendar authorization request."),
+        };
+        let fields = serde_json::from_slice::<Value>(&bytes).ok().and_then(|body| app.fields(&body));
+        let Some(fields) = fields else {
+            return error(StatusCode::BAD_REQUEST, "Invalid Calendar authorization request or mismatched client ID.");
+        };
+        let response = match self.http.post(&app.token_url).form(&fields).timeout(REQUEST_TIMEOUT).send().await {
+            Ok(response) => response,
+            Err(_) => return error(StatusCode::SERVICE_UNAVAILABLE, "Google Calendar is unreachable. Try again."),
+        };
+        let status = response.status();
+        let body = response.json::<Value>().await.unwrap_or(Value::Null);
+        if !status.is_success() {
+            if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
+                return error(StatusCode::SERVICE_UNAVAILABLE, "Google Calendar is busy. Try again.");
+            }
+            let revoked = body["error"].as_str() == Some("invalid_grant");
+            return json_response(StatusCode::BAD_REQUEST, json!({
+                "error": if revoked { "invalid_grant" } else { "calendar_authorization_failed" },
+                "error_description": if revoked { "Google Calendar access expired or was revoked. Reconnect Calendar." }
+                    else { "Google Calendar authorization failed. Check the server OAuth configuration." }
+            }));
+        }
+        if body["access_token"].as_str().is_none_or(str::is_empty) {
+            return error(StatusCode::BAD_GATEWAY, "Google returned an invalid Calendar token response.");
+        }
+        // Return only the token fields the local backend stores; never echo server credentials.
+        let mut granted = json!({});
+        for key in ["access_token", "refresh_token", "expires_in", "id_token", "scope", "token_type"] {
+            if let Some(value) = body.get(key) { granted[key] = value.clone(); }
+        }
+        json_response(StatusCode::OK, granted)
     }
 
     async fn identity(&self, headers: &HeaderMap) -> Result<Option<String>, Unavailable> {
@@ -549,6 +661,7 @@ impl Relay {
         let today = today();
         let mut ledger = self.ledger();
         ledger.ai.retain(|_, (day, _)| *day == today);
+        ledger.calendar_requests.retain(|_, (day, _)| *day == today);
         let used = ledger.ai.get(user).map_or(0, |(_, count)| *count);
         if ledger.ai_active.contains(user)
             || used >= self.config.daily_ai_limit
@@ -1440,7 +1553,69 @@ mod tests {
             openai_usage_file: None,
             summary_model: DEFAULT_SUMMARY_MODEL.into(),
             daily_ai_limit: DEFAULT_DAILY_AI_LIMIT,
+            google_calendar: None,
         }
+    }
+
+
+    fn calendar_request() -> Value {
+        json!({"client_id": "desktop.apps.googleusercontent.com", "grant_type": "authorization_code",
+            "code": "one-time-code", "code_verifier": "v".repeat(43), "redirect_uri": "http://127.0.0.1:12345"})
+    }
+
+    #[tokio::test]
+    async fn calendar_exchange_and_refresh_use_server_secret_and_preserve_revocation() {
+        let responder: Responder = Arc::new(|seen: &Seen| {
+            let fields: HashMap<_, _> = {
+                let mut url = Url::parse("http://localhost").unwrap();
+                url.set_query(std::str::from_utf8(&seen.body).ok());
+                url.query_pairs().into_owned().collect()
+            };
+            assert_eq!(fields["client_secret"], "server-only-secret");
+            assert_eq!(fields["client_id"], "desktop.apps.googleusercontent.com");
+            if fields.get("refresh_token").is_some_and(|value| value == "revoked") {
+                return (StatusCode::BAD_REQUEST, json!({"error":"invalid_grant", "error_description":"private detail"}).to_string());
+            }
+            (StatusCode::OK, json!({"access_token":"calendar-access", "refresh_token":"calendar-refresh",
+                "expires_in":3600, "client_secret":"must-not-escape", "diagnostics":"private"}).to_string())
+        });
+        let (origin, log) = fake_http(responder).await;
+        let app = Fixture::with(signed_in(), gemini_ok(), |config| {
+            config.google_calendar = Some(GoogleCalendarApp {client_id:"desktop.apps.googleusercontent.com".into(),
+                client_secret:"server-only-secret".into(), token_url:origin});
+        }).await;
+        let post = |body| app.http.post(app.url(GOOGLE_TOKEN_PATH)).bearer_auth("valid-session").json(&body).send();
+        let exchange = post(calendar_request()).await.unwrap();
+        assert_eq!(exchange.status(), StatusCode::OK);
+        let granted: Value = exchange.json().await.unwrap();
+        assert_eq!(granted["access_token"], "calendar-access");
+        assert!(granted.get("client_secret").is_none());
+        assert!(granted.get("diagnostics").is_none());
+        let refresh = json!({"client_id":"desktop.apps.googleusercontent.com", "grant_type":"refresh_token", "refresh_token":"calendar-refresh"});
+        assert_eq!(post(refresh.clone()).await.unwrap().status(), StatusCode::OK);
+        let mut revoked = refresh; revoked["refresh_token"] = json!("revoked");
+        let rejection = post(revoked).await.unwrap();
+        assert_eq!(rejection.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(rejection.json::<Value>().await.unwrap()["error"], "invalid_grant");
+        assert_eq!(log.all().len(), 3);
+        assert_eq!(app.relay.calendar_active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn calendar_rejects_unsigned_mismatched_and_unsafe_requests_before_google() {
+        let (origin, log) = fake_http(gemini_ok()).await;
+        let app = Fixture::with(signed_in(), gemini_ok(), |config| {
+            config.google_calendar = Some(GoogleCalendarApp {client_id:"desktop.apps.googleusercontent.com".into(),
+                client_secret:"server-only-secret".into(), token_url:origin});
+        }).await;
+        assert_eq!(app.http.post(app.url(GOOGLE_TOKEN_PATH)).json(&calendar_request()).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        for (key, value) in [("client_id", "foreign-client"), ("code_verifier", "short"), ("redirect_uri", "https://attacker.example/"),
+            ("redirect_uri", "http://user:pass@127.0.0.1:12345"), ("redirect_uri", "http://127.0.0.1:12345/foreign"), ("grant_type", "password")] {
+            let mut body = calendar_request(); body[key] = json!(value);
+            assert_eq!(app.http.post(app.url(GOOGLE_TOKEN_PATH)).bearer_auth("valid-session").json(&body).send().await.unwrap().status(), StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(app.http.post(app.url(GOOGLE_TOKEN_PATH)).bearer_auth("valid-session").body("x".repeat(MAX_CALENDAR_BODY + 1)).send().await.unwrap().status(), StatusCode::BAD_REQUEST);
+        assert!(log.all().is_empty());
     }
 
     fn ai_body() -> Value {

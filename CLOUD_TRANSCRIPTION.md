@@ -126,3 +126,24 @@ See [the payment pipeline verification record](docs/PAYMENT-PIPELINE.md) for
 the local and public-service verification boundaries.
 The relay's daily audio and AI allowances are currently held in memory and resets if the
 service restarts; move it to durable storage before opening this beta broadly.
+
+## Google Calendar token exchange
+
+Release clients bundle the public Google **Desktop app** client ID only. Configure
+`KESAMI_GOOGLE_CALENDAR_CLIENT_ID` and `KESAMI_GOOGLE_CALENDAR_CLIENT_SECRET` on the
+relay with the matching Desktop OAuth credentials. Keep the secret in the private
+server environment file; never put it in repository variables or a desktop package.
+The client ID must match the release repository variable of the same name.
+
+The local backend starts the system browser with Calendar scope, PKCE, state and an
+ephemeral loopback callback. In cloud mode it sends the authorization code/verifier,
+or the stored refresh token, to authenticated `POST /v1/calendar/google/token`.
+The relay verifies the user's Supabase session, restricts exchange to its configured
+client ID and a loopback redirect, and adds the server secret before calling Google.
+Google tokens are returned to the local backend and saved in its private credentials
+file; the relay does not persist them. Users must sign into Kesami before connecting
+Calendar. Requests are bounded and limited to 500 per signed-in user per UTC day.
+
+Without a cloud origin, development continues to exchange directly using local
+Calendar credentials. Only Google's `invalid_grant` disconnects an expired or
+revoked Calendar connection; temporary relay/provider failures preserve it for retry.

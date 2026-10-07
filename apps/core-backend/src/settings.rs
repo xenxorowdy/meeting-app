@@ -150,6 +150,16 @@ pub(crate) async fn write_object(path: &Path, object: &Map<String, Value>, priva
 }
 
 impl SettingsStore {
+    #[cfg(test)]
+    pub(crate) fn in_directory(dir: &Path) -> Self {
+        Self {
+            settings_path: dir.join("settings.json"),
+            credentials_path: dir.join("credentials.json"),
+            settings: RwLock::new(Map::new()),
+            credentials: RwLock::new(Map::new()),
+        }
+    }
+
     pub async fn load() -> Self {
         let dir = data_dir();
         let settings_path = dir.join("settings.json");

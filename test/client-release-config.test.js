@@ -16,7 +16,7 @@ test('release builds require a cloud origin rather than shipping a client that n
 });
 
 test('the client package contains only allowlisted public configuration', () => {
-    const config = buildConfig({ ...settings, KESAMI_SARVAM_API_KEY: 'private-sarvam', KESAMI_GEMINI_API_KEY: 'private-gemini', KESAMI_SUPABASE_SECRET_KEY: 'private-admin' }, {});
+    const config = buildConfig({ ...settings, KESAMI_GOOGLE_CALENDAR_CLIENT_SECRET: 'private-google', KESAMI_SARVAM_API_KEY: 'private-sarvam', KESAMI_GEMINI_API_KEY: 'private-gemini', KESAMI_SUPABASE_SECRET_KEY: 'private-admin' }, {});
     assert.deepEqual(config, { provider: 'supabase', url: settings.KESAMI_SUPABASE_URL, publishableKey: settings.KESAMI_SUPABASE_PUBLISHABLE_KEY, cloudUrl: settings.KESAMI_CLOUD_URL, googleCalendarClientId: settings.KESAMI_GOOGLE_CALENDAR_CLIENT_ID });
     assert(!JSON.stringify(config).includes('private-'));
 });

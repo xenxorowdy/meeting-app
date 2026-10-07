@@ -250,6 +250,7 @@ pub struct CalendarService {
     http: Client,
     settings: Arc<SettingsStore>,
     events: broadcast::Sender<String>,
+    oauth_relay: Option<String>,
 }
 
 impl CalendarService {
@@ -261,6 +262,7 @@ impl CalendarService {
                 .unwrap_or_default(),
             settings,
             events,
+            oauth_relay: crate::supabase_auth::cloud_origin(),
         }
     }
 
@@ -373,6 +375,10 @@ impl CalendarService {
             )
         })?;
 
+        if spec.client == GOOGLE && self.oauth_relay.is_some() {
+            self.relay_access_token().await?;
+        }
+
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|error| format!("could not open the sign-in listener: {error}"))?;
@@ -439,11 +445,11 @@ impl CalendarService {
             ("grant_type", "authorization_code".to_string()),
             ("redirect_uri", redirect),
         ];
-        if let Some(secret) = self.client_secret(provider).await {
+        if let Some(secret) = self.client_secret(provider).await.filter(|_| self.oauth_relay.is_none() || spec.client != GOOGLE) {
             form.push(("client_secret", secret));
         }
 
-        let body = self.post_form(spec.token_url, &form).await?;
+        let body = self.post_calendar_token(spec, &form).await?;
         let tokens = Tokens::from_response(&body, None, None)?;
         if tokens.refresh_token.is_none() {
             return Err("the provider did not return a refresh token, so the connection would not survive a restart".into());
@@ -453,8 +459,36 @@ impl CalendarService {
         Ok(account)
     }
 
-    async fn post_form(&self, url: &str, form: &[(&str, String)]) -> Result<Value, String> {
-        self.post_token_form(url, form).await.map_err(|(_, detail)| detail)
+    async fn relay_access_token(&self) -> Result<String, String> {
+        let saved = self.settings.credential("supabaseCloudSession").await
+            .ok_or("Sign in with Google in Kesami before connecting Calendar.")?;
+        let session: Value = serde_json::from_str(&saved).map_err(|_| "Sign in with Google again before connecting Calendar.")?;
+        let account_id = session["accountId"].as_str().ok_or("Sign in with Google again before connecting Calendar.")?;
+        crate::supabase_auth::SupabaseAuth::from_env().cloud_access_token(&self.settings, account_id).await
+    }
+
+    async fn post_calendar_token(&self, spec: &Spec, form: &[(&str, String)]) -> Result<Value, String> {
+        self.post_calendar_token_form(spec, form).await.map_err(|(_, detail)| detail)
+    }
+
+    async fn post_calendar_token_form(&self, spec: &Spec, form: &[(&str, String)]) -> Result<Value, (bool, String)> {
+        let Some(origin) = self.oauth_relay.as_ref().filter(|_| spec.client == GOOGLE) else {
+            return self.post_token_form(spec.token_url, form).await;
+        };
+        let token = self.relay_access_token().await.map_err(|error| (false, error))?;
+        let payload: serde_json::Map<String, Value> = form.iter().filter(|(key, _)| *key != "client_secret")
+            .map(|(key, value)| ((*key).into(), json!(value))).collect();
+        let response = self.http.post(format!("{origin}/v1/calendar/google/token"))
+            .bearer_auth(token).json(&payload).send().await
+            .map_err(|_| (false, "The Kesami Calendar service is unreachable. Try again.".into()))?;
+        let status = response.status();
+        let body: Value = response.json().await.map_err(|_| (false, "The Calendar service returned an invalid response. Try again.".into()))?;
+        if !status.is_success() {
+            let detail = body.get("error_description").or_else(|| body.get("error"))
+                .and_then(Value::as_str).unwrap_or("Calendar authorization failed. Try again.");
+            return Err((grant_was_revoked(&body), detail.to_owned()));
+        }
+        Ok(body)
     }
 
     async fn post_token_form(&self, url: &str, form: &[(&str, String)]) -> Result<Value, (bool, String)> {
@@ -505,11 +539,11 @@ impl CalendarService {
         if spec.id == MICROSOFT {
             form.push(("scope", spec.scope.to_string()));
         }
-        if let Some(secret) = self.client_secret(provider).await {
+        if let Some(secret) = self.client_secret(provider).await.filter(|_| self.oauth_relay.is_none() || spec.client != GOOGLE) {
             form.push(("client_secret", secret));
         }
 
-        let body = match self.post_token_form(spec.token_url, &form).await {
+        let body = match self.post_calendar_token_form(spec, &form).await {
             Ok(body) => body,
             Err((true, detail)) => {
                 self.disconnect(provider).await?;
@@ -927,6 +961,70 @@ async fn wait_for_code(listener: TcpListener, expected_state: String, label: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[tokio::test]
+    async fn cloud_calendar_sends_pkce_and_refresh_without_a_client_secret() {
+        let directory = std::env::temp_dir().join(format!("kesami-calendar-{}", Uuid::new_v4()));
+        let settings = Arc::new(SettingsStore::in_directory(&directory));
+        settings.set_credential("supabaseCloudSession", Some(&json!({"accountId":"local-user", "accessToken":"cloud-session",
+            "expiresAt":Utc::now().timestamp()+3600}).to_string())).await.unwrap();
+        settings.set_credential("googleCalendarClientId", Some("desktop-client")).await.unwrap();
+        settings.set_credential("googleCalendarClientSecret", Some("local-secret-must-stay-private")).await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            for grant in ["authorization_code", "refresh_token"] {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut bytes = [0u8; 4096];
+                    let read = stream.read(&mut bytes).await.unwrap();
+                    assert!(read > 0); request.extend_from_slice(&bytes[..read]);
+                    if let Some(split) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..split]).to_lowercase();
+                        let size: usize = headers.lines().find_map(|line| line.strip_prefix("content-length: ")).unwrap().parse().unwrap();
+                        if request.len() < split+4+size { continue; }
+                        assert!(headers.starts_with("post /v1/calendar/google/token "));
+                        assert!(headers.contains("authorization: bearer cloud-session"));
+                        let body: Value = serde_json::from_slice(&request[split+4..]).unwrap();
+                        assert_eq!(body["grant_type"], grant);
+                        assert!(body.get("client_secret").is_none());
+                        if grant == "authorization_code" {
+                            assert_eq!(body["code"], "browser-code");
+                            assert_eq!(body["code_verifier"], "v".repeat(43));
+                            assert!(body["redirect_uri"].as_str().unwrap().starts_with("http://127.0.0.1:"));
+                        } else { assert_eq!(body["refresh_token"], "google-refresh"); }
+                        let response = json!({"access_token":"google-access", "refresh_token":"google-refresh", "expires_in":3600}).to_string();
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).as_bytes()).await.unwrap();
+                        break;
+                    }
+                }
+            }
+        });
+        let (events, _) = broadcast::channel(4);
+        let mut service = CalendarService::new(settings.clone(), events);
+        service.oauth_relay = Some(origin);
+        let service = Arc::new(service);
+        let callback = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let redirect = format!("http://{}", callback.local_addr().unwrap());
+        let finishing = service.clone();
+        let callback_url = redirect.clone();
+        let finish = tokio::spawn(async move {
+            finishing.finish(GOOGLE, callback, "expected-state".into(), "v".repeat(43), callback_url).await
+        });
+        reqwest::get(format!("{redirect}?code=browser-code&state=expected-state")).await.unwrap();
+        finish.await.unwrap().unwrap();
+        assert!(service.stored(GOOGLE).await.unwrap().is_fresh());
+        let mut expired = service.stored(GOOGLE).await.unwrap();
+        expired.expires_at = 0;
+        service.save(GOOGLE, &expired).await.unwrap();
+        assert_eq!(service.access_token(GOOGLE).await.unwrap(), "google-access");
+        assert!(service.stored(GOOGLE).await.unwrap().is_fresh());
+        assert_eq!(settings.credential("googleCalendarClientSecret").await.as_deref(), Some("local-secret-must-stay-private"));
+        server.await.unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn google_requests_event_write_access_with_fresh_offline_consent() {
