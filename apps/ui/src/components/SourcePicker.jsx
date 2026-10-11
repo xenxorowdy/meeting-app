@@ -81,7 +81,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                         onClick={() => chooseSource(source.id)}
                         aria-pressed={selectedId === source.id}
                         className={cn(
-                            'relative w-40 overflow-hidden rounded-xl border-[1.5px] bg-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            'relative w-40 overflow-hidden rounded-xl border-[1.5px] bg-black transition-colors duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                             selectedId === source.id ? 'border-foreground/40' : 'border-foreground/[0.08] hover:border-foreground/20'
                         )}
                     >
@@ -112,7 +112,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                         onClick={() => chooseSource(source.id)}
                         aria-pressed={selectedId === source.id}
                         className={cn(
-                            'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            'flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors duration-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                             selectedId === source.id
                                 ? 'border-foreground/[0.12] bg-foreground/[0.07] text-foreground'
                                 : 'border-transparent bg-foreground/[0.02] text-muted-foreground hover:bg-foreground/[0.05]'
@@ -192,7 +192,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                         aria-checked={isAudio}
                         onClick={() => setMode('audio')}
                         className={cn(
-                            'flex w-full items-center gap-4 rounded-2xl border px-5 py-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            'flex w-full items-center gap-4 rounded-2xl border px-5 py-4 text-left transition-all duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                             isAudio
                                 ? 'border-primary/40 bg-gradient-to-br from-primary/[0.14] to-primary/[0.06] shadow-[0_0_24px_hsl(var(--primary)/0.08)]'
                                 : 'border-border bg-foreground/[0.025] hover:bg-foreground/[0.04]'
@@ -233,7 +233,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                                 setMode('screen');
                                 setTab('screens');
                             }}
-                            className="flex w-full items-center gap-4 px-5 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                            className="flex w-full items-center gap-4 px-5 py-4 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
                             <span
                                   className={cn(

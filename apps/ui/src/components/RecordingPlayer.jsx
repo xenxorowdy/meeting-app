@@ -174,7 +174,7 @@ function SpeakerActivityTimeline({ turns, durationMs, offsetMs, currentMs, onSee
                                             title={`${row.speaker} · ${formatMs(start)} · ${turn.text}`}
                                             aria-label={`Seek to ${row.speaker} at ${formatMs(start)}`}
                                             className={cn(
-                                                'absolute inset-y-0 transition-opacity hover:opacity-100 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                                'absolute inset-y-0 transition-opacity hover:opacity-100 focus-visible:z-20 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                                                 style.bar,
                                                 isActive ? 'z-10 opacity-100' : 'opacity-65'
                                             )}

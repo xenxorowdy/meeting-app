@@ -151,17 +151,18 @@ pub(crate) async fn write_object(path: &Path, object: &Map<String, Value>, priva
 
 impl SettingsStore {
     #[cfg(test)]
-<<<<<<< HEAD
-    pub(crate) fn at(dir: &Path) -> Self {
-=======
     pub(crate) fn in_directory(dir: &Path) -> Self {
->>>>>>> origin/master
         Self {
             settings_path: dir.join("settings.json"),
             credentials_path: dir.join("credentials.json"),
             settings: RwLock::new(Map::new()),
             credentials: RwLock::new(Map::new()),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn at(dir: &Path) -> Self {
+        Self::in_directory(dir)
     }
 
     pub async fn load() -> Self {

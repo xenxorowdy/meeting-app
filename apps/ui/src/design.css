@@ -2741,6 +2741,7 @@
     margin: 12px 0;
 }
 .ks-plan-card li > svg {
+    display: inline-block;
     width: 1em;
     height: 1em;
     vertical-align: -0.15em;
@@ -5849,7 +5850,7 @@ html, body { overflow-x: clip; }
 .ks-template-content > section + section { margin-top: var(--space-lg); }
 .ks-template-content h4 { font-size: var(--text-body); margin-bottom: var(--space-sm); }
 .ks-template-content ul { padding-left: var(--space-lg); line-height: 1.7; }
-.ks-template-content li > svg { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 4px; }
+.ks-template-content li > svg { display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 4px; }
 @media (max-width: 600px) {
     .ks-app .ks-agenda-day { grid-template-columns: 80px minmax(0, 1fr); gap: var(--space-sm); }
     .ks-app .ks-row-duration { font-size: var(--text-xs); }

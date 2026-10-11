@@ -208,7 +208,7 @@ struct Config {
     openai_usage_file: Option<std::path::PathBuf>,
     summary_model: String,
     daily_ai_limit: u64,
-<<<<<<< HEAD
+    google_calendar: Option<GoogleCalendarApp>,
     connectors: HashMap<&'static str, ConnectorApp>,
 }
 
@@ -261,8 +261,6 @@ struct ConnectorGrant {
     ticket: String,
     created: Instant,
     step: GrantStep,
-=======
-    google_calendar: Option<GoogleCalendarApp>,
 }
 
 #[derive(Clone)]
@@ -304,7 +302,6 @@ impl GoogleCalendarApp {
         }
         Some(fields)
     }
->>>>>>> origin/master
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -481,16 +478,13 @@ enum Route {
     Health,
     Generate,
     Capabilities,
-<<<<<<< HEAD
     ConnectorList,
     ConnectorStart(&'static ConnectorProvider),
     ConnectorCallback(&'static ConnectorProvider),
     ConnectorClaim(&'static ConnectorProvider),
     ConnectorRefresh(&'static ConnectorProvider),
     ConnectorRevoke(&'static ConnectorProvider),
-=======
     GoogleCalendarToken,
->>>>>>> origin/master
     Missing,
 }
 
@@ -617,7 +611,6 @@ impl Relay {
         })
     }
 
-<<<<<<< HEAD
     fn connector_grants(&self) -> MutexGuard<'_, HashMap<String, ConnectorGrant>> {
         let mut grants = self.connector_grants.lock().unwrap_or_else(PoisonError::into_inner);
         grants.retain(|_, grant| grant.created.elapsed() < CONNECTOR_GRANT_TTL);
@@ -872,7 +865,7 @@ impl Relay {
             Some(tokens) => json_response(StatusCode::OK, tokens),
             None => error(StatusCode::UNAUTHORIZED, &reconnect),
         }
-=======
+    }
 
     async fn google_calendar_token(&self, req: Request<Incoming>) -> Response<Body> {
         // Limit simultaneous exchanges as well as daily requests for each authenticated user.
@@ -931,7 +924,6 @@ impl Relay {
             if let Some(value) = body.get(key) { granted[key] = value.clone(); }
         }
         json_response(StatusCode::OK, granted)
->>>>>>> origin/master
     }
 
     async fn identity(&self, headers: &HeaderMap) -> Result<Option<String>, Unavailable> {
@@ -2079,11 +2071,8 @@ mod tests {
             openai_usage_file: None,
             summary_model: DEFAULT_SUMMARY_MODEL.into(),
             daily_ai_limit: DEFAULT_DAILY_AI_LIMIT,
-<<<<<<< HEAD
             connectors: HashMap::new(),
-=======
             google_calendar: None,
->>>>>>> origin/master
         }
     }
 

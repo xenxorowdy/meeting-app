@@ -106,7 +106,7 @@ export function WorkspaceView({ meetings = [], isLoading, isConnected, onReload,
                     <p className="px-2 py-2 text-footnote font-semibold uppercase tracking-wider text-muted-foreground">Folders</p>
                     <div className="space-y-1 overflow-y-auto">
                         {[{ id: 'all', name: 'All meetings' }, ...folderOptions].map(folder => (
-                            <button key={folder.id} type="button" onClick={() => selectFolder(folder.id)} className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-callout', activeFolder === folder.id && selectedIds.length === 0 ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+                            <button key={folder.id} type="button" onClick={() => selectFolder(folder.id)} className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-callout', activeFolder === folder.id && selectedIds.length === 0 ? 'bg-background font-medium shadow-xs' : 'text-muted-foreground hover:text-foreground')}>
                                 <Folder className="size-4" aria-hidden="true" />
                                 <span className="truncate">{folder.name}</span>
                             </button>

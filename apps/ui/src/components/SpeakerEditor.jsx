@@ -41,7 +41,7 @@ export function SpeakerEditor({ turn, lineCount = 1, canRenameAll, canChangeLine
     return (
         <div
             ref={panelRef}
-            className="ks-speaker-editor mt-2 rounded-xl border border-border bg-background p-3 shadow-sm"
+            className="ks-speaker-editor mt-2 rounded-xl border border-border bg-background p-3 shadow-xs"
             role="group"
             aria-label="Change who said this"
             onKeyDown={event => {
@@ -96,7 +96,7 @@ export function SpeakerEditor({ turn, lineCount = 1, canRenameAll, canChangeLine
                                     type="button"
                                     disabled={saving}
                                     onClick={() => apply(suggestion.name)}
-                                    className="ks-speaker-suggestion flex max-w-full flex-col items-start rounded-lg border border-border px-2 py-1 text-left transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 data-[recommended=true]:border-primary/60"
+                                    className="ks-speaker-suggestion flex max-w-full flex-col items-start rounded-lg border border-border px-2 py-1 text-left transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 data-[recommended=true]:border-primary/60"
                                     data-recommended={suggestion.recommended ? 'true' : undefined}
                                 >
                                     <span className="flex items-center gap-1 text-callout font-medium">

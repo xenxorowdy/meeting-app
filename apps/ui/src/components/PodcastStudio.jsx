@@ -128,7 +128,7 @@ function StudioHome({ studio, meetings }) {
                     { icon: FileAudio, title: 'Import media', text: 'Edit owned audio or video without changing the original.', source: { kind: 'file' } },
                     { icon: Rss, title: 'Import RSS / YouTube', text: 'Bring in an RSS enclosure or captions from an owned video.', source: { kind: 'import' } },
                 ].map(item => (
-                    <button key={item.title} type="button" onClick={() => studio.createProject({ title: `New ${item.title.toLowerCase()} project`, source: item.source })} className="rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <button key={item.title} type="button" onClick={() => studio.createProject({ title: `New ${item.title.toLowerCase()} project`, source: item.source })} className="rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring">
                         <item.icon className="size-5 text-primary" aria-hidden="true" />
                         <h3 className="mt-3 text-headline font-semibold">{item.title}</h3>
                         <p className="mt-1 text-callout text-muted-foreground">{item.text}</p>
