@@ -1,8 +1,8 @@
 import { PricingView } from './PricingView';
 import { AccountSecurity } from './AccountSecurity';
 import { PlanBilling } from './PlanBilling';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, CalendarDays, ExternalLink, FileText, Folder, Home, Library, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, Search, Settings, Sparkles, Star, Sun, UserRound, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PanelLeftClose, PanelLeftOpen, ArrowUpRight, ChevronLeft, ChevronRight, CalendarDays, ExternalLink, FileText, Folder, Home, Library, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, Search, Settings, Sparkles, Star, Sun, UserRound, X } from 'lucide-react';
 import { LogoMark } from '@/components/brand/Logo';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
@@ -10,11 +10,15 @@ import { MemoryFilters } from '@/components/MemoryFilters';
 import { memoryScope } from '@/lib/chat';
 
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { calendarEventLink, countdownLabel, eventsForTodayAndTomorrow } from '@/lib/calendarEvents';
+import { AGENDA_HORIZON_DAYS, calendarEventLink, countdownLabel, eventFolderId, seriesFolderId } from '@/lib/calendarEvents';
+import { AgendaFolderPicker } from './AgendaFolderPicker';
 import { MeetingDetail, Avatar } from './MeetingDetail';
-import { dateLabel, durationLabel, FOLDER_COLORS, meetingCountLabel } from './designHelpers';
+import { durationLabel, FOLDER_COLORS, meetingCountLabel } from './designHelpers';
 
+const AGENDA_PAGE_DAYS = 2;
 const FOLDER_COLOR_KEY = 'kesami.folder-colors';
+const SIDEBAR_COLLAPSED_KEY = 'kesami.sidebar-collapsed';
+const EMPTY_FOLDER_RULES = { events: {}, series: {} };
 
 function readFolderColors() {
     try {
@@ -28,34 +32,16 @@ function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled }) {
     const [menu, setMenu] = useState(false);
     const folder = folders.find(item => item.id === meeting.metadata?.collectionId);
     const participants = meeting.participants || [];
-    const summary = (meeting.summaryMarkdown || '')
-        .replace(/[#*_`>]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+
     return (
         <article className="ks-meeting-card">
             <button className="ks-meeting-card-body" disabled={disabled} onClick={onOpen}>
-                <div className="ks-card-kicker">
-                    <span className="ks-card-type" aria-hidden="true">{meeting.recording?.videoPath ? <Monitor /> : <FileText />}</span>
-                    <span>{folder?.name || 'Meeting notes'}</span>
-                </div>
-                <div className="ks-card-title">
+                <span className="ks-row-icon" aria-hidden="true">{participants.length ? <UserRound /> : <FileText />}</span>
+                <div className="ks-row-copy">
                     <h3>{meeting.title || 'Untitled meeting'}</h3>
+                    <p>{participants.length ? participants.join(', ') : 'You'}{folder ? ` · ${folder.name}` : ''}</p>
                 </div>
-                <p>{summary || 'Open this meeting to review its transcript and notes.'}</p>
-                <div className="ks-card-meta">
-                    {participants.length > 0 && (
-                        <span className="ks-mini-avatars">
-                            {participants.slice(0, 3).map(name => (
-                                <span key={name}>{name[0]}</span>
-                            ))}
-                            {participants.length > 3 && <span>+{participants.length - 3}</span>}
-                        </span>
-                    )}
-                    <time>{dateLabel(meeting.startedAt)}</time>
-                    <span>{durationLabel(meeting.durationSeconds)}</span>
-
-                </div>
+                <time className="ks-row-duration">{durationLabel(meeting.durationSeconds)}</time>
             </button>
             <div className="ks-card-trailing">
                 <button className="ks-card-more" aria-label={`Options for ${meeting.title}`} aria-expanded={menu} onClick={() => setMenu(!menu)}>
@@ -142,12 +128,21 @@ export function DesignWorkspace({
     onPlanChanged,
 }) {
     const [folders, setFolders] = useState([]);
+    const [folderRules, setFolderRules] = useState(EMPTY_FOLDER_RULES);
     const [portalContainer, setPortalContainer] = useState();
     const bindWorkspace = useCallback(node => {
         if (node) setPortalContainer(node.closest('.ks-app') || undefined);
     }, []);
     const [folderId, setFolderId] = useState('all');
     const [query, setQuery] = useState('');
+    const [libraryQuestion, setLibraryQuestion] = useState('');
+    const [libraryDraft, setLibraryDraft] = useState(null);
+    const askLibrary = text => {
+        if (!text.trim()) return;
+        setScope(folderId === 'all' || folderId === 'unfiled' ? 'all' : folderId);
+        setLibraryDraft({ text: text.trim(), key: Date.now(), scope: folderId === 'unfiled' ? { type: 'meetings', meetingIds: visible.map(item => item.id) } : null });
+        setActiveTab('ask');
+    };
     const [creating, setCreating] = useState(false);
     const [folderName, setFolderName] = useState('');
     const [folderColor, setFolderColor] = useState(FOLDER_COLORS[0]);
@@ -179,6 +174,11 @@ export function DesignWorkspace({
             .catch(cause => {
                 if (!cancelled) setError(cause.message);
             });
+        apiRequest('/api/folders/rules')
+            .then(result => {
+                if (!cancelled) setFolderRules(result.rules || EMPTY_FOLDER_RULES);
+            })
+            .catch(() => {});
         return () => {
             cancelled = true;
         };
@@ -191,6 +191,27 @@ export function DesignWorkspace({
             })),
         [folders, savedColors]
     );
+    const folderCounts = useMemo(() => {
+        const counts = {};
+        for (const meeting of history.meetings) {
+            const id = meeting.metadata?.collectionId;
+            if (id) counts[id] = (counts[id] || 0) + 1;
+        }
+        return counts;
+    }, [history.meetings]);
+    const addFolder = async name => {
+        const result = await apiRequest('/api/folders', { method: 'POST', body: { name } });
+        setFolders(result.folders);
+        return result.folders.find(folder => !folders.some(old => old.id === folder.id)) || result.folders.find(folder => folder.name.toLowerCase() === name.toLowerCase());
+    };
+    const assignEventFolder = async (event, folderId, applyToSeries) => {
+        const result = await apiRequest('/api/folders/rules', {
+            method: 'POST',
+            body: { provider: event.provider, eventId: String(event.id), seriesId: event.seriesId || null, folderId, applyToSeries },
+        });
+        setFolderRules(result.rules || EMPTY_FOLDER_RULES);
+        if (result.filed?.length) history.reload();
+    };
     const openFolder = id => {
         setFolderId(id);
         setQuery('');
@@ -239,8 +260,20 @@ export function DesignWorkspace({
     const canSchedule = Boolean(googleCalendar?.connected || googleCalendar?.configured);
     const calendarConnected = calendar.providers.some(provider => provider.connected);
     const showAgenda = calendarConnected || calendar.providers.some(provider => provider.configured) || calendar.events.length > 0;
-    const { today, tomorrow } = eventsForTodayAndTomorrow(calendar.events, now.getTime());
-    const agendaDays = [{ label: 'Today', events: today }, ...(tomorrow.length ? [{ label: 'Tomorrow', events: tomorrow }] : [])];
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+        try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }
+    });
+    const toggleSidebar = () => setSidebarCollapsed(value => {
+        try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '0' : '1'); } catch {}
+        return !value;
+    });
+    const [agendaOffset, setAgendaOffset] = useState(0);
+    const agendaDays = Array.from({ length: AGENDA_PAGE_DAYS }, (_, index) => {
+        const date = new Date(now);
+        date.setDate(date.getDate() + agendaOffset + index);
+        return { date, label: date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }),
+            events: calendar.events.filter(event => new Date(event.start).toDateString() === date.toDateString()).sort((a, b) => new Date(a.start) - new Date(b.start)) };
+    });
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
         return history.meetings.filter(
@@ -254,7 +287,6 @@ export function DesignWorkspace({
     const plan = license?.tier ? `${license.tier[0].toUpperCase()}${license.tier.slice(1)} Plan` : 'Meeting workspace';
     // The backend treats anything short of a paid subscription as free (session_tier), so offer the upgrade
     // unless the licence says otherwise.
-    const canUpgrade = !['pro', 'enterprise'].includes(license?.tier);
     const status = banner?.onAction
         ? { text: banner.text, actionLabel: banner.actionLabel, onAction: banner.onAction }
         : error
@@ -270,39 +302,53 @@ export function DesignWorkspace({
                 : null;
 
     return (
-        <div ref={bindWorkspace} className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}`}>
-            <aside className="ks-sidebar" aria-label="Workspace navigation">
+        <div ref={bindWorkspace} className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}${isDesktop ? ' is-desktop' : ''}`}>
+            <aside className="ks-sidebar" id="ks-sidebar" aria-label="Workspace navigation">
                 <div className={`ks-traffic drag-region${isDesktop ? ' ks-traffic-desktop' : ''}`}>
-                    <span className="ks-sidebar-brand"><LogoMark size={24} /> Kesami</span>
+                    <span className="ks-sidebar-brand"><LogoMark size={24} /> <span className="ks-nav-label">Kesami</span></span>
+                    <button
+                        type="button"
+                        className="ks-sidebar-toggle no-drag"
+                        aria-label="Collapse sidebar"
+                        aria-expanded="true"
+                        aria-controls="ks-sidebar"
+                        title="Collapse sidebar"
+                        onClick={toggleSidebar}
+                    >
+                        <PanelLeftClose aria-hidden="true" />
+                    </button>
                 </div>
                 <div className="ks-new-meeting">
                     <button
                         className={`ks-button ${locked ? 'ks-red' : 'ks-primary'}`}
+                        title="New Meeting"
                         disabled={!isConnected || session.isProcessing}
                         onClick={() => (locked ? setActiveTab('live') : session.onStart())}
                     >
                         <i />
-                        {session.isRecording
-                            ? 'Recording…'
-                            : session.isPaused
-                              ? 'Recording paused'
-                              : session.isProcessing
-                                ? session.stopFailed ? 'Save pending' : 'Processing…'
-                                : 'New Meeting'}
+                        <span className="ks-nav-label">
+                            {session.isRecording
+                                ? 'Recording…'
+                                : session.isPaused
+                                  ? 'Recording paused'
+                                  : session.isProcessing
+                                    ? session.stopFailed ? 'Save pending' : 'Processing…'
+                                    : 'New Meeting'}
+                        </span>
                     </button>
                 </div>
                 <nav className="ks-sidebar-nav">
-                    <button aria-current={activeTab === 'home' ? 'page' : undefined} className={activeTab === 'home' ? 'is-active' : ''} onClick={() => setActiveTab('home')}>
+                    <button aria-current={activeTab === 'home' ? 'page' : undefined} className={activeTab === 'home' ? 'is-active' : ''} title="Home" onClick={() => setActiveTab('home')}>
                         <Home className="ks-home-icon" />
-                        Home
+                        <span className="ks-nav-label">Home</span>
                     </button>
-                    <button aria-current={activeTab === 'history' && folderId === 'all' ? 'page' : undefined} className={activeTab === 'history' && folderId === 'all' ? 'is-active' : ''} onClick={() => openFolder('all')}>
+                    <button aria-current={activeTab === 'history' && folderId === 'all' ? 'page' : undefined} className={activeTab === 'history' && folderId === 'all' ? 'is-active' : ''} title="All meetings" onClick={() => openFolder('all')}>
                         <Library />
-                        All meetings
+                        <span className="ks-nav-label">All meetings</span>
                     </button>
-                    <button aria-current={activeTab === 'ask' ? 'page' : undefined} className={activeTab === 'ask' ? 'is-active' : ''} onClick={() => setActiveTab('ask')}>
+                    <button aria-current={activeTab === 'ask' ? 'page' : undefined} className={activeTab === 'ask' ? 'is-active' : ''} title="Ask Kesami" onClick={() => setActiveTab('ask')}>
                         <Sparkles />
-                        Ask Kesami
+                        <span className="ks-nav-label">Ask Kesami</span>
                     </button>
                     <div className="ks-folder-heading">
                         <span>Folders</span>
@@ -322,27 +368,25 @@ export function DesignWorkspace({
                             key={item.id}
                             aria-current={activeTab === 'history' && folderId === item.id ? 'page' : undefined}
                             className={activeTab === 'history' && folderId === item.id ? 'is-active' : ''}
+                            title={item.name}
                             onClick={() => openFolder(item.id)}
                         >
                             <Folder className="ks-folder-icon" style={{ color: item.color }} aria-hidden="true" />
                             <span>{item.name}</span>
-                            <small>{history.meetings.filter(meeting => meeting.metadata?.collectionId === item.id).length}</small>
+                            <small>{folderCounts[item.id] || 0}</small>
                         </button>
                     ))}
                     {!folders.length && (
                         <p className="ks-no-folders">
                             Organize your meetings.
-                            <button disabled={!isConnected} onClick={() => setCreating(true)}>
-                                Create a folder
-                            </button>
                         </p>
                     )}
                 </nav>
                 <div className="ks-sidebar-footer">
                     <div className="ks-footer-utility">
-                        <button onClick={onSettings}>
+                        <button title="Settings" onClick={onSettings}>
                             <Settings />
-                            Settings
+                            <span className="ks-nav-label">Settings</span>
                         </button>
                         <button aria-label="Workspace tools" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}>
                             <MoreHorizontal />
@@ -375,14 +419,6 @@ export function DesignWorkspace({
                                 </span>
                             </button>
 
-                            <button onClick={() => { setToolsOpen(false); onSettings(); }}>
-                                <Settings />
-                                Settings
-                            </button>
-                            <button onClick={() => { setToolsOpen(false); openFolder('all'); }}>
-                                <Library />
-                                All meetings
-                            </button>
                             <button onClick={() => { setActiveTab('profile'); setToolsOpen(false); }}><UserRound />Account</button>
                             <button onClick={() => { setActiveTab('pricing'); setToolsOpen(false); }}><Star />Plans &amp; pricing</button>
                             <button disabled={locked} onClick={() => { setToolsOpen(false); onSignOut(); }}>
@@ -391,19 +427,7 @@ export function DesignWorkspace({
                             </button>
                         </div>
                     )}
-                    {canUpgrade && (
-                        <button
-                            type="button"
-                            className={`ks-sidebar-upgrade ${activeTab === 'pricing' ? 'is-active' : ''}`}
-                            onClick={() => { setActiveTab('pricing'); setToolsOpen(false); }}
-                        >
-                            <Star aria-hidden="true" />
-                            <span>
-                                Upgrade to Pro
-                            </span>
-                        </button>
-                    )}
-                    <button className={`ks-profile ${activeTab === 'profile' ? 'is-active' : ''}`} onClick={() => setActiveTab('profile')}>
+                    <button className={`ks-profile ${activeTab === 'profile' ? 'is-active' : ''}`} title={profileName} onClick={() => setActiveTab('profile')}>
                         <Avatar name={profileName} />
                         <span>
                             {profileName}<small>{plan}</small>
@@ -414,6 +438,19 @@ export function DesignWorkspace({
             </aside>
             <main className="ks-main">
                 <div className="ks-main-toolbar">
+                    {sidebarCollapsed && (
+                        <button
+                            type="button"
+                            className="ks-sidebar-toggle ks-sidebar-expand no-drag"
+                            aria-label="Expand sidebar"
+                            aria-expanded="false"
+                            aria-controls="ks-sidebar"
+                            title="Expand sidebar"
+                            onClick={toggleSidebar}
+                        >
+                            <PanelLeftOpen aria-hidden="true" />
+                        </button>
+                    )}
                     <label className="ks-global-search">
                         <Search aria-hidden="true" />
                         <input aria-label="Search meetings" placeholder="Search your meetings…" value={query}
@@ -438,7 +475,7 @@ export function DesignWorkspace({
                     </div>
                 )}
                 {(activeTab === 'home' || activeTab === 'history') && (
-                    <div className="ks-home-scroll">
+                    <div className="ks-home-scroll" key={activeTab}>
                         <div className={`ks-home${activeTab === 'home' ? ` ks-dashboard${showAgenda ? '' : ' ks-dashboard-no-agenda'}` : ''}`}>
                             {activeTab === 'home' ? (
                                 <>
@@ -446,30 +483,31 @@ export function DesignWorkspace({
                                         <div className="ks-home-heading-text">
                                             <span className="ks-home-eyebrow">{now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</span>
                                             <h1>Good {now.getHours() < 12 ? 'morning' : now.getHours() < 18 ? 'afternoon' : 'evening'}{greetingName ? `, ${greetingName}` : ''}.</h1>
-                                            <p>
-                                                Your conversations, brought together.
-                                            </p>
                                         </div>
+                                        <div className="ks-home-controls">
+                                        <button type="button" className="ks-home-schedule" onClick={() => setActiveTab('ask')}><Sparkles size={14} />Ask AI</button>
                                         {canSchedule && (
                                             <button type="button" className="ks-home-schedule" onClick={onNewMeeting}>
                                                 <Plus size={14} />
                                                 Schedule meeting
                                             </button>
                                         )}
+                                        </div>
                                     </header>
-                                    <button className="ks-home-ask" onClick={() => setActiveTab('ask')}>
-                                        <span className="ks-home-ask-icon"><Sparkles /></span>
-                                        <span><strong>A little clarity, on demand.</strong><small>Ask anything across your meetings</small></span>
-                                        <ArrowUpRight />
-                                    </button>
                                     {showAgenda && <section className="ks-agenda" aria-label="Upcoming meetings">
-                                        <div className="ks-agenda-heading"><h2>Your schedule</h2><CalendarDays /></div>
+                                        <div className="ks-agenda-heading"><h2>Coming up</h2><div className="ks-agenda-paging">
+                                            <button type="button" className="ks-agenda-today" onClick={() => setAgendaOffset(0)} aria-current={agendaOffset === 0 ? 'date' : undefined}>Today</button>
+                                            <button type="button" className="ks-icon-button" aria-label="Previous two days" disabled={agendaOffset <= 0} onClick={() => setAgendaOffset(value => Math.max(0, value - AGENDA_PAGE_DAYS))}><ChevronLeft /></button>
+                                            <button type="button" className="ks-icon-button" aria-label="Next two days" disabled={agendaOffset + AGENDA_PAGE_DAYS >= AGENDA_HORIZON_DAYS} onClick={() => setAgendaOffset(value => Math.min(AGENDA_HORIZON_DAYS - AGENDA_PAGE_DAYS, value + AGENDA_PAGE_DAYS))}><ChevronRight /></button>
+                                        </div></div>
+                                        <div className="ks-agenda-card">
                                         {agendaDays.map(day => (
                                             <div className="ks-agenda-day" key={day.label}>
-                                                <div className="ks-section-label">
-                                                    <span>{day.label}</span>
-                                                    <span>{day.events.filter(event => new Date(event.end) > now).length} upcoming</span>
+                                                <div className={`ks-agenda-date${day.date.toDateString() === now.toDateString() ? ' is-today' : ''}`} aria-label={day.label} aria-current={day.date.toDateString() === now.toDateString() ? 'date' : undefined}>
+                                                    <strong>{day.date.getDate()}</strong><span>{day.date.toLocaleDateString([], { month: 'long' })}{day.date.toDateString() === now.toDateString() && <i className="ks-agenda-today-dot" aria-hidden="true" />}<small>{day.date.toLocaleDateString([], { weekday: 'short' })}</small></span>
                                                 </div>
+                                                <div className="ks-agenda-events">
+                                                {!day.events.length && <p className="ks-agenda-empty">No events {day.date.toDateString() === now.toDateString() ? 'today' : 'scheduled'}</p>}
                                                 {day.events.map((event, index) => {
                                                     const start = new Date(event.start);
                                                     const ended = new Date(event.end) <= now;
@@ -491,6 +529,7 @@ export function DesignWorkspace({
                                                                 </time>
                                                                 <i style={{ background: FOLDER_COLORS[index % FOLDER_COLORS.length] }} />
                                                                 <strong>{event.title}</strong>
+                                                                <span className="ks-agenda-range">{start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} – {new Date(event.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
                                                                 <small className={ended ? 'is-done' : ''}>
                                                                     {ended ? 'done' : countdownLabel(start - now)}
                                                                 </small>
@@ -507,12 +546,26 @@ export function DesignWorkspace({
                                                                     {isJoinLink ? 'Join' : 'Open link'}
                                                                 </a>
                                                             )}
+                                                            {event.id != null && (
+                                                                <AgendaFolderPicker
+                                                                    event={event}
+                                                                    folders={coloredFolders}
+                                                                    counts={folderCounts}
+                                                                    folderId={eventFolderId(event, folderRules)}
+                                                                    seriesFolderId={seriesFolderId(event, folderRules)}
+                                                                    disabled={!isConnected}
+                                                                    onAssign={(folderId, applyToSeries) => assignEventFolder(event, folderId, applyToSeries)}
+                                                                    onCreate={addFolder}
+                                                                />
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
+                                                </div>
                                             </div>
                                         ))}
-                                        {!today.length && !tomorrow.length && (
+                                        </div>
+                                        {!calendarConnected && !calendar.events.length && (
                                             <div className="ks-empty-card">
                                                 <CalendarDays className="ks-empty-icon" aria-hidden="true" />
                                                 <h3>{calendarConnected ? 'Nothing scheduled today' : 'Bring your calendar into view'}</h3>
@@ -523,7 +576,7 @@ export function DesignWorkspace({
                                                 </p>
                                                 {!calendarConnected && (
                                                     <button className="ks-text-button" onClick={() => onSettings('calendar')}>
-                                                        Calendar settings ↗
+                                                        Calendar settings <ArrowUpRight aria-hidden="true" />
                                                     </button>
                                                 )}
                                             </div>
@@ -551,7 +604,9 @@ export function DesignWorkspace({
                                 </>
                             )}
                             <div className="ks-meetings-list">
-                                {list.map(item => (
+                                {list.map((item, index) => (
+                                    <React.Fragment key={item.id}>
+                                    {(index === 0 || new Date(list[index - 1].startedAt).toDateString() !== new Date(item.startedAt).toDateString()) && <h3 className="ks-meeting-date-group">{new Date(item.startedAt).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}</h3>}
                                     <MeetingCard
                                         key={item.id}
                                         meeting={item}
@@ -561,8 +616,13 @@ export function DesignWorkspace({
                                         onMove={move}
                                         onDelete={setDeleting}
                                     />
+                                    </React.Fragment>
                                 ))}
                             </div>
+                            {activeTab === 'history' && <form className="ks-library-ask" onSubmit={event => { event.preventDefault(); askLibrary(libraryQuestion); }}>
+                                <input aria-label="Ask about your meetings" placeholder="Ask anything" value={libraryQuestion} onChange={event => setLibraryQuestion(event.target.value)} maxLength={4000} />
+                                <button type="button" disabled={!isConnected} onClick={() => askLibrary('List recent action items with their owners and deadlines, citing the meetings.')}><Sparkles />List recent todos</button>
+                            </form>}
                             {!list.length && (
                                 <div className="ks-empty-card">
                                     <Library className="ks-empty-icon" aria-hidden="true" />
@@ -605,14 +665,16 @@ export function DesignWorkspace({
                 {activeTab === 'ask' && (
                     <div className="ks-ask-view">
                         <MeetingChatPanel
-                            scope={memoryScope(scope === 'all' ? { type: 'all' } : { type: 'folder', folderId: scope }, memoryFilters)}
+                            draft={libraryDraft}
+                            onDraftConsumed={() => setLibraryDraft(current => current ? { ...current, text: '' } : null)}
+                            scope={memoryScope(libraryDraft?.scope || (scope === 'all' ? { type: 'all' } : { type: 'folder', folderId: scope }), memoryFilters)}
                             filterControl={<MemoryFilters onApply={setMemoryFilters} disabled={!isConnected} />}
                             scopeLabel="Answers from your conversations"
                             onUpgrade={() => setActiveTab('pricing')}
                             scopeControl={
                                 <label className="ks-chat-scope">
                                     Search in
-                                    <select aria-label="AI search scope" value={scope} onChange={event => setScope(event.target.value)}>
+                                    <select aria-label="AI search scope" value={scope} onChange={event => { setScope(event.target.value); setLibraryDraft(null); }}>
                                         <option value="all">All meetings</option>
                                         {folders.map(item => (
                                             <option key={item.id} value={item.id}>

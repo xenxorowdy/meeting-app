@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiRequest } from '@/lib/backend';
+import { calendarAgendaRange, createCalendarCache } from '@/lib/calendarEvents';
 
 const EMPTY = { providers: [] };
 
@@ -10,6 +11,9 @@ export function useCalendar({ isConnected }) {
     const [pendingProvider, setPendingProvider] = useState(null);
     const [error, setError] = useState(null);
     const mounted = useRef(true);
+    const eventRequest = useRef(0);
+    const eventCache = useRef(null);
+    if (!eventCache.current) eventCache.current = createCalendarCache();
 
     useEffect(() => {
         mounted.current = true;
@@ -28,18 +32,37 @@ export function useCalendar({ isConnected }) {
     }, []);
 
     const refreshEvents = useCallback(async () => {
+        const requestId = ++eventRequest.current;
+        const { minutesBack, minutesAhead, startMs, endMs } = calendarAgendaRange();
+        const key = `${startMs}-${endMs}`;
+        const cached = eventCache.current.get(key);
+        if (cached) {
+            setEvents(cached.events);
+            setWarnings(cached.warnings);
+            return;
+        }
         try {
-            const next = await apiRequest('/api/calendar/events');
-            if (!mounted.current) return;
-            setEvents(Array.isArray(next?.events) ? next.events : []);
-            setWarnings(Array.isArray(next?.warnings) ? next.warnings : []);
-            if (next?.warnings?.length) refreshStatus();
+            const next = await apiRequest(`/api/calendar/events?minutesBack=${minutesBack}&minutesAhead=${minutesAhead}`);
+            const fresh = {
+                events: Array.isArray(next?.events) ? next.events : [],
+                warnings: Array.isArray(next?.warnings) ? next.warnings : [],
+            };
+            if (!fresh.warnings.length) eventCache.current.set(key, fresh);
+            if (!mounted.current || requestId !== eventRequest.current) return;
+            setEvents(fresh.events);
+            setWarnings(fresh.warnings);
+            if (fresh.warnings.length) refreshStatus();
             // Keep the menu bar's "next meeting" in step with what this window just saw.
             globalThis.kesamiShell?.refreshMenuBar?.()?.catch?.(() => {});
         } catch {
-            if (mounted.current) setEvents([]);
+            if (mounted.current && requestId === eventRequest.current) setEvents([]);
         }
     }, [refreshStatus]);
+
+    const reloadEvents = useCallback(() => {
+        eventCache.current.clear();
+        return refreshEvents();
+    }, [refreshEvents]);
 
     useEffect(() => {
         if (!isConnected) return;
@@ -73,12 +96,12 @@ export function useCalendar({ isConnected }) {
             try {
                 await apiRequest('/api/calendar/disconnect', { method: 'POST', body: { provider } });
                 await refreshStatus();
-                await refreshEvents();
+                await reloadEvents();
             } catch (cause) {
                 setError(cause?.message || 'Could not disconnect the calendar.');
             }
         },
-        [refreshStatus, refreshEvents]
+        [refreshStatus, reloadEvents]
     );
 
     const handleConnectionEvent = useCallback(
@@ -86,9 +109,9 @@ export function useCalendar({ isConnected }) {
             setPendingProvider(null);
             if (data?.error) setError(data.error);
             refreshStatus();
-            refreshEvents();
+            reloadEvents();
         },
-        [refreshStatus, refreshEvents]
+        [refreshStatus, reloadEvents]
     );
 
     return {
@@ -100,6 +123,7 @@ export function useCalendar({ isConnected }) {
         connect,
         disconnect,
         refreshEvents,
+        reloadEvents,
         handleConnectionEvent,
         clearError: () => setError(null),
     };

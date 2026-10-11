@@ -53,7 +53,7 @@ function formatBytes(bytes) {
 }
 
 function SettingGroup({ children }) {
-    return <div className="divide-y divide-border overflow-hidden rounded-lg border bg-muted">{children}</div>;
+    return <div className="ks-settings-group divide-y divide-border overflow-hidden rounded-lg border bg-muted">{children}</div>;
 }
 
 function SettingRow({ id, label, description, badge, children, stacked = false }) {
@@ -208,7 +208,7 @@ export function SettingsModal({
                       : '';
             setNotificationTest({
                 status: problem ? 'error' : 'ok',
-                message: `Sent. If nothing appeared, allow notifications for Kesami in System Settings.${problem}`,
+                message: `${result.confirmed ? 'macOS showed the notification.' : 'Sent. If nothing appeared, allow notifications for Kesami in System Settings.'}${problem}`,
             });
         } catch (cause) {
             setNotificationTest({ status: 'error', message: cause?.message || 'The notification couldn’t be sent.' });
@@ -334,7 +334,7 @@ export function SettingsModal({
 
     return (
         <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
-            <DialogContent className="flex max-h-[86vh] flex-col gap-0 p-0 sm:max-w-3xl">
+            <DialogContent className="ks-settings-dialog flex max-h-[86vh] flex-col gap-0 p-0 sm:max-w-3xl">
                 <DialogHeader className="space-y-1 p-4 pb-4 pr-12 text-left hairline-bottom">
                     <DialogTitle className="text-title2 font-semibold">Settings</DialogTitle>
                     <DialogDescription className="text-callout text-muted-foreground">Make Kesami work the way you do.</DialogDescription>
@@ -654,7 +654,7 @@ export function SettingsModal({
                                 <SettingRow
                                     id="meeting-reminders"
                                     label="Remind me before a meeting"
-                                    description="A notification a minute before any scheduled meeting, with a Join button, and a countdown in the menu bar. Clicking the notification opens the call and starts recording."
+                                    description="A notification a minute before any scheduled meeting, with a Join button, and a countdown in the menu bar. Click the notification to open Kesami and choose audio or screen recording; Join also opens the call."
                                 >
                                     <Switch
                                         id="meeting-reminders"

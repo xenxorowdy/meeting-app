@@ -1,0 +1,113 @@
+/* Every "Get Kesami" lands here, so the download choice has to be in view once the heading is. */
+.closing {
+    padding: var(--s-8) 0 var(--s-9);
+}
+
+.title {
+    max-width: 11em;
+    font-size: clamp(2.75rem, 1rem + 4.6vw, 6.25rem);
+}
+
+.lead {
+    margin-top: var(--s-5);
+}
+
+.platforms {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-4);
+    max-width: 880px;
+    margin-top: var(--s-7);
+}
+
+.platform {
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+    padding: var(--s-5);
+    border: 1px solid var(--line-strong);
+    border-radius: 20px;
+    background: var(--bg-raised);
+}
+
+.os {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--t-h3);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+}
+
+.requires {
+    color: var(--fg-dim);
+}
+
+/*
+ * Both downloads start as quiet outlined buttons, so the section never shows two filled ones. The head
+ * script sets data-os on <html> before paint; the matching platform's button fills, keeping one filled
+ * button in view.
+ */
+.get {
+    justify-self: start;
+    margin-top: var(--s-3);
+    background: transparent;
+    color: var(--fg);
+    box-shadow: inset 0 0 0 1.5px var(--fg);
+}
+
+.get:hover {
+    background: var(--bg-hover);
+}
+
+:global(html[data-os='mac']) .platform[data-os='mac'] .get,
+:global(html[data-os='windows']) .platform[data-os='windows'] .get {
+    background: var(--orange);
+    color: var(--ink);
+    box-shadow: none;
+}
+
+:global(html[data-os='mac']) .platform[data-os='mac'] .get:hover,
+:global(html[data-os='windows']) .platform[data-os='windows'] .get:hover {
+    background: var(--orange-hover);
+}
+
+:global(html[data-os='mac']) .platform[data-os='mac'],
+:global(html[data-os='windows']) .platform[data-os='windows'] {
+    border-color: var(--orange);
+}
+
+.file {
+    font-size: var(--t-label);
+    font-stretch: 112%;
+    letter-spacing: 0.02em;
+    color: var(--fg-mute);
+}
+
+.unsigned {
+    max-width: 44em;
+    margin-top: var(--s-4);
+    font-size: var(--t-small);
+    color: var(--fg-dim);
+}
+
+.mobile {
+    display: none;
+    margin-top: var(--s-4);
+    color: var(--fg-dim);
+}
+
+:global(html[data-os='mobile']) .mobile {
+    display: block;
+}
+
+@media (max-width: 720px) {
+    .platforms {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .platform {
+        padding: var(--s-4);
+    }
+}

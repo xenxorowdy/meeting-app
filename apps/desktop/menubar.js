@@ -14,6 +14,7 @@ const OFFLINE_RETRY_MS = 5_000;
 const STALE_EVENTS_MS = 600_000;
 const NOTIFIED_TTL_MS = 43_200_000;
 const PENDING_TTL_MS = 120_000;
+const TEST_NOTIFICATION_WAIT_MS = 3_000;
 // Auto-record fires on the first tick at or after the start time. Past this window the meeting is treated
 // as missed (the Mac slept, the app was closed) rather than starting a recording of whatever comes next.
 const AUTO_RECORD_GRACE_MS = 120_000;
@@ -55,6 +56,7 @@ let menuSignature = '';
 let rebuildQueued = false;
 let pendingCommand = null;
 let notified = new Map();
+let notificationFailure = null;
 let helpersPromise = null;
 let activateMain = null;
 let mainWindowFor = () => null;
@@ -199,12 +201,24 @@ function takePendingCommand(nowMs = Date.now()) {
     return command;
 }
 
+function present(notification) {
+    notification.on('show', () => {
+        notificationFailure = null;
+    });
+    notification.on('failed', (_event, error) => {
+        if (!notificationFailure) console.log(`[Kesami] macOS did not show a meeting notification: ${error}`);
+        notificationFailure = String(error || 'macOS refused the notification');
+    });
+    notification.show();
+    return notification;
+}
+
 function notify(event, lib, key) {
     if (!Notification.isSupported()) return null;
     const invited = Array.isArray(event.attendees) ? event.attendees.length : 0;
     const link = lib.calendarEventLink(event);
     const auto = autoRecords.get(key)?.state === 'armed';
-    const next = auto ? 'Recording starts automatically.' : 'Click to record it.';
+    const next = auto ? 'Recording starts automatically.' : 'Click to choose how to record it.';
     const body = `Starts in 1 minute${invited > 0 ? ` · ${invited} invited` : ''}. ${next}`;
     const notification = new Notification({
         title: event.title || 'Meeting starting',
@@ -224,14 +238,47 @@ function notify(event, lib, key) {
         if (link) void shell.openExternal(link);
         recordNow();
     };
-    notification.on('click', join);
+    notification.on('click', recordNow);
     notification.on('action', join);
     notification.on('close', () => {
         const entry = autoRecords.get(key);
         if (entry?.state === 'armed') entry.state = 'cancelled';
     });
-    notification.show();
-    return notification;
+    return present(notification);
+}
+
+function notifyStarted(event, lib, autoStarted) {
+    if (!Notification.isSupported()) return null;
+    const link = lib.calendarEventLink(event);
+    const notification = new Notification({
+        title: event.title || 'Meeting started',
+        body: autoStarted ? 'Started now. Kesami is recording it.' : 'Started now. Click to record it.',
+        ...(link ? { actions: [{ type: 'button', text: 'Join' }] } : {}),
+    });
+    const metadata = lib.calendarEventMetadata(event);
+    const record = () => deliver({ type: 'record', event: metadata });
+    notification.on('click', () => (autoStarted ? activateMain?.() : record()));
+    notification.on('action', () => {
+        if (link) void shell.openExternal(link);
+        if (!autoStarted) record();
+    });
+    return present(notification);
+}
+
+function runStartNotices(lib, nowMs) {
+    if (!remindersEnabled) return;
+    for (const event of events) {
+        const startMs = Date.parse(event?.start);
+        if (!Number.isFinite(startMs) || nowMs < startMs || nowMs - startMs > AUTO_RECORD_GRACE_MS) continue;
+        const key = lib.reminderKey(event);
+        const startKey = `${key}:start`;
+        if (notified.has(startKey)) continue;
+        notified.set(startKey, nowMs);
+        const entry = autoRecords.get(key);
+        const autoStarted = Boolean(entry?.autoStarted);
+        if (!autoStarted && (entry?.state === 'started' || recording)) continue;
+        notifyStarted(event, lib, autoStarted);
+    }
 }
 
 function runAutoRecord(lib, nowMs) {
@@ -245,6 +292,7 @@ function runAutoRecord(lib, nowMs) {
         entry.state = 'started';
         // Already recording (someone clicked Record, or the previous call ran over): leave it alone.
         if (recording || !autoRecordEnabled) continue;
+        entry.autoStarted = true;
         deliver({ type: 'record', event: lib.calendarEventMetadata(entry.event), auto: true }, { focus: false });
     }
 }
@@ -261,6 +309,7 @@ function runReminders(lib, nowMs) {
         notify(event, lib, key);
     }
     runAutoRecord(lib, nowMs);
+    runStartNotices(lib, nowMs);
 }
 
 function applyMenu(view) {
@@ -461,11 +510,33 @@ function registerHandlers(ipc = ipcMain) {
     ipc.handle(TEST_NOTIFICATION_CHANNEL, event => {
         if (!fromMainWindow(event)) return { shown: false };
         if (!Notification.isSupported()) return { shown: false, reason: 'Notifications are not supported on this system.' };
-        new Notification({
-            title: 'Kesami notifications are on',
-            body: 'Meeting reminders and call prompts will appear like this.',
-        }).show();
-        return { shown: true, backendOnline, calendarState };
+        return new Promise(resolve => {
+            let settled = false;
+            const finish = result => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve({ ...result, backendOnline, calendarState });
+            };
+            const timer = setTimeout(() => finish({ shown: true, confirmed: false }), TEST_NOTIFICATION_WAIT_MS);
+            const notification = new Notification({
+                title: 'Kesami notifications are on',
+                body: 'Meeting reminders and call prompts will appear like this.',
+            });
+            notification.on('show', () => {
+                notificationFailure = null;
+                finish({ shown: true, confirmed: true });
+            });
+            notification.on('failed', (_event, error) => {
+                notificationFailure = String(error || 'macOS refused the notification');
+                finish({
+                    shown: false,
+                    blocked: true,
+                    reason: `macOS blocked the notification (${notificationFailure}). Turn on notifications for Kesami in System Settings → Notifications. If Kesami isn’t listed there, this build isn’t signed and macOS won’t show its notifications.`,
+                });
+            });
+            notification.show();
+        });
     });
     ipc.handle(NOTIFICATION_SETTINGS_CHANNEL, event => {
         if (!fromMainWindow(event)) return false;
@@ -483,6 +554,7 @@ function destroy() {
     pollTimer = null;
     retryTimer = null;
     notified.clear();
+    notificationFailure = null;
     autoRecords.clear();
     pendingCommand = null;
     recording = false;
@@ -510,6 +582,7 @@ module.exports = {
         RECORDING_CHANNEL,
         REFRESH_CHANNEL,
         TEST_NOTIFICATION_CHANNEL,
+        TEST_NOTIFICATION_WAIT_MS,
         classifyCalendar,
         autoRecordDelay,
         truncateTitle,
@@ -528,6 +601,7 @@ module.exports = {
             calendarState,
             recording,
             notified,
+            notificationFailure,
             pendingCommand,
             ticking: tickTimer !== null,
             polling: pollTimer !== null,
@@ -547,6 +621,7 @@ module.exports = {
             pendingCommand = null;
             recording = false;
             notified = new Map();
+            notificationFailure = null;
         },
     },
 };

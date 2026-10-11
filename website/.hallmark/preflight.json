@@ -1,0 +1,37 @@
+{
+  "scanned_at": "2026-10-10",
+  "project": "Kesami website",
+  "framework": {
+    "name": "Next.js App Router",
+    "version_range": "^16.3.8",
+    "react_version_range": "^19.3.0",
+    "source": "package.json:17-19"
+  },
+  "fonts": {
+    "display": "Inter",
+    "body": "Inter",
+    "loader": "next/font/google",
+    "fallbacks": ["Mona Sans", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"],
+    "sources": ["app/layout.tsx:9", "app/globals.css:32-33"]
+  },
+  "palette": {
+    "canvas": "#f5f5f0",
+    "ink": "#111111",
+    "accent": "#ff5e00",
+    "token_system": "CSS custom properties with light, paper, tint and product-only dark themes",
+    "source": "app/globals.css:13-142"
+  },
+  "motion": {
+    "library": null,
+    "implementation": "CSS transitions and small DOM observer components",
+    "reduced_motion": true,
+    "sources": ["package.json:15-20", "app/globals.css:394-415", "app/layout.tsx:57"]
+  },
+  "spacing": {
+    "base_px": 4,
+    "tokens": "--s-1 through --s-10",
+    "source": "app/globals.css:45-56"
+  },
+  "locked_design_file": null,
+  "preserve": ["Inter typography", "orange branding", "light page themes", "existing spacing scale", "meeting memory and follow-through positioning", "server components with small client islands"]
+}

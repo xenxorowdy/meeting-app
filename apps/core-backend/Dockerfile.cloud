@@ -14,7 +14,27 @@ COPY apps/core-backend/src ./src
 COPY apps/core-backend/migrations ./migrations
 RUN touch src/lib.rs src/bin/kesami-cloud-relay.rs && cargo build --release --locked --no-default-features --bin kesami-cloud-relay
 
-FROM debian:trixie-slim
+FROM builder AS capacity-builder
+
+COPY apps/core-backend/test ./test
+RUN rm -f target/release/deps/kesami_cloud_relay-* \
+    && cargo test --release --locked --no-default-features --bin kesami-cloud-relay --no-run \
+    && for test_binary in target/release/deps/kesami_cloud_relay-*; do \
+         if [ -f "$test_binary" ] && [ -x "$test_binary" ]; then \
+           cp "$test_binary" /kesami-relay-tests; break; \
+         fi; \
+       done \
+    && test -x /kesami-relay-tests
+
+FROM debian:trixie-slim AS capacity-test
+
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin kesami
+COPY --from=capacity-builder /kesami-relay-tests /usr/local/bin/kesami-relay-tests
+USER kesami
+ENTRYPOINT ["kesami-relay-tests"]
+CMD ["twenty_meetings_forward_two_audio_streams_each", "--nocapture"]
+
+FROM debian:trixie-slim AS runtime
 
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin kesami
 COPY --from=builder /build/target/release/kesami-cloud-relay /usr/local/bin/kesami-cloud-relay

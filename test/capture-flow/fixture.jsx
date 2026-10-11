@@ -187,11 +187,13 @@ const cases = [
         mic.emitRaw(1);
         system.emit(2);
         equal(state.audio, [{ stream: 1, pcm: [2] }], 'App microphone mute keeps speaker output transcribing');
+        equal(state.skips, [{ stream: 0, samples: 1 }], 'App microphone mute reports the skipped samples instead of dropping them silently');
         equal(recorder.micMuted, true, 'App microphone mute also applies to the recording');
         await flush(() => state.events({ type: 'mic_muted', data: { muted: true } }));
         await flush(() => session.toggleMicMute());
         mic.emitRaw(3);
         equal(recorder.micMuted, true, 'Meeting-client mute remains active when app mute is cleared');
+        equal(state.skips, [{ stream: 0, samples: 1 }, { stream: 0, samples: 1 }], 'Meeting-client mute reports skipped microphone samples too');
         await flush(() => state.events({ type: 'mic_muted', data: { muted: false } }));
         await flush(() => session.toggleSystemAudioMute());
         mic.emit(4);

@@ -406,7 +406,10 @@ export function useMeetingSession() {
             onPcm: pcm => {
                 // A muted microphone — in the app or in the meeting client —
                 // sends nothing to the backend, so nothing can be transcribed.
-                if (captureMuteRef.current.mic) return;
+                if (captureMuteRef.current.mic) {
+                    socketRef.current?.skipAudio(STREAM_MIC, pcm.length);
+                    return;
+                }
                 socketRef.current?.sendAudio(STREAM_MIC, pcm);
             },
             onReady: capture => {
@@ -433,7 +436,10 @@ export function useMeetingSession() {
             includeStream: true,
             muted: captureMuteRef.current.system,
             onPcm: pcm => {
-                if (captureMuteRef.current.system) return;
+                if (captureMuteRef.current.system) {
+                    socketRef.current?.skipAudio(STREAM_SYSTEM, pcm.length);
+                    return;
+                }
                 systemSourceRef.current = systemCaptureRef.current?.source || 'system';
                 socketRef.current?.sendAudio(STREAM_SYSTEM, pcm);
             },
@@ -499,7 +505,11 @@ export function useMeetingSession() {
             signal: controller.signal,
             bitsPerSecond: settingsRef.current.recordingBitsPerSecond,
             onSystemPcm: pcm => {
-                if (!current() || systemSourceRef.current || captureMuteRef.current.system) return;
+                if (!current() || systemSourceRef.current) return;
+                if (captureMuteRef.current.system) {
+                    socketRef.current?.skipAudio(STREAM_SYSTEM, pcm.length);
+                    return;
+                }
                 if (socketRef.current) socketRef.current.sendAudio(STREAM_SYSTEM, pcm);
             },
             onError: message => { if (current()) setRecordingState(prev => ({ ...prev, error: message })); },

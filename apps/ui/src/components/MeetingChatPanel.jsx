@@ -1,11 +1,15 @@
+/* Hallmark · component: meeting chat · genre: modern-minimal · theme: Kesami coral
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: verified in the local UI render
+ * pre-emit critique: P4 H4 E4 S4 R5 V4
+ */
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpRight, Check, Copy, FileCheck2, History, ListChecks, Lock, Maximize2, Minimize2, Plus, Search, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { JumpingBalls } from '@/components/JumpingBalls';
 import { MarkdownText } from '@/components/MarkdownText';
 import { useMeetingChat } from '@/hooks/useMeetingChat';
 import { apiRequest, normalizeMeeting } from '@/lib/backend';
-import { citationTarget, citationTime, copyAnswerText, citationDate, scopeKey } from '@/lib/chat';
+import { citationTarget, citationTime, copyAnswerText, citationDate, readableExcerpt, scopeKey } from '@/lib/chat';
 import { copyToClipboard } from '@/lib/clipboard';
 
 const NO_CITATIONS = [];
@@ -67,7 +71,7 @@ function CitationCard({ citation, onOpen }) {
                     ? citation.unavailableReason || 'Source unavailable'
                     : `${citation.sourceKind || 'Meeting'}${citation.startedAt ? ` · ${citationDate(citation.startedAt)}` : ''}`}
             </span>
-            <q>{citation.excerpt}</q>
+            <q>{readableExcerpt(citation.excerpt).text}</q>
         </button>
     );
 }
@@ -145,7 +149,7 @@ function ConversationHistory({ threads, currentId, disabled, hasMore, onOpen, on
     );
 }
 
-export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, filterControl = null, draft = null, onClose = null, onUpgrade = null, isExpanded = false, onToggleExpand = null }) {
+export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, filterControl = null, draft = null, onDraftConsumed = null, onClose = null, onUpgrade = null, isExpanded = false, onToggleExpand = null }) {
     const chat = useMeetingChat(scope, isConnected);
     const [sourceError, setSourceError] = useState(null);
     const log = useRef(null);
@@ -208,14 +212,17 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
         setSourceError(null);
         setConfirmDelete(false);
     }, [scopeKey(scope), chat.thread?.id]);
+    const seededDraft = useRef(null);
     // A quoted transcript turn (or any caller) hands us a pre-filled question.
     // The key changes on every seed, so quoting the same turn twice re-seeds.
     useEffect(() => {
-        if (!draft?.text) return;
+        if (!draft?.text || chat.loading || seededDraft.current === draft.key) return;
+        seededDraft.current = draft.key;
         chat.setQuestion(draft.text);
+        onDraftConsumed?.();
         composer.current?.focus();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [draft?.key]);
+    }, [draft?.key, chat.loading]);
     const openSource = useCallback(
         async citation => {
             setSourceError(null);
@@ -254,28 +261,30 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                     {scopeLabel && <p title={scopeLabel}>{scopeLabel}</p>}
                 </div>
                 {scopeControl}
-                <button
-                    ref={historyButton}
-                    type="button"
-                    className="ks-icon-button"
-                    onClick={() => (showHistory ? closeHistory() : setShowHistory(true))}
-                    disabled={deleting}
-                    aria-label="Conversation history"
-                    aria-pressed={showHistory}
-                    title="Conversation history"
-                >
-                    <History />
-                </button>
-                <button type="button" className="ks-icon-button" onClick={() => { chat.newThread(); if (showHistory) closeHistory(composer); else composer.current?.focus(); }} disabled={deleting} aria-label="New conversation" title="New conversation">
-                    <Plus />
-                </button>
-                {chat.thread && (
-                    <button type="button" className="ks-icon-button" onClick={() => setConfirmDelete(true)} disabled={chat.busy || deleting} aria-label="Delete conversation" title="Delete conversation">
-                        <Trash2 />
+                <div className="ks-chat-head-actions" role="group" aria-label="Conversation controls">
+                    <button
+                        ref={historyButton}
+                        type="button"
+                        className="ks-icon-button"
+                        onClick={() => (showHistory ? closeHistory() : setShowHistory(true))}
+                        disabled={deleting}
+                        aria-label="Conversation history"
+                        aria-pressed={showHistory}
+                        title="Conversation history"
+                    >
+                        <History />
                     </button>
-                )}
-                {onToggleExpand && <button type="button" className="ks-icon-button" onClick={onToggleExpand} aria-label={isExpanded ? 'Restore AI panel' : 'Expand AI panel'} title={isExpanded ? 'Restore panel' : 'Expand panel'} aria-pressed={isExpanded}>{isExpanded ? <Minimize2 /> : <Maximize2 />}</button>}
-                {onClose && <button type="button" className="ks-icon-button ks-chat-header-close" onClick={onClose} aria-label="Close Ask AI" title="Close Ask AI"><X /></button>}
+                    <button type="button" className="ks-icon-button" onClick={() => { chat.newThread(); if (showHistory) closeHistory(composer); else composer.current?.focus(); }} disabled={deleting} aria-label="New conversation" title="New conversation">
+                        <Plus />
+                    </button>
+                    {chat.thread && (
+                        <button type="button" className="ks-icon-button" onClick={() => setConfirmDelete(true)} disabled={chat.busy || deleting} aria-label="Delete conversation" title="Delete conversation">
+                            <Trash2 />
+                        </button>
+                    )}
+                    {onToggleExpand && <button type="button" className="ks-icon-button" onClick={onToggleExpand} aria-label={isExpanded ? 'Restore AI panel' : 'Expand AI panel'} title={isExpanded ? 'Restore panel' : 'Expand panel'} aria-pressed={isExpanded}>{isExpanded ? <Minimize2 /> : <Maximize2 />}</button>}
+                    {onClose && <button type="button" className="ks-icon-button ks-chat-header-close" onClick={onClose} aria-label="Close Ask AI" title="Close Ask AI"><X /></button>}
+                </div>
             </header>
             {filterControl}
             {isLive && !showHistory && (
@@ -321,6 +330,10 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                             <div className="ks-chat-empty">
                                 <h3>{isLive ? 'Stay with the conversation' : singleMeeting ? 'How can I help?' : 'Ask across your meetings'}</h3>
                                 <p>{isLive ? 'Catch up, find a decision, or check next steps while the meeting continues.' : 'Ask about decisions, follow-ups, or anything that was said. Answers link back to their source.'}</p>
+                                <div className="ks-chat-starters-heading">
+                                    <span>Try asking</span>
+                                    <span>{isLive ? 'From this transcript' : singleMeeting ? 'From this meeting' : 'Across your meetings'}</span>
+                                </div>
                                 <ul className="ks-chat-starters" aria-label="Suggested questions">
                                     {starters.map(([label, prompt, Icon]) => (
                                         <li key={prompt}>
@@ -398,9 +411,11 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                             <div className="ks-chat-row">
                                 <div className="ks-chat-bubble ks-chat-thinking" role="status">
                                     <span className="ks-chat-ai-label"><Sparkles aria-hidden="true" /> Kesami AI</span>
-                                    <span className="ks-chat-thinking-row">
-                                        <JumpingBalls />
-                                        Reading the passages that matter…
+                                    <span className="sr-only">Reading the passages that matter…</span>
+                                    <span className="ks-chat-skeleton" aria-hidden="true">
+                                        <span />
+                                        <span />
+                                        <span />
                                     </span>
                                 </div>
                             </div>

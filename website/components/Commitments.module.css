@@ -1,0 +1,310 @@
+.commitments {
+    padding: var(--s-9) 0;
+}
+
+.head {
+    display: grid;
+    gap: var(--s-4);
+}
+
+/* A full sentence rather than a two-word beat, so it runs a step below the usual section headline. */
+.title {
+    max-width: 15em;
+    font-size: clamp(2.5rem, 1.4rem + 4vw, 5.5rem);
+    line-height: 0.98;
+    text-wrap: balance;
+}
+
+.title :global(.em) {
+    display: block;
+}
+
+.panels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-6);
+    align-items: start;
+    margin-top: var(--s-7);
+}
+
+.column {
+    display: grid;
+    gap: var(--s-3);
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--t-small);
+    font-weight: 600;
+    color: var(--fg-dim);
+}
+
+.live {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #1f8a4c;
+}
+
+.concept {
+    padding: 2px var(--s-2);
+    border: 1px dashed var(--fg-mute);
+    border-radius: 999px;
+    color: var(--fg);
+    font-size: var(--t-label);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.caption {
+    max-width: 34em;
+    color: var(--fg-dim);
+}
+
+/* App mocks: the desktop app's dark theme, px sizes, stand-ins for screenshots. */
+.mock {
+    display: grid;
+    gap: 12px;
+    padding: var(--s-4);
+    border: 1px solid var(--app-line-strong);
+    border-radius: 16px;
+    background: var(--app-bg);
+    color: var(--app-text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 24px 56px rgb(17 17 17 / 0.16);
+}
+
+/* A concept is drawn, not shipped: a dashed outline says so before the label is read. */
+.conceptMock {
+    border: 1.5px dashed #6c6c74;
+}
+
+.mockHead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.muted {
+    color: var(--app-mute);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.bar {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--app-line);
+    overflow: hidden;
+}
+
+.bar span {
+    display: block;
+    height: 100%;
+    background: #f07a5a;
+}
+
+.steps,
+.open {
+    display: grid;
+}
+
+.steps li {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    column-gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--app-line);
+}
+
+.box {
+    grid-row: span 2;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    border: 1.5px solid var(--app-line-strong);
+    border-radius: 4px;
+}
+
+.steps li[data-done] .box {
+    border-color: #f07a5a;
+    background: #f07a5a
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.5l4.5-5' fill='none' stroke='%23111' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+        center / 11px no-repeat;
+}
+
+.steps li[data-done] .task {
+    color: var(--app-mute);
+    text-decoration: line-through;
+}
+
+.task {
+    font-size: 14px;
+}
+
+.meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    color: var(--app-mute);
+    font-size: 12px;
+}
+
+.avatar {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--app-raised);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.due::before {
+    content: '·';
+    margin-right: 6px;
+}
+
+.add {
+    padding: 10px 12px;
+    border: 1px solid var(--app-line-strong);
+    border-radius: 10px;
+    color: var(--app-mute);
+}
+
+.committed {
+    display: grid;
+    gap: 6px;
+    padding: var(--s-3);
+    margin-bottom: var(--s-1);
+    border-radius: 12px;
+    background: rgb(255 94 0 / 0.1);
+    box-shadow: inset 0 0 0 1px rgb(255 94 0 / 0.4);
+}
+
+.kicker {
+    color: var(--orange);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.promise {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tags span {
+    padding: 1px var(--s-2);
+    border-radius: 6px;
+    background: var(--app-raised);
+    color: var(--app-dim);
+    font-size: 12px;
+}
+
+.source {
+    display: grid;
+    gap: 2px;
+    margin-top: 2px;
+}
+
+.source q {
+    color: var(--app-dim);
+}
+
+.split {
+    display: flex;
+    gap: 3px;
+    height: 6px;
+}
+
+.split span {
+    border-radius: 3px;
+}
+
+.counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    color: var(--app-dim);
+    font-size: 12px;
+}
+
+.counts b {
+    color: var(--app-text);
+    font-size: 14px;
+}
+
+.mock [data-state='overdue'] {
+    --state: #f07a72;
+}
+
+.mock [data-state='upcoming'] {
+    --state: var(--orange);
+}
+
+.mock [data-state='waiting'] {
+    --state: #8a8a94;
+}
+
+.split span,
+.dot {
+    background: var(--state);
+}
+
+.counts span::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--state);
+}
+
+.open li {
+    display: grid;
+    grid-template-columns: 10px 1fr;
+    column-gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--app-line);
+}
+
+.open li:last-child {
+    border-bottom: 0;
+}
+
+.dot {
+    grid-row: span 2;
+    width: 8px;
+    height: 8px;
+    margin-top: 7px;
+    border-radius: 50%;
+}
+
+@media (max-width: 960px) {
+    .panels {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--s-7);
+    }
+
+    .mock {
+        max-width: 560px;
+    }
+}

@@ -1,0 +1,243 @@
+.memory {
+    padding: var(--s-9) 0;
+}
+
+.head {
+    display: grid;
+    gap: var(--s-4);
+}
+
+.head h2 {
+    max-width: 10em;
+}
+
+/* One meeting, read left to right: each card is a thing Kesami keeps, joined by a drawn connector. */
+.chain {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--s-4);
+    margin-top: var(--s-7);
+}
+
+.link {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+    min-height: 168px;
+    padding: var(--s-3);
+    border: 1px solid var(--line-strong);
+    border-radius: 16px;
+    background: var(--bg-raised);
+}
+
+.link + .link::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: calc(-1 * var(--s-4) - 1px);
+    width: var(--s-4);
+    height: 2px;
+    background: var(--orange);
+}
+
+.link:first-child {
+    border-color: var(--fg);
+}
+
+.kind {
+    font-size: var(--t-label);
+    font-stretch: 125%;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.value {
+    font-size: 1.125rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.note {
+    margin-top: auto;
+    font-size: var(--t-small);
+    color: var(--fg-mute);
+}
+
+.people {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px var(--s-2);
+}
+
+.person {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.avatar {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+    font-size: 0.6875rem;
+    font-weight: 700;
+}
+
+/* The same folder across time: three dated calls on one rule, each with the thing it left behind. */
+.history {
+    margin-top: var(--s-6);
+    padding: var(--s-5);
+    border-radius: 20px;
+    background: var(--bg-raised);
+    box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.historyHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+}
+
+.historyTitle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-weight: 600;
+}
+
+.folderMark {
+    width: 16px;
+    height: 12px;
+    border-radius: 2px 3px 3px 3px;
+    background: var(--orange);
+}
+
+.timeline {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-4);
+    margin-top: var(--s-5);
+    border-top: 2px solid var(--line-strong);
+}
+
+.timeline li {
+    position: relative;
+    display: grid;
+    gap: var(--s-1);
+    padding-top: var(--s-4);
+}
+
+.timeline li::before {
+    content: '';
+    position: absolute;
+    top: -7px;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--fg);
+}
+
+.timeline li:last-child::before {
+    background: var(--orange);
+}
+
+.date {
+    font-size: var(--t-small);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.meetingName {
+    color: var(--fg-dim);
+}
+
+.item {
+    display: grid;
+    gap: 2px;
+    margin-top: var(--s-2);
+    padding: var(--s-2) 12px;
+    border-left: 2px solid var(--orange);
+    font-size: var(--t-small);
+}
+
+.itemKind {
+    font-size: var(--t-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-mute);
+}
+
+.footnote {
+    margin-top: var(--s-5);
+    max-width: 48em;
+    font-size: var(--t-small);
+    color: var(--fg-mute);
+}
+
+@media (max-width: 1180px) {
+    .chain {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .link:nth-child(4)::before {
+        display: none;
+    }
+}
+
+@media (max-width: 720px) {
+    .chain {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--s-3);
+    }
+
+    .link {
+        min-height: 0;
+    }
+
+    .link + .link::before,
+    .link:nth-child(4)::before {
+        display: block;
+        top: calc(-1 * var(--s-3) - 1px);
+        left: var(--s-5);
+        width: 2px;
+        height: var(--s-3);
+    }
+
+    .note {
+        margin-top: 0;
+    }
+
+    .history {
+        padding: var(--s-4);
+    }
+
+    .timeline {
+        grid-template-columns: minmax(0, 1fr);
+        border-top: 0;
+        border-left: 2px solid var(--line-strong);
+        padding-left: var(--s-4);
+        gap: var(--s-5);
+    }
+
+    .timeline li {
+        padding-top: 0;
+    }
+
+    .timeline li::before {
+        top: 4px;
+        left: calc(-1 * var(--s-4) - 7px);
+    }
+}

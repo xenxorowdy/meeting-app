@@ -1,0 +1,11 @@
+/* Hallmark · footer: Ft2 · inline links and contact details. */
+.footer { padding-block: var(--space-xl) var(--space-md); border-top: var(--rule-width) solid var(--line); }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.brand { display: inline-flex; min-height: 44px; align-items: center; text-decoration: none; }
+.tagline { max-width: 36ch; color: var(--fg-dim); font-size: var(--text-md); letter-spacing: -0.02em; }
+.navigation { display: flex; flex-direction: column; gap: var(--space-xs); padding-block: var(--space-md); }
+.column ul { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2xs) var(--space-md); }
+.column :global(.link) { min-height: 32px; color: var(--fg-dim); font-size: var(--text-sm); text-decoration: none; white-space: nowrap; }
+.column :global(.link):hover { color: var(--fg); text-decoration: underline; text-decoration-color: var(--orange); text-underline-offset: 5px; }
+.bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2xs) var(--space-md); padding-top: var(--space-sm); color: var(--fg-mute); font-size: var(--text-xs); }
+@media (pointer: coarse) { .column :global(.link) { min-height: 44px; } }

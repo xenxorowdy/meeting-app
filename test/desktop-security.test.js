@@ -14,16 +14,15 @@ function windowFor(url, role = 'main', openExternal) {
 
 test('native privileges require the registered top frame and its exact application document', () => {
     const handlers = new Map();
-    const ipc = trustedIpc({ handle: (channel, handler) => handlers.set(channel, handler), on: (channel, handler) => handlers.set(channel, handler) });
+    const ipc = trustedIpc({ handle: (channel, handler) => handlers.set(channel, handler) });
     ipc.handle('recorder:start', () => 'started');
     ipc.handle('widget:command', () => 'command');
-    ipc.on('connection:get', event => { event.returnValue = 'secret'; });
+    ipc.handle('connection:get', () => 'secret');
     const main = windowFor('file:///Applications/Kesami.app/Contents/Resources/ui/index.html');
     const widget = windowFor('file:///Applications/Kesami.app/Contents/Resources/ui/widget.html', 'widget');
     const event = { sender: main, senderFrame: main.mainFrame };
     assert.equal(handlers.get('recorder:start')(event), 'started');
-    handlers.get('connection:get')(event);
-    assert.equal(event.returnValue, 'secret');
+    assert.equal(handlers.get('connection:get')(event), 'secret');
     assert.equal(handlers.get('widget:command')({ sender: widget, senderFrame: widget.mainFrame }), 'command');
     for (const impostor of [
         { sender: widget, senderFrame: widget.mainFrame },
@@ -31,8 +30,7 @@ test('native privileges require the registered top frame and its exact applicati
         { sender: windowFor('https://evil.example'), senderFrame: main.mainFrame },
     ]) {
         assert.throws(() => handlers.get('recorder:start')(impostor), /Untrusted/);
-        handlers.get('connection:get')(impostor);
-        assert.equal(impostor.returnValue, null);
+        assert.throws(() => handlers.get('connection:get')(impostor), /Untrusted/);
     }
     main.mainFrame.url = 'file:///tmp/downloaded.html';
     assert.throws(() => handlers.get('recorder:start')(event), /Untrusted/);

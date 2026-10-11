@@ -1,0 +1,163 @@
+{
+  "ok": true,
+  "strict": false,
+  "browserSkipped": false,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 4,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<section id=\"hook\"> is a timeline element that contains nested <div id=\"hook-inner\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#hook",
+        "dataAttributes": {},
+        "sourceFile": "/Users/riyamjain/person/alpha/packages/meeting-app/brag-output-2026-10-06-120920-memory/voice-composition/index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <section id=\"hook\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<section id=\"product\"> is a timeline element that contains nested <div id=\"product-inner\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#product",
+        "dataAttributes": {},
+        "sourceFile": "/Users/riyamjain/person/alpha/packages/meeting-app/brag-output-2026-10-06-120920-memory/voice-composition/index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <section id=\"product\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<section id=\"ask\"> is a timeline element that contains nested <div id=\"ask-inner\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#ask",
+        "dataAttributes": {},
+        "sourceFile": "/Users/riyamjain/person/alpha/packages/meeting-app/brag-output-2026-10-06-120920-memory/voice-composition/index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <section id=\"ask\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<section id=\"follow\"> is a timeline element that contains nested <div id=\"follow-inner\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#follow",
+        "dataAttributes": {},
+        "sourceFile": "/Users/riyamjain/person/alpha/packages/meeting-app/brag-output-2026-10-06-120920-memory/voice-composition/index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <section id=\"follow\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      }
+    ],
+    "filesScanned": 1
+  },
+  "runtime": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "layout": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "duration": 20,
+    "samples": [
+      0.5,
+      1.7,
+      4.7,
+      7.5,
+      10.5,
+      14.7,
+      16.8,
+      18.8,
+      19.967
+    ],
+    "transitionSamples": [],
+    "transitionSamplesDropped": 0,
+    "tolerance": 2,
+    "totalIssueCount": 0,
+    "truncated": false
+  },
+  "motion": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": true,
+    "specPath": "/Users/riyamjain/person/alpha/packages/meeting-app/brag-output-2026-10-06-120920-memory/voice-composition/index.motion.json",
+    "samples": 300
+  },
+  "contrast": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": true,
+    "samples": [
+      0.5,
+      4.7,
+      10.5,
+      16.8,
+      19.967
+    ],
+    "checked": 126,
+    "passed": 126
+  },
+  "hdr": {
+    "autoPromotion": null,
+    "inspection": "available"
+  },
+  "snapshots": {
+    "enabled": true,
+    "files": [
+      "snapshots/frame-00-at-0.5s.png",
+      "snapshots/frame-01-at-4.7s.png",
+      "snapshots/frame-02-at-10.5s.png",
+      "snapshots/frame-03-at-16.8s.png",
+      "snapshots/frame-04-at-20.0s.png"
+    ],
+    "times": [
+      0.5,
+      4.7,
+      10.5,
+      16.8,
+      19.967
+    ],
+    "findingFiles": []
+  },
+  "_meta": {
+    "version": "0.8.137",
+    "latestVersion": "0.8.137",
+    "updateAvailable": false
+  }
+}

@@ -65,6 +65,16 @@ test('eventsForTodayAndTomorrow keeps both local calendar days separate', async 
     });
 });
 
+test('one agenda fetch covers today through the end of the sixth day', async () => {
+    const { calendarAgendaRange, AGENDA_HORIZON_DAYS } = await load();
+    const now = new Date(2026, 9, 12, 15, 30).getTime();
+    const range = calendarAgendaRange(now);
+
+    assert.equal(AGENDA_HORIZON_DAYS, 6);
+    assert.ok(now - range.minutesBack * 60000 <= new Date(2026, 9, 12).getTime(), 'includes the start of today');
+    assert.ok(now + range.minutesAhead * 60000 >= new Date(2026, 9, 18).getTime(), 'includes the end of the sixth day');
+});
+
 test('calendarEventLink prefers a meeting link and falls back to supplied or calendar links', async () => {
     const { calendarEventLink } = await load();
     assert.equal(calendarEventLink({ joinUrl: 'https://meet.example/join', links: ['https://docs.example/brief'] }), 'https://meet.example/join');
@@ -187,4 +197,75 @@ test('formatEventRange leaves no narrow no-break space for a 12-hour locale', as
     const printed = formatEventRange({ start: '2026-08-31T17:00:00.000Z', end: '2026-08-31T17:45:00.000Z' }, 'en-US', 'UTC');
     assert.equal(printed.includes(' '), false);
     assert.match(printed, /PM – .*PM$/);
+});
+
+test('calendarAgendaRange keeps the same bounds through the day and moves at midnight', async () => {
+    const { calendarAgendaRange } = await load();
+    const now = new Date(2026, 9, 12, 15, 30).getTime();
+    const first = calendarAgendaRange(now);
+    const later = calendarAgendaRange(now + 90000);
+    const tomorrow = calendarAgendaRange(new Date(2026, 9, 13, 0, 5).getTime());
+
+    assert.equal(first.startMs, new Date(2026, 9, 12).getTime());
+    assert.equal(first.endMs, new Date(2026, 9, 18).getTime());
+    assert.equal(later.startMs, first.startMs, 'the cache key holds steady as time passes');
+    assert.equal(later.endMs, first.endMs);
+    assert.equal(tomorrow.startMs, new Date(2026, 9, 13).getTime(), 'after midnight the window starts at the new today');
+});
+
+test('createCalendarCache serves a page for 60 seconds and forgets it after', async () => {
+    const { createCalendarCache, CALENDAR_CACHE_MS } = await load();
+    let now = 1000;
+    const cache = createCalendarCache(CALENDAR_CACHE_MS, () => now);
+    const page = { events: [{ id: 'a' }], warnings: [] };
+
+    assert.equal(CALENDAR_CACHE_MS, 60000);
+    assert.equal(cache.get('p'), null);
+    cache.set('p', page);
+    now += 59999;
+    assert.equal(cache.get('p'), page);
+    now += 1;
+    assert.equal(cache.get('p'), null, 'an entry expires at exactly 60 seconds');
+    cache.set('p', page);
+    cache.clear();
+    assert.equal(cache.get('p'), null, 'clear drops cached pages so a calendar change is fetched fresh');
+});
+
+test('suggestFolderName drops cadence words, dates, and edge separators from a meeting title', async () => {
+    const { suggestFolderName } = await load();
+    assert.equal(suggestFolderName('Daily Scrum | Lab Module'), 'Scrum | Lab Module');
+    assert.equal(suggestFolderName('Weekly sync - Design'), 'Sync - Design');
+    assert.equal(suggestFolderName('Standup 12/10'), 'Standup');
+    assert.equal(suggestFolderName('Retro #14 (Oct 12)'), 'Retro');
+    assert.equal(suggestFolderName('1:1 with Alex'), '1:1 with Alex');
+    assert.equal(suggestFolderName('Dentira.com'), 'Dentira.com');
+    assert.equal(suggestFolderName('Weekly'), 'Weekly', 'a title made only of a cadence word is kept');
+    assert.equal(suggestFolderName('x'.repeat(80)).length, 60);
+    assert.equal(suggestFolderName(''), '');
+});
+
+test('suggestedFolder prefers an exact match, then a folder named inside the title', async () => {
+    const { suggestedFolder } = await load();
+    const folders = [{ id: 'a', name: 'Scrum | Lab Module' }, { id: 'b', name: 'Dentira' }, { id: 'c', name: 'QA' }];
+    assert.equal(suggestedFolder('Daily Scrum | Lab Module', folders)?.id, 'a');
+    assert.equal(suggestedFolder('Dentira.com sync', folders)?.id, 'b');
+    assert.equal(suggestedFolder('Quarterly planning', folders), null, 'very short folder names are not matched inside words');
+    assert.equal(suggestedFolder('Anything', []), null);
+});
+
+test('eventFolderId lets one event override its series and falls back to the series rule', async () => {
+    const { eventFolderId, seriesFolderId } = await load();
+    const rules = { events: { 'google:tue': null, 'google:solo': 'f2' }, series: { 'google:scrum': 'f1' } };
+    assert.equal(eventFolderId({ provider: 'google', id: 'mon', seriesId: 'scrum' }, rules), 'f1');
+    assert.equal(eventFolderId({ provider: 'google', id: 'tue', seriesId: 'scrum' }, rules), null, 'an explicit unfile wins over the series');
+    assert.equal(eventFolderId({ provider: 'google', id: 'solo' }, rules), 'f2');
+    assert.equal(eventFolderId({ provider: 'google', id: 'other' }, rules), null);
+    assert.equal(seriesFolderId({ provider: 'google', id: 'tue', seriesId: 'scrum' }, rules), 'f1');
+    assert.equal(eventFolderId({ provider: 'google', id: 'mon', seriesId: 'scrum' }, undefined), null);
+});
+
+test('calendarEventMetadata keeps the recurring series id so the backend can file the meeting', async () => {
+    const { calendarEventMetadata } = await load();
+    assert.equal(calendarEventMetadata({ id: 'e', provider: 'google', seriesId: 'scrum' }).seriesId, 'scrum');
+    assert.equal(calendarEventMetadata({ id: 'e', provider: 'google' }).seriesId, null);
 });

@@ -1,0 +1,55 @@
+.main {
+    padding: calc(var(--nav-h) + var(--s-7)) var(--gutter) var(--s-8);
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.article {
+    max-width: 780px;
+    margin-inline: auto;
+}
+
+.header {
+    margin-block: var(--s-6);
+    display: grid;
+    gap: var(--s-3);
+}
+
+.header h1 {
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    overflow-wrap: anywhere;
+}
+
+.updated {
+    font-size: var(--t-small);
+    color: var(--fg-mute);
+}
+
+.intro {
+    font-size: var(--t-lead);
+    color: var(--fg-dim);
+}
+
+.content {
+    display: grid;
+    gap: var(--s-5);
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+}
+
+.content section {
+    display: grid;
+    gap: var(--s-3);
+}
+
+.content h2 {
+    font-size: 1.5rem;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+}
+
+.content p {
+    color: var(--fg-dim);
+}

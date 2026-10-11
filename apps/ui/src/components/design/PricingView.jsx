@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Building2, HardDrive, Star } from 'lucide-react';
+import { ArrowRight, Building2, Check, HardDrive, Star } from 'lucide-react';
 import { confirmRazorpayPayment, createProCheckout, fetchPlans, fetchSubscription, formatPlanPrice, openRazorpayCheckout, pickPlanPrice, prepareRazorpayCheckout, waitForPro } from '@/lib/plans.js';
 
 const STRIPE_POLL_MS = 5000;
@@ -171,7 +171,7 @@ export function PricingView({ account, currentTier = 'free', canSignIn = true, o
                     {availablePrices.map(item => <option key={item.currency} value={item.currency}>{item.currency}</option>)}
                 </select>}
                 <p>{plan.description}</p>
-                <ul>{plan.features.map(feature => <li key={feature}>{feature}</li>)}</ul>
+                <ul>{plan.features.map(feature => <li key={feature}><Check aria-hidden="true" />{feature}</li>)}</ul>
                 {action}
                 {plan.note && <p className="ks-plan-note">{plan.note}</p>}
             </section>;
@@ -179,7 +179,7 @@ export function PricingView({ account, currentTier = 'free', canSignIn = true, o
         <section className="ks-account-card ks-account-stack ks-plan-details">
             <h2>What stays on this computer?</h2>
             <p>Your meeting library, recordings, search and exports stay on this computer on every plan. While you record, audio is streamed for live transcription. Meeting text is sent only when you use AI features such as summaries and Ask AI.</p>
-            <button onClick={onSettings}>Recording settings →</button>
+            <button onClick={onSettings}>Recording settings <ArrowRight aria-hidden="true" /></button>
         </section>
     </div>;
 }

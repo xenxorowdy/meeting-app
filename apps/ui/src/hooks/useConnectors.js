@@ -58,8 +58,9 @@ export function useConnectors({ enabled = true } = {}) {
 
     const disconnect = useCallback(
         async provider => {
-            await apiRequest('/api/connectors/disconnect', { method: 'POST', body: { provider } });
+            const result = await apiRequest('/api/connectors/disconnect', { method: 'POST', body: { provider } });
             await refresh();
+            return result?.message;
         },
         [refresh]
     );
@@ -67,6 +68,8 @@ export function useConnectors({ enabled = true } = {}) {
     const signIn = useCallback(
         async provider => {
             signInOutcome.current = null;
+            const ready = entry => Boolean(entry?.connected || entry?.signedIn);
+            const startedReady = ready((await refresh()).find(entry => entry.provider === provider));
             const response = await apiRequest('/api/connectors/connect', { method: 'POST', body: { provider } });
             if (response?.authUrl) window.open(response.authUrl, '_blank');
             const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
@@ -74,10 +77,11 @@ export function useConnectors({ enabled = true } = {}) {
                 await new Promise(resolve => setTimeout(resolve, SIGN_IN_POLL_MS));
                 const outcome = signInOutcome.current;
                 if (outcome?.provider === provider && outcome.connected === false) {
-                    throw new Error(outcome.error || 'The Google sign-in was cancelled.');
+                    throw new Error(outcome.error || 'The sign-in was cancelled.');
                 }
-                const providers = await refresh();
-                if (providers.find(entry => entry.provider === provider)?.connected) return true;
+                const latest = (await refresh()).find(entry => entry.provider === provider);
+                if (outcome?.provider === provider && outcome.connected) return latest;
+                if (!startedReady && ready(latest)) return latest;
             }
             throw new Error('The browser sign-in didn’t finish. Try again.');
         },
@@ -87,6 +91,15 @@ export function useConnectors({ enabled = true } = {}) {
     const handleConnectionEvent = useCallback(data => {
         signInOutcome.current = data || null;
     }, []);
+
+    const setup = useCallback(
+        async provider => {
+            const result = await apiRequest('/api/connectors/setup', { method: 'POST', body: { provider } });
+            if (result?.connector && mounted.current) replace(result.connector);
+            return result?.connector;
+        },
+        [replace]
+    );
 
     const test = useCallback(async provider => {
         const result = await apiRequest('/api/connectors/test', { method: 'POST', body: { provider } });
@@ -98,5 +111,5 @@ export function useConnectors({ enabled = true } = {}) {
         return result?.delivery;
     }, []);
 
-    return { ...status, loading, error, refresh, save, disconnect, signIn, test, send, handleConnectionEvent };
+    return { ...status, loading, error, refresh, save, disconnect, signIn, setup, test, send, handleConnectionEvent };
 }

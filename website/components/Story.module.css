@@ -1,0 +1,460 @@
+.story {
+    padding: var(--s-9) 0 var(--s-8);
+}
+
+.head {
+    display: grid;
+    gap: var(--s-4);
+}
+
+.head h2 {
+    max-width: 11em;
+}
+
+/* The whole journey in one line; the tour below walks the steps that happen in the app. */
+.pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+}
+
+.pipeline li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--t-lead);
+    font-weight: 500;
+    color: var(--fg-dim);
+}
+
+.pipeline li + li::before {
+    content: '→';
+    color: var(--accent-display);
+}
+
+.pipeline li:last-child {
+    color: var(--fg);
+}
+
+/* Steps on the left, the pinned app window on the right; the DOM keeps the window first so a phone
+   pins it above the text it explains. */
+.layout {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: var(--s-8);
+    margin-top: var(--s-7);
+}
+
+.frameWrap {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    position: sticky;
+    top: calc(var(--nav-h) + 8vh);
+    height: min(620px, 76vh);
+}
+
+.steps {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.step {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--s-3);
+    min-height: 84vh;
+}
+
+/* The step being read: its title turns from quiet grey (3.5:1, large type) to ink. Body text never fades. */
+.stepTitle {
+    color: var(--fg-quiet);
+    transition: color 500ms var(--ease);
+}
+
+.story[data-active='1'] .step[data-step='1'] .stepTitle,
+.story[data-active='2'] .step[data-step='2'] .stepTitle,
+.story[data-active='3'] .step[data-step='3'] .stepTitle,
+.story[data-active='4'] .step[data-step='4'] .stepTitle {
+    color: var(--fg);
+}
+
+.stepTitle {
+    font-size: clamp(2rem, 1.2rem + 2.2vw, 3.25rem);
+    line-height: 1;
+}
+
+.body {
+    color: var(--fg-dim);
+    max-width: 30em;
+}
+
+.facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+}
+
+.facts li {
+    padding: var(--s-1) 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    font-size: var(--t-label);
+    font-stretch: 112%;
+    font-weight: 500;
+    color: var(--fg-dim);
+}
+
+/* The app window, after apps/ui in its dark theme: 52px titlebar, 13px system type, 1px lines. */
+.frame {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid var(--ink);
+    border-radius: 14px;
+    background: var(--app-bg);
+    color: var(--app-text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow:
+        0 40px 100px rgb(17 17 17 / 0.28),
+        0 8px 24px rgb(17 17 17 / 0.16);
+}
+
+.titlebar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    height: 52px;
+    flex: none;
+    padding: 0 var(--s-3);
+    border-bottom: 1px solid var(--app-line);
+}
+
+.windowTitle {
+    font-weight: 600;
+    margin-right: auto;
+}
+
+.tabs {
+    display: flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--app-hud);
+}
+
+.tab {
+    padding: var(--s-1) var(--s-3);
+    border-radius: 6px;
+    color: var(--app-mute);
+    font-size: 12px;
+    font-weight: 500;
+    transition:
+        background-color 300ms var(--ease),
+        color 300ms var(--ease);
+}
+
+.story[data-active='1'] .tab[data-tab='1'],
+.story[data-active='2'] .tab[data-tab='2'],
+.story[data-active='3'] .tab[data-tab='3'],
+.story[data-active='4'] .tab[data-tab='4'] {
+    background: var(--app-hover);
+    color: var(--app-text);
+}
+
+.panes {
+    position: relative;
+    flex: 1;
+}
+
+.pane {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    padding: var(--s-4);
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+        opacity 450ms var(--ease),
+        transform 600ms var(--ease);
+    pointer-events: none;
+}
+
+.story[data-active='1'] .pane[data-pane='1'],
+.story[data-active='2'] .pane[data-pane='2'],
+.story[data-active='3'] .pane[data-pane='3'],
+.story[data-active='4'] .pane[data-pane='4'] {
+    opacity: 1;
+    transform: none;
+}
+
+.paneHead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--s-3);
+    margin-bottom: var(--s-3);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.meta {
+    color: var(--app-mute);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.lines {
+    display: grid;
+}
+
+.lines li {
+    display: grid;
+    grid-template-columns: 48px 56px 1fr;
+    gap: var(--s-2);
+    padding: var(--s-2) 0;
+    border-bottom: 1px solid var(--app-line);
+}
+
+.time {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-mute);
+    padding-top: 1px;
+}
+
+.who {
+    font-weight: 600;
+}
+
+.sections {
+    display: grid;
+    gap: var(--s-2);
+}
+
+.sections div {
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: var(--s-3);
+}
+
+.sections dt {
+    color: var(--app-mute);
+    font-size: 12px;
+    padding-top: 1px;
+}
+
+.sections dd {
+    margin: 0;
+}
+
+.sub {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin: var(--s-4) 0 var(--s-2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--app-mute);
+}
+
+.decisions {
+    display: grid;
+    gap: var(--s-1);
+}
+
+.decisions li::before {
+    content: '✓';
+    margin-right: var(--s-2);
+    color: #5cc47a;
+}
+
+.next {
+    display: grid;
+}
+
+.next li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: var(--s-3);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--app-line);
+}
+
+.next li[data-done] .task {
+    color: var(--app-mute);
+    text-decoration: line-through;
+}
+
+.owner {
+    font-weight: 600;
+}
+
+.cite {
+    display: inline-block;
+    padding: 0 var(--s-1);
+    border-radius: 4px;
+    background: var(--orange-tint);
+    color: var(--orange);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 18px;
+    vertical-align: 1px;
+}
+
+.pane[data-pane='3'] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+}
+
+.email {
+    flex: 1;
+    border: 1px solid var(--app-line);
+    border-radius: 10px;
+    background: var(--app-raised);
+}
+
+.emailRow {
+    display: flex;
+    gap: var(--s-3);
+    padding: var(--s-2) var(--s-3);
+    border-bottom: 1px solid var(--app-line);
+    font-weight: 600;
+}
+
+.emailBody {
+    display: grid;
+    gap: var(--s-2);
+    padding: var(--s-3);
+    color: var(--app-dim);
+}
+
+.buttons {
+    display: flex;
+    gap: var(--s-2);
+}
+
+.primary,
+.secondary {
+    flex: none;
+    justify-self: end;
+    padding: 6px var(--s-3);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.primary {
+    background: var(--orange);
+    color: var(--ink);
+}
+
+.secondary {
+    background: var(--app-hover);
+    color: var(--app-text);
+}
+
+.tools {
+    display: grid;
+    gap: var(--s-2);
+}
+
+.tools li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    column-gap: var(--s-3);
+    padding: 12px var(--s-3);
+    border: 1px solid var(--app-line);
+    border-radius: 10px;
+    background: var(--app-raised);
+}
+
+.tools li .meta {
+    grid-column: 1;
+}
+
+.tools li > :last-child {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+}
+
+.toolName {
+    font-weight: 600;
+}
+
+.tools .conceptRow {
+    border-style: dashed;
+    border-color: var(--app-line-strong);
+    background: transparent;
+    color: var(--app-dim);
+}
+
+.conceptTag {
+    padding: 0 6px;
+    border: 1px dashed var(--app-mute);
+    border-radius: 999px;
+    letter-spacing: 0.04em;
+    font-size: 10px;
+}
+
+@media (max-width: 960px) {
+    .layout {
+        display: block;
+    }
+
+    .frameWrap {
+        z-index: 2;
+        top: calc(var(--nav-h) + var(--s-2));
+        height: 44vh;
+        margin: 0 calc(-1 * var(--s-2));
+    }
+
+    .frame {
+        font-size: 12px;
+    }
+
+    .pane {
+        padding: var(--s-3);
+    }
+
+    .lines li {
+        grid-template-columns: 40px 48px 1fr;
+    }
+
+    .sections div {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+
+    .step {
+        min-height: 72vh;
+        justify-content: flex-end;
+        padding-bottom: var(--s-6);
+    }
+
+    .step:last-child {
+        min-height: 60vh;
+    }
+}
+
+@media (max-width: 520px) {
+    .tabs {
+        display: none;
+    }
+
+    /* The reading band under the pinned window is short on a phone; the chips repeat the body anyway. */
+    .facts {
+        display: none;
+    }
+}

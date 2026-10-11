@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, Check, Copy, MessageSquareText, Search, Sparkles, TriangleAlert, User, X, Cpu } from 'lucide-react';
+import { ArrowDownToLine, Check, ChevronDown, Copy, MessageSquareText, Search, Sparkles, TriangleAlert, User, X, Cpu } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -395,7 +395,7 @@ export function TranscriptView({
 
             <div ref={scrollRef} onScroll={handleScroll} className="ks-transcript-list min-h-0 flex-1 overflow-y-auto">
                 {filtered.length === 0 && pending.length === 0 ? (
-                    <div className="flex h-full flex-col justify-center px-8 py-16">
+                    <div className="ks-transcript-empty flex h-full flex-col justify-center px-8 py-16">
                         <p className="text-headline font-semibold">{needle ? 'No matches' : isLive ? 'Listening to your meeting…' : 'No transcript yet'}</p>
                         <p className="mt-1 max-w-xs text-callout text-muted-foreground">
                             {needle
@@ -458,7 +458,9 @@ export function TranscriptView({
                                     <div className="flex items-baseline gap-2">
                                         <h4 className="truncate text-headline font-semibold">{turn.speaker}</h4>
                                         <Badge variant="tinted" className="ks-speaking-badge">
-                                            <JumpingBalls size="sm" />
+                                            <span className="ks-transcribing-wave-small" aria-hidden="true">
+                                                <i /><i /><i /><i /><i /><i /><i />
+                                            </span>
                                             speaking
                                         </Badge>
                                     </div>
@@ -476,15 +478,11 @@ export function TranscriptView({
                         <span className="ks-transcribing-avatar" aria-hidden="true">
                             <User />
                         </span>
-                        <div className="flex min-w-0 flex-1 flex-col gap-3 pt-1">
-                            <span className="ks-transcribing-lines" aria-hidden="true">
-                                <i />
-                                <i />
+                        <div className="flex min-w-0 flex-1 items-center gap-2 pt-1">
+                            <span className="ks-transcribing-wave" aria-hidden="true">
+                                <i /><i /><i /><i /><i /><i /><i />
                             </span>
-                            <span className="flex items-center gap-2">
-                                <JumpingBalls className="ks-transcribing-dots" />
-                                <span className="ks-transcribing-label">Transcribing</span>
-                            </span>
+                            <span className="ks-transcribing-label">Transcribing</span>
                         </div>
                     </div>
                 )}
@@ -508,7 +506,7 @@ export function TranscriptView({
 
             {speakerStats.length > 0 && (
                 <details className="ks-talk-time px-4 pb-4 pt-3 hairline-top">
-                    <summary>Speaker activity <span>{speakers.length} participants · {totalWords} words</span></summary>
+                    <summary><ChevronDown aria-hidden="true" /><strong>Speaker activity</strong><span>{speakers.length} {speakers.length === 1 ? 'participant' : 'participants'} · {totalWords} words</span></summary>
                     <div className="mb-2 flex items-center justify-between text-footnote text-muted-foreground">
                         <span>Talk time</span>
                         <span className="tnum">{totalWords} words</span>

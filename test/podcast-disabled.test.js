@@ -29,8 +29,10 @@ test('preload keeps meeting recording available without exposing the podcast bri
             ipcRenderer: {
                 on: (name, listener) => subscriptions.set(name, listener),
                 removeListener: name => subscriptions.delete(name),
-                invoke: async (...args) => { invocations.push(args); return { available: true }; },
-                sendSync: () => ({ url: '', token: '' }),
+                invoke: async (...args) => {
+                    invocations.push(args);
+                    return args[0] === 'connection:get' ? { url: '', token: '' } : { available: true };
+                },
             },
         },
     });
@@ -45,7 +47,7 @@ test('preload keeps meeting recording available without exposing the podcast bri
     const options = { meetingId: 'meeting-one' };
     await bridges.get('kesamiRecorder').start(options);
     await bridges.get('kesamiSystemAudio').available();
-    assert.deepEqual(invocations, [['recorder:start', options], ['system-audio:available']]);
+    assert.deepEqual(invocations, [['connection:get'], ['recorder:start', options], ['system-audio:available']]);
 });
 
 test('preload restores the saved backend connection and keeps saves in step', async () => {
@@ -57,8 +59,8 @@ test('preload restores the saved backend connection and keeps saves in step', as
             ipcRenderer: {
                 on() {},
                 removeListener() {},
-                sendSync: channel => (channel === 'connection:get' ? { url: 'http://127.0.0.1:48900', token: 'restored' } : assert.fail(channel)),
                 invoke: async (channel, value) => {
+                    if (channel === 'connection:get') return { url: 'http://127.0.0.1:48900', token: 'restored' };
                     saved.push([channel, value]);
                     return value;
                 },
@@ -67,6 +69,8 @@ test('preload restores the saved backend connection and keeps saves in step', as
     });
 
     const connection = bridges.get('kesamiConnection');
+    assert.equal(connection.get(), null);
+    assert.deepEqual(await connection.ready(), { url: 'http://127.0.0.1:48900', token: 'restored' });
     assert.deepEqual(connection.get(), { url: 'http://127.0.0.1:48900', token: 'restored' });
     await connection.save({ url: 'http://127.0.0.1:48900', token: '' });
     assert.deepEqual(saved, [['connection:save', { url: 'http://127.0.0.1:48900', token: '' }]]);
@@ -117,7 +121,7 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
                 on: (name, listener) => events.set(name, listener),
                 whenReady: () => ({ then: callback => { ready = Promise.resolve().then(callback); } }),
                 getVersion: () => 'test',
-                quit: () => quit(),
+                exit: code => quit(code),
             },
             ipcMain: { handle() {}, on() {} },
             BrowserWindow: Window,
@@ -137,7 +141,9 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
         './rendererSecurity': require('../apps/desktop/rendererSecurity'),
         'node:url': require('node:url'),
         './dock': { showDockIcon: async () => {} },
-        './connection': { registerHandlers: recordCall('connection:register-handlers') },
+        './connection': { registerHandlers: recordCall('connection:register-handlers'), load: recordCall('connection:load') },
+        './shutdown': require('../apps/desktop/shutdown'),
+        './updater': { start: recordCall('updater:start'), stop: recordCall('updater:stop'), checkNow() {} },
         'node:child_process': { spawn: () => assert.fail('The healthy existing backend should be reused') },
         'node:fs': { existsSync: () => true },
         'node:path': path,
@@ -165,7 +171,7 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
     });
     await ready;
     events.get('before-quit')({ preventDefault() {} });
-    await quitting;
+    assert.equal(await quitting, 0);
 
     assert.deepEqual(errors, []);
     assert.ok(calls.includes('window:load'));
@@ -174,5 +180,7 @@ test('desktop startup and shutdown do not register or activate podcast capabilit
     assert.ok(calls.includes('recorder:register-handlers'));
     assert.ok(calls.includes('recorder:display-media'));
     assert.ok(calls.includes('recorder:shutdown'));
+    assert.ok(calls.includes('connection:load'));
+    assert.ok(calls.includes('updater:stop'));
     assert.deepEqual(calls.filter(name => name.startsWith('podcast:')), []);
 });

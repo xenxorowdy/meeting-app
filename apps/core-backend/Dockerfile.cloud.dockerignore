@@ -1,0 +1,12 @@
+# Only relay build inputs enter Docker's context; credentials and recordings stay local.
+**
+!apps/
+!apps/core-backend/
+!apps/core-backend/Cargo.toml
+!apps/core-backend/Cargo.lock
+!apps/core-backend/src/
+!apps/core-backend/src/**
+!apps/core-backend/migrations/
+!apps/core-backend/migrations/**
+!apps/core-backend/test/
+!apps/core-backend/test/**

@@ -1,0 +1,1 @@
+Record, pause, and ask from one tiny widget.

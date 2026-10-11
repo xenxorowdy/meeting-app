@@ -246,6 +246,12 @@ impl LiveTranscriber {
         }
     }
 
+    pub fn skip(&self, stream_id: u32, ms: i64) {
+        if let Some(stream) = self.streams.iter().find(|stream| stream.stream_id == stream_id) {
+            stream.fed_ms.fetch_add(ms.max(0), Ordering::SeqCst);
+        }
+    }
+
     pub async fn finish(mut self, budget: Duration) {
         for stream in self.streams.iter_mut() {
             stream.audio.take();
@@ -258,6 +264,47 @@ impl LiveTranscriber {
                 let _ = stream.task.await;
             }
         }
+    }
+}
+
+#[derive(Default)]
+struct Clock {
+    anchors: Vec<(i64, i64)>,
+    sent_ms: i64,
+    expected_ms: i64,
+}
+
+impl Clock {
+    fn starting_at(offset_ms: i64) -> Self {
+        Self {
+            anchors: vec![(0, offset_ms)],
+            sent_ms: 0,
+            expected_ms: offset_ms,
+        }
+    }
+
+    fn base_ms(&self) -> i64 {
+        self.anchors.first().map_or(0, |(_, timeline_ms)| *timeline_ms)
+    }
+
+    fn advance(&mut self, offset_ms: i64, pcm_ms: i64) {
+        if offset_ms != self.expected_ms {
+            self.anchors.push((self.sent_ms, offset_ms));
+        }
+        self.sent_ms += pcm_ms;
+        self.expected_ms = offset_ms + pcm_ms;
+    }
+
+    fn timeline_ms(&self, heard_ms: i64, ending: bool) -> i64 {
+        let (sent_ms, timeline_ms) = self
+            .anchors
+            .iter()
+            .rev()
+            .find(|(sent_ms, _)| *sent_ms < heard_ms || (!ending && *sent_ms == heard_ms))
+            .or(self.anchors.first())
+            .copied()
+            .unwrap_or_default();
+        timeline_ms + heard_ms - sent_ms
     }
 }
 
@@ -347,9 +394,9 @@ async fn pump(
 ) -> Pump {
     let (mut sink, mut stream) = socket.split();
     let mut pending: Vec<u8> = Vec::with_capacity(MAX_CHUNK_BYTES);
-    let mut base_ms = fed_ms.load(Ordering::SeqCst);
+    let mut clock = Clock::starting_at(fed_ms.load(Ordering::SeqCst));
     let mut opened = false;
-    let mut last_end_ms = base_ms;
+    let mut last_end_ms = clock.base_ms();
     let mut ping = interval_at(Instant::now() + PING_INTERVAL, PING_INTERVAL);
 
     loop {
@@ -358,9 +405,10 @@ async fn pump(
                 Some((offset_ms, pcm)) => {
                     if !opened {
                         opened = true;
-                        base_ms = offset_ms;
+                        clock = Clock::starting_at(offset_ms);
                         last_end_ms = offset_ms;
                     }
+                    clock.advance(offset_ms, pcm.len() as i64 / BYTES_PER_MS);
                     pending.extend_from_slice(&pcm);
                     while pending.len() >= MIN_CHUNK_BYTES {
                         let take = pending.len().min(MAX_CHUNK_BYTES);
@@ -376,14 +424,14 @@ async fn pump(
                         let _ = send_audio(&mut sink, &payload).await;
                     }
                     let _ = sink.send(Message::text(json!({"event": "end"}).to_string())).await;
-                    drain_after_end(&mut stream, stream_id, base_ms, fed_ms, &mut last_end_ms, events).await;
+                    drain_after_end(&mut stream, stream_id, &clock, fed_ms, &mut last_end_ms, events).await;
                     let _ = sink.close().await;
                     return Pump::Finished;
                 }
             },
             message = stream.next() => match message {
                 Some(Ok(Message::Text(text))) => {
-                    match handle_text(text.as_str(), stream_id, base_ms, fed_ms, &mut last_end_ms, events) {
+                    match handle_text(text.as_str(), stream_id, &clock, fed_ms, &mut last_end_ms, events) {
                         Some(Pump::Fatal(cause)) => return Pump::Fatal(cause),
                         Some(other) => return other,
                         None => {}
@@ -431,7 +479,7 @@ where
 fn handle_text(
     text: &str,
     stream_id: u32,
-    base_ms: i64,
+    clock: &Clock,
     fed_ms: &Arc<AtomicI64>,
     last_end_ms: &mut i64,
     events: &mpsc::UnboundedSender<LiveEvent>,
@@ -448,7 +496,7 @@ fn handle_text(
             start_s,
             end_s,
         } => {
-            let (start_ms, end_ms) = turn_bounds(base_ms, *last_end_ms, fed_ms, start_s, end_s);
+            let (start_ms, end_ms) = turn_bounds(clock, *last_end_ms, fed_ms, start_s, end_s);
             *last_end_ms = end_ms;
             let _ = events.send(LiveEvent::Final {
                 stream_id,
@@ -477,7 +525,7 @@ fn handle_text(
 }
 
 fn turn_bounds(
-    base_ms: i64,
+    clock: &Clock,
     last_end_ms: i64,
     fed_ms: &Arc<AtomicI64>,
     start_s: Option<f64>,
@@ -485,8 +533,8 @@ fn turn_bounds(
 ) -> (i64, i64) {
     match (start_s, end_s) {
         (Some(start), Some(end)) => {
-            let start_ms = base_ms + (start * 1000.0).round() as i64;
-            let end_ms = base_ms + (end * 1000.0).round() as i64;
+            let start_ms = clock.timeline_ms((start * 1000.0).round() as i64, false);
+            let end_ms = clock.timeline_ms((end * 1000.0).round() as i64, true);
             (start_ms, end_ms.max(start_ms))
         }
         _ => {
@@ -499,7 +547,7 @@ fn turn_bounds(
 async fn drain_after_end<S>(
     stream: &mut S,
     stream_id: u32,
-    base_ms: i64,
+    clock: &Clock,
     fed_ms: &Arc<AtomicI64>,
     last_end_ms: &mut i64,
     events: &mpsc::UnboundedSender<LiveEvent>,
@@ -517,7 +565,7 @@ async fn drain_after_end<S>(
                 if handle_text(
                     text.as_str(),
                     stream_id,
-                    base_ms,
+                    clock,
                     fed_ms,
                     last_end_ms,
                     events,
@@ -639,11 +687,28 @@ mod tests {
     #[test]
     fn timestamps_fall_back_to_the_fed_audio_clock() {
         let fed = Arc::new(AtomicI64::new(9_000));
+        let clock = Clock::starting_at(2_000);
         assert_eq!(
-            turn_bounds(2_000, 2_000, &fed, Some(0.5), Some(1.25)),
+            turn_bounds(&clock, 2_000, &fed, Some(0.5), Some(1.25)),
             (2_500, 3_250)
         );
-        assert_eq!(turn_bounds(2_000, 4_000, &fed, None, None), (4_000, 9_000));
+        assert_eq!(turn_bounds(&clock, 4_000, &fed, None, None), (4_000, 9_000));
+    }
+
+    #[test]
+    fn timestamps_after_skipped_audio_land_where_that_audio_was_heard() {
+        let fed = Arc::new(AtomicI64::new(0));
+        let mut clock = Clock::starting_at(2_000);
+        clock.advance(2_000, 1_000);
+        clock.advance(3_000, 500);
+        clock.advance(33_500, 2_000);
+        clock.advance(35_500, 400);
+        clock.advance(36_000, 400);
+
+        assert_eq!(turn_bounds(&clock, 0, &fed, Some(0.25), Some(1.5)), (2_250, 3_500));
+        assert_eq!(turn_bounds(&clock, 0, &fed, Some(1.75), Some(3.0)), (33_750, 35_000));
+        assert_eq!(turn_bounds(&clock, 0, &fed, Some(3.6), Some(3.9)), (35_600, 35_900));
+        assert_eq!(turn_bounds(&clock, 0, &fed, Some(4.0), Some(4.3)), (36_100, 36_400));
     }
 
     async fn scripted_server(script: Vec<Value>) -> (String, JoinHandle<Vec<Value>>) {

@@ -96,3 +96,70 @@ No decorative color.
 2. After generating code, self-audit against the anti-pattern list. Any match → rewrite.
 3. Screenshot it. Compare against System Settings, Finder, Notes. If it reads as a SaaS
    landing page, it's wrong.
+
+
+## Kesami rounded workspace — 2026-10-09
+
+This amendment governs the whole desktop app and supersedes the blue accent,
+small corner radii and typography examples above wherever they conflict.
+Requested direction: minimal, rounded borders, rich UI, fewer visible buttons;
+audience: anyone using Kesami. The main job is recording, reviewing and recalling meetings.
+
+- Genre: modern-minimal; tone: calm and approachable.
+- App macrostructure family: Workbench adapted to an operational workspace,
+  with a side rail and account utility footer. No marketing hero or decorative imagery.
+- Keep native SF/system display and body typography, with existing DM Mono for time/code.
+  Headings are roman, weight 600; body is 13–15px with comfortable line height.
+- One shared coral signal, warm neutral surfaces and distinct light/dark palettes.
+- 12px control corners, 20px panel corners; 4/8/16/24/32/48px spacing.
+- Primary recording control stays visible; account/plans/noise controls use Workspace tools.
+  Settings and navigation remain directly accessible. Safety confirmation flows stay explicit.
+- Meetings use a divided list inside one rounded panel; secondary row menus appear
+  on hover/focus and remain visible on touch. No repeated card grids or ornamental shadows.
+- Meeting views, Ask AI, account, pricing, settings and the widget share the system.
+- Motion: no entry animation; only short transform/opacity feedback, no springs.
+  Focus rings appear immediately. Reduced motion removes spatial feedback.
+- At narrow widths, navigation wraps above the content; settings tabs wrap without clipping.
+- Shared tokens live in root `tokens.css` and are imported by `apps/ui/src/design.css`.
+  Existing CSS and business logic are preserved. Do not regenerate the theme per screen.
+
+## Exports
+
+### CSS tokens
+
+`tokens.css` is the canonical portable export: OKLCH palettes, native font roles,
+spacing, typography, radii, rule width, duration and easing tokens.
+
+### Tailwind v4 (portable example only; the application remains on Tailwind 3)
+
+```css
+@theme inline {
+  --color-paper: var(--color-light-paper);
+  --color-ink: var(--color-light-ink);
+  --color-accent: var(--color-light-accent);
+  --font-sans: var(--font-body);
+  --spacing-md: var(--space-md);
+  --radius-panel: 20px;
+}
+```
+
+### DTCG token sample
+
+```json
+{
+  "color": {
+    "paper": { "$type": "color", "$value": "oklch(97% 0.004 55)" },
+    "ink": { "$type": "color", "$value": "oklch(25% 0.008 55)" },
+    "accent": { "$type": "color", "$value": "oklch(51% 0.17 32)" }
+  },
+  "radius": { "panel": { "$type": "dimension", "$value": "20px" } }
+}
+```
+
+### shadcn/ui compatibility
+
+The application retains its existing HSL channel variables in `src/index.css`.
+Use `--background`, `--foreground`, `--primary`, `--primary-foreground`,
+`--border`, `--input`, and `--ring` through the existing Tailwind mapping;
+do not paste OKLCH channels into an HSL consumer. Scoped workspace roles map
+onto `--ks-*` in the redesign amendment in `design.css`.

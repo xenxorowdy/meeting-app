@@ -4,9 +4,14 @@ contextBridge.exposeInMainWorld('kesamiGoogleSignIn', {
     start: options => ipcRenderer.invoke('google-sign-in:start', options),
 });
 
-let connection = ipcRenderer.sendSync('connection:get');
+let connection = null;
+const connectionReady = ipcRenderer.invoke('connection:get').then(
+    value => (connection ??= value),
+    () => (connection ??= { url: '', token: '' })
+);
 contextBridge.exposeInMainWorld('kesamiConnection', {
     get: () => connection,
+    ready: () => connectionReady,
     save: async value => {
         connection = await ipcRenderer.invoke('connection:save', value);
     },

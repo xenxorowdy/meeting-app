@@ -1,0 +1,42 @@
+{
+  "segments": [
+    {
+      "line": "The meeting ends.",
+      "correlation": 0.9964139701883986,
+      "start": 0.3,
+      "end": 1.302667
+    },
+    {
+      "line": "The work doesn't.",
+      "correlation": 0.9968465502859608,
+      "start": 1.6,
+      "end": 2.581333
+    },
+    {
+      "line": "Kesami remembers your decisions, and the promises you make.",
+      "correlation": 0.9929939897945581,
+      "start": 3.55,
+      "end": 7.048667
+    },
+    {
+      "line": "That proposal you said you'd send by Friday?",
+      "correlation": 0.9851985375774662,
+      "start": 8.8,
+      "end": 11.189333000000001
+    },
+    {
+      "line": "Ask Kesami. Find the conversation behind the promise.",
+      "correlation": 0.9829527193903596,
+      "start": 12.35,
+      "end": 15.806
+    },
+    {
+      "line": "Then follow through. Remember what you promised. Kesami.",
+      "correlation": 0.9675308395991811,
+      "start": 16.6,
+      "end": 19.544
+    }
+  ],
+  "decodedPeakDBFS": -1.6879302888633199,
+  "voiceFitsBeforeEnd": true
+}

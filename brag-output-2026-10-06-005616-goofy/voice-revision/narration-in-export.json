@@ -1,0 +1,32 @@
+[
+  {
+    "id": "hook",
+    "correlation": 0.9848,
+    "fits": true
+  },
+  {
+    "id": "widget",
+    "correlation": 0.9852,
+    "fits": true
+  },
+  {
+    "id": "languages",
+    "correlation": 0.9994,
+    "fits": true
+  },
+  {
+    "id": "folders",
+    "correlation": 0.9968,
+    "fits": true
+  },
+  {
+    "id": "history",
+    "correlation": 0.9988,
+    "fits": true
+  },
+  {
+    "id": "outro",
+    "correlation": 0.9811,
+    "fits": true
+  }
+]

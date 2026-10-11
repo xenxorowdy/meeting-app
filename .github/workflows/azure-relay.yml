@@ -1,0 +1,130 @@
+name: Azure relay
+
+on:
+  workflow_dispatch:
+    inputs:
+      recordings_drained:
+        description: 'Confirm recordings have drained before replacing the relay replica'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-relay
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/core-backend
+      - name: Test the hosted relay
+        run: cargo test --manifest-path apps/core-backend/Cargo.toml --no-default-features --bin kesami-cloud-relay
+      - name: Test parameter validation
+        run: python3 -m unittest discover -s deploy/azure -p 'test_*.py'
+      - name: Compile infrastructure
+        run: az bicep build --file infra/azure/main.bicep --outfile "$RUNNER_TEMP/relay-template.json"
+      - name: Test 20 dual-stream meetings within the planned resource allocation
+        run: |
+          docker build --target capacity-test -f apps/core-backend/Dockerfile.cloud -t kesami-relay-capacity .
+          docker run --rm --cpus 0.25 --memory 512m -e KESAMI_RELAY_SOAK_SECONDS=60 kesami-relay-capacity
+
+  image:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.reference.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish relay image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/core-backend/Dockerfile.cloud
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/xenxorowdy/kesami-relay:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/xenxorowdy/meeting-app
+      - name: Record immutable image
+        id: reference
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "image=ghcr.io/xenxorowdy/kesami-relay@$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Verify runtime image health before Azure deployment
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          trap 'docker rm -f relay-smoke &>/dev/null || true' EXIT
+          docker run --detach --name relay-smoke --cpus 0.25 --memory 512m \
+            -p 127.0.0.1:48901:48901 \
+            -e KESAMI_SUPABASE_URL=https://synthetic.supabase.co \
+            -e KESAMI_SUPABASE_PUBLISHABLE_KEY=sb_publishable_synthetic \
+            -e KESAMI_SARVAM_API_KEY=synthetic \
+            "ghcr.io/xenxorowdy/kesami-relay@$DIGEST"
+          curl --fail --silent --show-error --retry 12 --retry-connrefused --retry-delay 2 http://127.0.0.1:48901/health
+
+  deploy:
+    if: inputs.recordings_drained
+    needs: image
+    runs-on: ubuntu-latest
+    environment: azure-beta
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: kesami
+      IMAGE: ${{ needs.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Write private deployment parameters
+        env:
+          KESAMI_RELAY_ENV_JSON: ${{ secrets.KESAMI_RELAY_ENV_JSON }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          AZURE_MONTHLY_BUDGET: ${{ vars.AZURE_MONTHLY_BUDGET }}
+          AZURE_BUDGET_EMAIL: ${{ vars.AZURE_BUDGET_EMAIL }}
+          AZURE_BUDGET_START_DATE: ${{ vars.AZURE_BUDGET_START_DATE }}
+        run: python3 deploy/azure/parameters.py "$RUNNER_TEMP/relay-parameters.json" "$IMAGE"
+      - name: Preview infrastructure changes
+        run: >-
+          az deployment group what-if --resource-group "$AZURE_RESOURCE_GROUP"
+          --template-file infra/azure/main.bicep
+          --parameters "@$RUNNER_TEMP/relay-parameters.json"
+          --exclude-change-types NoChange --only-show-errors
+      - name: Deploy relay
+        run: >-
+          az deployment group create --resource-group "$AZURE_RESOURCE_GROUP"
+          --name kesami-relay --template-file infra/azure/main.bicep
+          --parameters "@$RUNNER_TEMP/relay-parameters.json"
+          --query properties.outputs -o json > "$RUNNER_TEMP/relay-outputs.json"
+      - name: Verify staged HTTPS health and billing catalog
+        run: |
+          RELAY_URL=$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/relay-outputs.json"))["relayUrl"]["value"])')
+          curl --fail --silent --show-error --retry 12 --retry-delay 5 "$RELAY_URL/health"
+          curl --fail --silent --show-error "$RELAY_URL/v1/plans" > "$RUNNER_TEMP/plans.json"
+          echo "Staged relay: $RELAY_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "DNS cutover and live WSS, connector and payment verification are separate steps." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove private parameters
+        if: always()
+        run: rm -f "$RUNNER_TEMP/relay-parameters.json"

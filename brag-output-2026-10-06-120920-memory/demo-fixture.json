@@ -1,0 +1,38 @@
+{
+  "fictional": true,
+  "purpose": "Source-derived video reconstruction. No real meeting data. Hero count is per meeting, not global.",
+  "featuredMeeting": {
+    "title": "Customer discussion — Acme",
+    "date": "Sep 29",
+    "durationMinutes": 38,
+    "folder": "Acme",
+    "sourceReferences": [
+      {"kind":"person","name":"You"},
+      {"kind":"company","name":"Acme"},
+      {"kind":"project","name":"Acme pilot"}
+    ],
+    "decision": {"text":"Include SSO in Acme's proposal.","speaker":"You","timestamp":"33:40","quote":"SSO goes in the proposal, not as an add-on."},
+    "commitments": [
+      {"person":"You","action":"Send Acme the pricing proposal","dueDate":"Friday","status":"pending","timestamp":"32:10","quote":"I'll send you the pricing proposal by Friday."},
+      {"person":"Kabir","action":"Send Priya the pilot timeline","dueDate":"tomorrow","status":"pending","timestamp":"34:30","quote":"I'll send Priya the pilot timeline tomorrow."},
+      {"person":"You","action":"Schedule the Acme pilot review","dueDate":"Friday","status":"pending","timestamp":"35:20","quote":"I'll schedule the Acme pilot review by Friday."}
+    ]
+  },
+  "historicalAnswer": {
+    "question":"What have I promised Acme?",
+    "coverage":"Evidence from 3 of 3 meetings",
+    "sources": [
+      {"title":"Acme — discovery call","date":"Jul 14","timestamp":"41:05","speaker":"You","quote":"We’ll have a sandbox account ready before your pilot starts."},
+      {"title":"Acme — technical review","date":"Aug 21","timestamp":"18:42","speaker":"You","quote":"I'll share our rate-limit doc with John this week."},
+      {"title":"Customer discussion — Acme","date":"Sep 29","timestamp":"32:10","speaker":"You","quote":"I'll send you the pricing proposal by Friday."}
+    ]
+  },
+  "followThrough": {
+    "choices":["Save local task","Draft follow-up","Schedule meeting"],
+    "selected":"Create local email draft",
+    "reviewed":true,
+    "sent":false,
+    "calendarRequiresConfirmation":true,
+    "reminderNotifications":false
+  }
+}

@@ -1,0 +1,83 @@
+/* Registered so the idle playhead can be animated: an unregistered custom property only jumps. */
+@property --px {
+    syntax: '<number>';
+    inherits: true;
+    initial-value: -1;
+}
+
+.floor {
+    --px: -1;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: clamp(112px, 22vh, 232px);
+    animation: sweep 9s linear infinite;
+}
+
+/* The pointer takes over from the idle sweep; inline --px only wins once the animation is off. */
+.floor[data-pointer] {
+    animation: none;
+}
+
+.floor[data-paused],
+.floor[data-paused] .bar {
+    animation-play-state: paused;
+}
+
+@keyframes sweep {
+    from {
+        --px: -0.2;
+    }
+    to {
+        --px: 1.2;
+    }
+}
+
+.col {
+    /* |i/n − px| written as max(a, −a): CSS abs() is still missing from some engines. */
+    --dist: max(calc(var(--i) / var(--n) - var(--px)), calc(var(--px) - var(--i) / var(--n)));
+    --lift: max(0, calc(1 - var(--dist) * 7));
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    height: 100%;
+    transform-origin: bottom;
+    transform: scaleY(calc(0.42 + 0.58 * var(--lift)));
+    opacity: calc(0.28 + 0.72 * var(--lift));
+    transition:
+        transform 420ms var(--ease),
+        opacity 420ms var(--ease);
+}
+
+.bar {
+    width: 100%;
+    height: calc(var(--h) * 100%);
+    border-radius: 999px;
+    background: var(--fg-dim);
+    transform-origin: bottom;
+    animation: breathe var(--dur) ease-in-out var(--delay) infinite alternate;
+}
+
+.hot .bar {
+    background: var(--orange);
+}
+
+@keyframes breathe {
+    from {
+        transform: scaleY(1);
+    }
+    to {
+        transform: scaleY(0.4);
+    }
+}
+
+@media (max-width: 720px) {
+    .floor {
+        gap: 3px;
+    }
+
+    /* Half the bars on a phone: 88 bars in 360px would be hairlines. */
+    .col:nth-child(even) {
+        display: none;
+    }
+}

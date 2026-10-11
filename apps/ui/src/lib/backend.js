@@ -7,6 +7,7 @@ export const STREAM_MIC = 0;
 export const STREAM_SYSTEM = 1;
 
 const PACKET_HEADER_SIZE = 16;
+export const GAP_FLAG = 0x80000000;
 
 export class BackendError extends Error {
     constructor(message, status) {
@@ -72,6 +73,18 @@ export function encodeAudioPacket(streamId, timestampMs, pcm) {
     return packet;
 }
 
+export function encodeGapPacket(streamId, timestampMs, samples) {
+    const packet = new ArrayBuffer(PACKET_HEADER_SIZE + 4);
+    const view = new DataView(packet);
+
+    view.setUint32(0, (streamId | GAP_FLAG) >>> 0, true);
+    view.setBigInt64(4, BigInt(Math.trunc(timestampMs)), true);
+    view.setUint32(12, 4, true);
+    view.setUint32(PACKET_HEADER_SIZE, samples, true);
+
+    return packet;
+}
+
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000];
 // Bound queued PCM on slow connections instead of retaining an entire meeting
 // in renderer memory. Local recordings remain independent of this live stream.
@@ -87,6 +100,10 @@ export function createBackendSocket({ onEvent, onConnectionChange } = {}) {
     let reconnectTimer = null;
     let disposed = false;
     let warnedAboutBackpressure = false;
+    const skipped = new Map();
+    const skip = (streamId, samples) => {
+        if (samples > 0) skipped.set(streamId, (skipped.get(streamId) || 0) + samples);
+    };
 
     const notify = state => {
         if (onConnectionChange) onConnectionChange(state);
@@ -150,18 +167,31 @@ export function createBackendSocket({ onEvent, onConnectionChange } = {}) {
             try { socket.send(JSON.stringify({ action, payload })); return true; }
             catch { return false; }
         },
+        skipAudio: skip,
         sendAudio(streamId, pcm, timestampMs = Date.now()) {
-            if (!isOpen()) return false;
+            const samples = Math.floor(pcm.byteLength / 2);
+            if (!isOpen()) { skip(streamId, samples); return false; }
             if (socket.bufferedAmount + PACKET_HEADER_SIZE + pcm.byteLength > MAX_SOCKET_BUFFER_BYTES) {
                 if (!warnedAboutBackpressure) {
                     warnedAboutBackpressure = true;
                     onEvent?.({ type: 'warning', data: { message: 'The connection is too slow for live transcription. Some audio could not be sent; local recording continues if enabled.' } });
                 }
+                skip(streamId, samples);
                 return false;
             }
             if (socket.bufferedAmount < MAX_SOCKET_BUFFER_BYTES / 2) warnedAboutBackpressure = false;
-            try { socket.send(encodeAudioPacket(streamId, timestampMs, pcm)); return true; }
-            catch { return false; }
+            try {
+                const gap = skipped.get(streamId);
+                if (gap) {
+                    socket.send(encodeGapPacket(streamId, timestampMs, gap));
+                    skipped.delete(streamId);
+                }
+                socket.send(encodeAudioPacket(streamId, timestampMs, pcm));
+                return true;
+            } catch {
+                skip(streamId, samples);
+                return false;
+            }
         },
         close() {
             disposed = true;

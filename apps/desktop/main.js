@@ -8,8 +8,10 @@ const menubar = require('./menubar');
 const systemAudio = require('./systemAudio');
 const micUsage = require('./micUsage');
 const googleSignIn = require('./googleSignIn');
+const { registerAppReturn } = require('./appReturn');
 const connection = require('./connection');
 const updater = require('./updater');
+const { holdQuitUntil } = require('./shutdown');
 const { showDockIcon } = require('./dock');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -340,6 +342,7 @@ if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
     app.on('second-instance', showMainWindow);
+    registerAppReturn(app, showMainWindow);
 
     app.whenReady().then(async () => {
         showDockIcon({ app, nativeImage }).catch(cause => console.error(`[Kesami] could not apply the Dock icon: ${cause.message}`));
@@ -351,8 +354,9 @@ if (!app.requestSingleInstanceLock()) {
         menubar.registerHandlers(ipc);
         systemAudio.registerHandlers(ipc);
         micUsage.registerHandlers(ipc);
-        googleSignIn.registerHandlers(ipc);
+        googleSignIn.registerHandlers(ipc, { onReturn: showMainWindow });
         connection.registerHandlers(ipc);
+        void connection.load();
 
         menubar.create({
             onActivateMain: showMainWindow,
@@ -372,7 +376,7 @@ if (!app.requestSingleInstanceLock()) {
         }
         watchBackend();
 
-        createWindow();
+        showMainWindow();
         createWidget();
         updater.start({ getWindow: () => mainWindow });
 
@@ -387,27 +391,22 @@ if (!app.requestSingleInstanceLock()) {
         if (process.platform !== 'darwin') app.quit();
     });
 
-    let quitting = false;
-    let shutdownComplete = false;
-    app.on('before-quit', event => {
-        if (shutdownComplete) return;
-        // Electron does not await an async event listener. Hold the first quit
-        // until writes are closed, then allow the second quit to proceed.
-        event.preventDefault();
-        if (quitting) return;
-        quitting = true;
-        updater.stop();
-        // Close the recording file before the backend goes away, so quitting
-        // mid-meeting still leaves something playable on disk.
-        widget.destroy();
-        menubar.destroy();
-        systemAudio.shutdown();
-        micUsage.shutdown();
-        recorder.shutdown().catch(cause => console.error(`[Kesami] could not finish recording: ${cause.message}`)).finally(() => {
-            stopBackend();
-            shutdownComplete = true;
-            app.quit();
-        });
-    });
+    holdQuitUntil(
+        app,
+        async () => {
+            updater.stop();
+            // Close the recording file before the backend goes away, so quitting
+            // mid-meeting still leaves something playable on disk.
+            widget.destroy();
+            menubar.destroy();
+            systemAudio.shutdown();
+            micUsage.shutdown();
+            await recorder.shutdown().catch(cause => console.error(`[Kesami] could not finish recording: ${cause.message}`));
+        },
+        {
+            beforeExit: stopBackend,
+            onError: cause => console.error(`[Kesami] could not finish shutting down: ${cause.message}`),
+        }
+    );
     process.on('exit', stopBackend);
 }

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ask Kesami · component states</title>
+    <link rel="stylesheet" href="../../../../tokens.css">
+    <link rel="stylesheet" href="../design.css">
+    <style>
+        html, body { min-height: 100%; margin: 0; background: var(--color-paper); color: var(--color-ink); font-family: var(--font-body); }
+        .ks-chat-preview { max-width: 720px; margin: 0 auto; padding: var(--space-xl); }
+        .ks-chat-preview h1 { margin: 0 0 var(--space-md); font: 600 var(--text-heading)/1.25 var(--font-display); }
+        .ks-chat-preview-intro { margin: 0 0 var(--space-xl); color: var(--color-secondary); font-size: var(--text-sm); }
+        .ks-chat-preview-list { display: grid; gap: var(--space-md); margin: 0; padding: 0; list-style: none; }
+        .ks-chat-preview-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: var(--space-md); }
+        .ks-chat-preview-label { color: var(--color-secondary); font: 500 var(--text-xs)/1.4 var(--font-mono); }
+        .ks-chat-preview .ks-chat-input-wrap { width: auto; box-shadow: none; }
+        .ks-chat-preview textarea { min-height: 34px; padding: var(--space-sm) 2px; border: 0; background: transparent; color: var(--color-ink); font: var(--text-sm)/1.5 var(--font-body); resize: none; }
+        .ks-chat-preview .ks-chat-send.is-hover { background: var(--ks-accent-hover); }
+        .ks-chat-preview .ks-chat-input-wrap.is-focus { border-color: var(--ks-line-strong); box-shadow: 0 0 0 2px var(--ks-accent-faint); }
+        .ks-chat-preview .ks-chat-send.is-active { transform: translateY(1px); }
+        .ks-chat-preview .ks-chat-send:disabled { background: var(--ks-raised); color: var(--ks-muted); cursor: not-allowed; }
+        .ks-chat-preview-status { display: flex; align-items: center; gap: var(--space-sm); min-height: 44px; padding: 0 var(--space-md); border: 1px solid var(--ks-line); border-radius: var(--radius-control); color: var(--ks-secondary); font-size: var(--text-sm); }
+        .ks-chat-preview-status.is-error { border-color: var(--ks-danger-line); color: var(--ks-danger); }
+        .ks-chat-preview-answer { padding: var(--space-md); border: 1px solid var(--ks-line); border-radius: var(--radius-control); color: var(--ks-text); font-size: var(--text-sm); line-height: 1.55; }
+        .ks-chat-preview-answer p { margin: 0; }
+        .ks-chat-preview-citation { display: inline-flex; margin-top: var(--space-sm); padding: 3px var(--space-sm); border: 1px solid var(--ks-line); border-radius: var(--radius-small); color: var(--ks-secondary); font-size: var(--text-xs); }
+        @media (max-width: 480px) {
+            .ks-chat-preview { padding: var(--space-md); }
+            .ks-chat-preview-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
+        }
+    </style>
+</head>
+<body>
+<main class="ks-app" data-theme="dark">
+    <div class="ks-chat-preview">
+        <h1>Ask Kesami · component states</h1>
+        <p class="ks-chat-preview-intro">Temporary visual check for the composer and its response states. No meeting data is loaded.</p>
+        <ol class="ks-chat-preview-list" aria-label="Eight interactive states">
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Default</span><div class="ks-chat-input-wrap"><textarea rows="1" aria-label="Default question" placeholder="Ask about the meeting…"></textarea><button class="ks-chat-send" aria-label="Send question"><span>↑</span></button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Hover</span><div class="ks-chat-input-wrap"><textarea rows="1" aria-label="Hover question" placeholder="Ask about the meeting…"></textarea><button class="ks-chat-send is-hover" aria-label="Send question"><span>↑</span></button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Focus</span><div class="ks-chat-input-wrap is-focus"><textarea autofocus rows="1" aria-label="Focused question" placeholder="Ask about the meeting…"></textarea><button class="ks-chat-send" aria-label="Send question"><span>↑</span></button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Active</span><div class="ks-chat-input-wrap"><textarea rows="1" aria-label="Active question" placeholder="Ask about the meeting…"></textarea><button class="ks-chat-send is-active" aria-label="Send question"><span>↑</span></button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Disabled</span><div class="ks-chat-input-wrap"><textarea rows="1" aria-label="Disabled question" placeholder="Monthly AI allowance used" disabled></textarea><button class="ks-chat-send" aria-label="Send question" disabled><span>↑</span></button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Loading</span><div class="ks-chat-preview-status" role="status">Reading the passages that matter… <button class="ks-chat-send" aria-label="Cancel question">■</button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Error</span><div class="ks-chat-preview-status is-error" role="alert">Couldn’t reach meeting search. <button type="button">Try again</button></div></li>
+            <li class="ks-chat-preview-row"><span class="ks-chat-preview-label">Success</span><div class="ks-chat-preview-answer"><p>The review is planned for Thursday.</p><span class="ks-chat-preview-citation">Roadmap review · 0:42</span></div></li>
+        </ol>
+    </div>
+</main>
+</body>
+</html>

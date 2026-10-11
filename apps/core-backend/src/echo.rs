@@ -1,4 +1,5 @@
 use crate::{audio::rms, dsp};
+use std::{collections::VecDeque, sync::OnceLock};
 
 const BUCKET_MS: i64 = 20;
 const HISTORY_MS: i64 = 12_000;
@@ -11,9 +12,19 @@ const RESYNC_MS: i64 = 200;
 const DUPLICATE_WINDOW_MS: i64 = 10_000;
 const DUPLICATE_SHARE: f64 = 0.7;
 const MIN_TOKENS: usize = 3;
+const PAIR_SHARE: f64 = 0.6;
+const MIN_PAIRS: usize = 3;
 
 const GATE_MS: i64 = 400;
 const CONTEXT_MS: i64 = 1_200;
+const MAX_HOLD_MS: i64 = 800;
+
+fn debugging() -> bool {
+    static DEBUG: OnceLock<bool> = OnceLock::new();
+    *DEBUG.get_or_init(|| {
+        crate::env_compat::var("KESAMI_ECHO_DEBUG").is_ok_and(|value| !matches!(value.trim(), "" | "0" | "false" | "off"))
+    })
+}
 
 fn bucket_bytes() -> usize {
     (dsp::SAMPLE_RATE as i64 / 1000 * BUCKET_MS) as usize * 2
@@ -75,6 +86,13 @@ fn tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+fn pairs(tokens: &[String]) -> std::collections::HashSet<(&str, &str)> {
+    tokens
+        .windows(2)
+        .map(|pair| (pair[0].as_str(), pair[1].as_str()))
+        .collect()
+}
+
 fn jaccard(left: &[String], right: &[String]) -> f64 {
     let left: std::collections::HashSet<&String> = left.iter().collect();
     let right: std::collections::HashSet<&String> = right.iter().collect();
@@ -97,21 +115,27 @@ pub struct EchoWindow {
     residual: Vec<u8>,
     playing: bool,
     spoken: Vec<(i64, Vec<String>)>,
-    partial: Option<(i64, Vec<String>)>,
+    partials: Vec<(i64, Vec<String>)>,
     pending: Vec<u8>,
     pending_ms: i64,
+    heard_ms: i64,
+    queued: VecDeque<(i64, Vec<u8>)>,
     context: Vec<u8>,
     bleeding: bool,
 }
 
 impl EchoWindow {
     pub fn append_played(&mut self, start_ms: i64, pcm: &[u8]) {
-        if !self.playing || (start_ms - self.next_ms).abs() > RESYNC_MS {
+        let gap_ms = start_ms - self.next_ms;
+        if !self.playing || gap_ms < -RESYNC_MS || gap_ms > HISTORY_MS {
             self.origin_ms = start_ms;
             self.next_ms = start_ms;
             self.envelope.clear();
             self.residual.clear();
             self.playing = true;
+        } else if gap_ms > RESYNC_MS {
+            let silence = (gap_ms * dsp::SAMPLE_RATE as i64 / 1000) as usize * 2;
+            self.residual.resize(self.residual.len() + silence, 0);
         }
 
         self.residual.extend_from_slice(pcm);
@@ -134,27 +158,45 @@ impl EchoWindow {
             self.pending_ms = at_ms;
         }
         self.pending.extend_from_slice(pcm);
+        self.heard_ms = at_ms + span_ms(pcm);
 
-        let mut windows = Vec::new();
         while self.pending.len() >= gate_bytes() {
             let window: Vec<u8> = self.pending.drain(..gate_bytes()).collect();
-            let window_ms = self.pending_ms;
+            self.queued.push_back((self.pending_ms, window));
             self.pending_ms += GATE_MS;
-
-            self.context.extend_from_slice(&window);
-            if self.context.len() > context_bytes() {
-                let stale = self.context.len() - context_bytes();
-                self.context.drain(..stale);
-            }
-
-            self.bleeding = self.bleeds(window_ms, &window);
-            windows.push(if self.bleeding {
-                vec![0u8; window.len()]
-            } else {
-                window
-            });
         }
-        windows
+        self.release_microphone()
+    }
+
+    pub fn release_microphone(&mut self) -> Vec<Vec<u8>> {
+        let mut released = Vec::new();
+        while let Some(&(window_ms, _)) = self.queued.front() {
+            let ends_ms = window_ms + GATE_MS;
+            let covered = !self.playing || self.next_ms >= ends_ms + REFERENCE_LAG_MS;
+            let overdue = self.heard_ms >= ends_ms + MAX_HOLD_MS;
+            if !covered && !overdue {
+                break;
+            }
+            if let Some((window_ms, window)) = self.queued.pop_front() {
+                released.push(self.judge(window_ms, window));
+            }
+        }
+        released
+    }
+
+    fn judge(&mut self, window_ms: i64, window: Vec<u8>) -> Vec<u8> {
+        self.context.extend_from_slice(&window);
+        if self.context.len() > context_bytes() {
+            let stale = self.context.len() - context_bytes();
+            self.context.drain(..stale);
+        }
+
+        self.bleeding = self.bleeds(window_ms, &window);
+        if self.bleeding {
+            vec![0u8; window.len()]
+        } else {
+            window
+        }
     }
 
     fn bleeds(&self, window_ms: i64, window: &[u8]) -> bool {
@@ -170,31 +212,93 @@ impl EchoWindow {
         let context_level = rms(&self.context);
         let level = rms(window);
 
-        alignments().any(|steps| {
+        let bleeds = alignments().any(|steps| {
             self.matches_at(window_ms, &heard, level, steps)
                 && self.matches_at(context_ms, &context, context_level, steps)
-        })
+        });
+        if debugging() {
+            self.report(window_ms, &heard, level, context_ms, &context, bleeds);
+        }
+        bleeds
+    }
+
+    fn report(&self, window_ms: i64, heard: &[f32], level: f32, context_ms: i64, context: &[f32], bleeds: bool) {
+        let best = alignments()
+            .filter_map(|steps| {
+                let (correlation, played) = self.compare_at(window_ms, heard, steps)?;
+                Some((steps, correlation, played))
+            })
+            .max_by(|left, right| left.1.total_cmp(&right.1));
+        match best {
+            Some((steps, correlation, played)) => {
+                let context_correlation = self
+                    .compare_at(context_ms, context, steps)
+                    .map_or(f32::NAN, |(correlation, _)| correlation);
+                let ratio = if played > f32::EPSILON { level / played } else { f32::INFINITY };
+                eprintln!(
+                    "[Kesami Core Backend] echo gate {window_ms} ms: lag {} ms, window r {correlation:.2}, context r {context_correlation:.2}, level {ratio:.2}x, reference to {} ms, {}",
+                    steps * BUCKET_MS,
+                    self.next_ms,
+                    if bleeds { "silenced" } else { "passed" }
+                );
+            }
+            None => eprintln!(
+                "[Kesami Core Backend] echo gate {window_ms} ms: no reference overlap (reference {}..{} ms), passed",
+                self.origin_ms, self.next_ms
+            ),
+        }
+    }
+
+    fn drain_queued(&mut self) -> (Vec<u8>, usize) {
+        let mut passed = Vec::new();
+        let mut kept = 0;
+        while let Some((window_ms, window)) = self.queued.pop_front() {
+            passed.extend(self.judge(window_ms, window));
+            if !self.bleeding {
+                kept = passed.len();
+            }
+        }
+        (passed, kept)
+    }
+
+    pub fn drain_microphone(&mut self) -> Vec<u8> {
+        let (mut passed, _) = self.drain_queued();
+        let tail = std::mem::take(&mut self.pending);
+        if self.bleeding {
+            passed.resize(passed.len() + tail.len(), 0);
+        } else {
+            passed.extend(tail);
+        }
+        self.context.clear();
+        self.bleeding = false;
+        passed
     }
 
     pub fn flush_microphone(&mut self) -> Vec<u8> {
+        let (mut passed, mut kept) = self.drain_queued();
         let tail = std::mem::take(&mut self.pending);
-        if self.bleeding {
-            Vec::new()
-        } else {
-            tail
+        if !self.bleeding {
+            passed.extend(tail);
+            kept = passed.len();
         }
+        passed.truncate(kept);
+        passed
     }
 
     pub fn remember_text(&mut self, at_ms: i64, text: &str) {
         let tokens = tokens(text);
-        if tokens.len() >= MIN_TOKENS {
+        if !tokens.is_empty() {
             self.spoken.push((at_ms, tokens));
         }
-        self.spoken
-            .retain(|(said_at_ms, _)| *said_at_ms >= at_ms - HISTORY_MS);
+        self.forget_before(at_ms - HISTORY_MS);
     }
 
-    fn matches_at(&self, start_ms: i64, heard: &[f32], level: f32, steps: i64) -> bool {
+    fn forget_before(&mut self, cutoff_ms: i64) {
+        self.spoken.retain(|(said_at_ms, _)| *said_at_ms >= cutoff_ms);
+        self.partials.retain(|(said_at_ms, _)| *said_at_ms >= cutoff_ms);
+    }
+
+    fn compare_at(&self, start_ms: i64, heard: &[f32], steps: i64) -> Option<(f32, f32)> {
         let shift = (start_ms - steps * BUCKET_MS - self.origin_ms) / BUCKET_MS;
         let (heard_from, played_from) = if shift >= 0 {
             (0usize, shift as usize)
@@ -202,16 +306,21 @@ impl EchoWindow {
             ((-shift) as usize, 0usize)
         };
         if heard_from >= heard.len() || played_from >= self.envelope.len() {
-            return false;
+            return None;
         }
 
         let span = (heard.len() - heard_from).min(self.envelope.len() - played_from);
         if span < MIN_OVERLAP_BUCKETS {
-            return false;
+            return None;
         }
         let heard = &heard[heard_from..heard_from + span];
         let played = &self.envelope[played_from..played_from + span];
-        level <= level_of(played) * LOUDER_THAN_SOURCE && pearson(heard, played) >= CORRELATION
+        Some((pearson(heard, played), level_of(played)))
+    }
+
+    fn matches_at(&self, start_ms: i64, heard: &[f32], level: f32, steps: i64) -> bool {
+        self.compare_at(start_ms, heard, steps)
+            .is_some_and(|(correlation, played)| level <= played * LOUDER_THAN_SOURCE && correlation >= CORRELATION)
     }
 
     pub fn is_echo(&self, start_ms: i64, pcm: &[u8]) -> bool {
@@ -226,9 +335,10 @@ impl EchoWindow {
 
     pub fn remember_partial(&mut self, at_ms: i64, text: &str) {
         let tokens = tokens(text);
-        if tokens.len() >= MIN_TOKENS {
-            self.partial = Some((at_ms, tokens));
+        if !tokens.is_empty() {
+            self.partials.push((at_ms, tokens));
         }
+        self.forget_before(at_ms - HISTORY_MS);
     }
 
     pub fn repeats_meeting_audio(&self, at_ms: i64, text: &str) -> bool {
@@ -236,10 +346,28 @@ impl EchoWindow {
         if heard.len() < MIN_TOKENS {
             return false;
         }
-        self.spoken.iter().chain(self.partial.iter()).any(|(said_at_ms, said)| {
-            (at_ms - said_at_ms).abs() <= DUPLICATE_WINDOW_MS
-                && jaccard(&heard, said) >= DUPLICATE_SHARE
-        })
+        let recent: Vec<&Vec<String>> = self
+            .spoken
+            .iter()
+            .chain(self.partials.iter())
+            .filter(|(said_at_ms, _)| (at_ms - said_at_ms).abs() <= DUPLICATE_WINDOW_MS)
+            .map(|(_, said)| said)
+            .collect();
+        if recent
+            .iter()
+            .any(|said| said.len() >= MIN_TOKENS && jaccard(&heard, said) >= DUPLICATE_SHARE)
+        {
+            return true;
+        }
+
+        let heard_pairs = pairs(&heard);
+        if heard_pairs.len() < MIN_PAIRS {
+            return false;
+        }
+        let said_pairs: std::collections::HashSet<(&str, &str)> =
+            recent.iter().flat_map(|said| pairs(said)).collect();
+        let shared = heard_pairs.intersection(&said_pairs).count();
+        shared as f64 >= heard_pairs.len() as f64 * PAIR_SHARE
     }
 }
 
@@ -288,6 +416,33 @@ mod tests {
                 passed.extend_from_slice(&gate);
             }
             at_ms += span_ms(block);
+        }
+        passed
+    }
+
+    fn ms_bytes(ms: i64) -> usize {
+        (dsp::SAMPLE_RATE as i64 / 1000 * ms) as usize * 2
+    }
+
+    fn lockstep(window: &mut EchoWindow, played: &[u8], heard: &[u8]) -> Vec<u8> {
+        let step = ms_bytes(BUCKET_MS);
+        let slice = |pcm: &[u8], index: usize| pcm[(index * step).min(pcm.len())..((index + 1) * step).min(pcm.len())].to_vec();
+        let mut passed = Vec::new();
+        for index in 0..heard.len().max(played.len()).div_ceil(step) {
+            let at_ms = index as i64 * BUCKET_MS;
+            let reference = slice(played, index);
+            if !reference.is_empty() {
+                window.append_played(at_ms, &reference);
+                for gate in window.release_microphone() {
+                    passed.extend(gate);
+                }
+            }
+            let microphone = slice(heard, index);
+            if !microphone.is_empty() {
+                for gate in window.gate_microphone(at_ms, &microphone) {
+                    passed.extend(gate);
+                }
+            }
         }
         passed
     }
@@ -400,10 +555,10 @@ mod tests {
         let mut window = playing(0, &sentence(12_000, 7, 0.5));
         let mine = encode(&sentence(12_000, 991, 0.4));
 
-        let passed = gated(&mut window, &mine);
+        let mut passed = gated(&mut window, &mine);
+        passed.extend(window.flush_microphone());
 
-        assert!(passed.len() + gate_bytes() > mine.len());
-        assert_eq!(passed.as_slice(), &mine[..passed.len()]);
+        assert_eq!(passed, mine);
     }
 
     #[test]
@@ -460,6 +615,97 @@ mod tests {
         assert!(!window.repeats_meeting_audio(30_400, "Friday works for me"));
         assert!(!window.repeats_meeting_audio(60_000, "Let us ship the release on Friday"));
         assert!(!window.repeats_meeting_audio(30_400, "Sure"));
+    }
+
+    #[test]
+    fn bleed_is_held_until_a_late_speaker_feed_catches_up() {
+        for lag_ms in [106, 250] {
+            let played = sentence(12_000, 7, 0.5);
+            let mut window = EchoWindow::default();
+            let reference = encode(&delayed(&played, lag_ms, 1.0));
+            let heard = encode(&delayed(&played, 0, 0.3));
+
+            let passed = lockstep(&mut window, &reference, &heard);
+
+            assert!(passed.len() > warmup_bytes() + ms_bytes(8_000), "lag {lag_ms} ms released too little");
+            assert!(
+                rms(&passed[warmup_bytes()..]) < rms(&heard) * 0.05,
+                "lag {lag_ms} ms let bleed through"
+            );
+        }
+    }
+
+    #[test]
+    fn the_user_is_not_held_back_once_the_speaker_feed_stalls() {
+        let mut window = playing(0, &sentence(2_000, 7, 0.5));
+        let mine = encode(&sentence(5_000, 991, 0.4));
+
+        let passed = gated(&mut window, &mine);
+
+        assert!(passed.len() >= ms_bytes(5_000 - GATE_MS - MAX_HOLD_MS));
+        assert_eq!(passed.as_slice(), &mine[..passed.len()]);
+    }
+
+    #[test]
+    fn a_microphone_gap_hands_over_held_audio_and_gates_bleed_after_it() {
+        let played = sentence(12_000, 7, 0.5);
+        let mut window = playing(0, &played);
+        let mine = encode(&sentence(1_000, 991, 0.4));
+
+        let mut before = gated(&mut window, &mine);
+        before.extend(window.drain_microphone());
+        assert_eq!(before, mine);
+
+        let resumed_ms = 5_000;
+        let bleed = encode(&delayed(&played[16 * resumed_ms..], 0, 0.3));
+        let mut after = Vec::new();
+        let mut at_ms = resumed_ms as i64;
+        for block in bleed.chunks(256) {
+            for gate in window.gate_microphone(at_ms, block) {
+                after.extend(gate);
+            }
+            at_ms += span_ms(block);
+        }
+
+        assert!(after.len() > warmup_bytes() + ms_bytes(4_000));
+        assert!(rms(&after[warmup_bytes()..]) < rms(&bleed) * 0.05);
+    }
+
+    #[test]
+    fn a_short_pause_in_the_speaker_feed_keeps_its_history() {
+        let first = sentence(2_000, 7, 0.5);
+        let second = sentence(2_000, 13, 0.5);
+        let mut window = playing(0, &first);
+        window.append_played(5_000, &encode(&second));
+
+        assert!(window.is_echo(0, &encode(&delayed(&first, 120, 0.3))));
+        assert!(window.is_echo(5_000, &encode(&delayed(&second, 120, 0.3))));
+    }
+
+    #[test]
+    fn a_microphone_fragment_of_a_longer_meeting_sentence_is_a_duplicate() {
+        let mut window = EchoWindow::default();
+        window.remember_text(30_000, "We should move the launch to next Friday because the vendor is late");
+
+        assert!(window.repeats_meeting_audio(31_000, "move the launch to next Friday"));
+    }
+
+    #[test]
+    fn a_reply_reusing_some_of_the_meetings_words_is_kept() {
+        let mut window = EchoWindow::default();
+        window.remember_text(30_000, "Can you send the report by Friday");
+
+        assert!(!window.repeats_meeting_audio(31_000, "Yes I will send the report by Friday"));
+        assert!(!window.repeats_meeting_audio(31_000, "Friday is fine and the report is nearly done"));
+    }
+
+    #[test]
+    fn every_meeting_interim_in_the_window_is_consulted() {
+        let mut window = EchoWindow::default();
+        window.remember_partial(30_000, "We should move the launch");
+        window.remember_partial(30_500, "Something else entirely now");
+
+        assert!(window.repeats_meeting_audio(31_000, "we should move the launch"));
     }
 
     #[test]

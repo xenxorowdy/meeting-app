@@ -8,7 +8,7 @@ export function useMeetingChat(scope, isConnected) {
     const [messages, setMessages] = useState([]);
     const [question, setQuestion] = useState('');
     const [busy, setBusy] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [requiresPro, setRequiresPro] = useState(false);
     const [index, setIndex] = useState(null);

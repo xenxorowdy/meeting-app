@@ -25,6 +25,23 @@ export function citationTime(milliseconds) {
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+export function readableExcerpt(excerpt) {
+    const text = String(excerpt ?? '').trim();
+    if (!text.startsWith('{')) return { text, details: [] };
+    try {
+        const record = JSON.parse(text);
+        if (!record || typeof record !== 'object' || typeof record.task !== 'string') return { text, details: [] };
+        const details = [
+            ['Owner', record.owner],
+            ['Deadline', record.deadline],
+            ['Priority', record.priority],
+        ].filter(([, value]) => typeof value === 'string' && value.trim());
+        return { text: record.task.trim(), details };
+    } catch {
+        return { text, details: [] };
+    }
+}
+
 export function copyAnswerText(message) {
     const citations = message.citations || [];
     const known = new Set(citations.map(citation => String(citation.number)));

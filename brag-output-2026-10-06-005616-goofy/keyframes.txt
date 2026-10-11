@@ -1,0 +1,15 @@
+◇  onion-skin screenshot saved /Users/riyamjain/person/alpha/packages/meeting-app/brag-output-2026-10-06-005616-goofy/robot-motion.png
+   22 elements · open it to verify the motion matches your target, then read the keyframes below.
+
+◇  composition — 2 items
+
+index.html  (index.html)
+  .party-bot  to/flat  @1.25s→1.43s (0.18s)
+    0% {rotation:0 x:0}  100% {rotation:-7 x:35}
+    ↑ composed with .hook-copy,.hook-device,.party-claim,#hook-scene .corner-brand: opacity 0..1, x -70..0
+
+  .party-bot  to/flat  @1.43s→1.83s (0.4s)
+    0% {rotation:0 x:0}  100% {rotation:2 x:0}
+    ↑ composed with .hook-copy,.hook-device,.party-claim,#hook-scene .corner-brand: opacity 0..1, x -70..0
+
+Tip: edit the keyframes in source, then `hyperframes keyframes --shot out.png` to see the rendered motion.

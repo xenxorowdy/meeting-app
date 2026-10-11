@@ -10,8 +10,8 @@ import { getBackendConnection } from '@/lib/connection';
 import { copyToClipboard } from '@/lib/clipboard';
 
 const KIND_LABELS = {
-    notes: 'Posts the summary, decisions and action items',
-    tasks: 'Creates one task per action item',
+    notes: 'Posts the summary, decisions, tasks and commitments',
+    tasks: 'Creates one item per task and commitment',
 };
 
 function blankDraft(connector) {
@@ -22,10 +22,24 @@ function blankDraft(connector) {
     return draft;
 }
 
+const ONE_CLICK_HELP = {
+    slack: 'Choose a channel in Slack. Kesami posts each meeting’s summary, tasks and commitments there.',
+    notion: 'Sign in with Notion. Kesami creates a private “Kesami Meetings” page and adds each meeting’s summary, tasks and commitments under it.',
+    linear: 'Sign in with Linear. Kesami files each task and commitment as an issue in your team, with the meeting summary attached.',
+    jira: 'Sign in with Jira. Kesami files each task and commitment as an issue in the project you worked in most recently, with the meeting summary attached.',
+    asana: 'Sign in with Asana. Kesami creates a “Kesami Meetings” project for each meeting’s tasks and commitments, with the summary attached.',
+    clickup: 'Sign in with ClickUp. Kesami creates a “Kesami Meetings” list for each meeting’s tasks and commitments, with the summary attached.',
+};
+
 function ConnectorCard({ connector, connectors, disabled }) {
     const [open, setOpen] = useState(false);
+    const [manual, setManual] = useState(false);
     const [draft, setDraft] = useState(() => blankDraft(connector));
     const [state, setState] = useState(null);
+    const isSlack = connector.provider === 'slack';
+    const oneClick = Boolean(connector.oneClick) && !manual;
+    const signedIn = Boolean(connector.signedIn) && !isSlack;
+    const showFields = !oneClick && !(signedIn && !manual);
 
     useEffect(() => {
         setDraft(blankDraft(connector));
@@ -49,7 +63,16 @@ function ConnectorCard({ connector, connectors, disabled }) {
                 throw new Error(`Saved, but the check failed: ${cause.message}`);
             });
             setOpen(false);
+            setManual(false);
             return tested;
+        });
+
+    const handleSetup = () =>
+        run('Setting up…', async () => {
+            const ready = await connectors.setup(connector.provider);
+            if (!ready?.connected) return 'Still not set up. Sign in again, or paste a token instead.';
+            setOpen(false);
+            return connectors.test(connector.provider);
         });
 
     const handleAutoPush = checked =>
@@ -59,14 +82,35 @@ function ConnectorCard({ connector, connectors, disabled }) {
         });
 
     const handleSignIn = () =>
-        run('Finish signing in in your browser…', async () => {
-            await connectors.signIn(connector.provider);
+        run(isSlack ? 'Pick a channel in the Slack tab that just opened…' : `Finish signing in to ${connector.label} in your browser…`, async () => {
+            const latest = await connectors.signIn(connector.provider);
+            setManual(false);
+            if (latest && !latest.connected) return 'Signed in, but setup didn’t finish. Try again.';
+            setOpen(false);
             return connectors.test(connector.provider);
         });
 
     const busy = state?.status === 'busy';
     const expanded = open || !connector.connected;
-    const description = connector.connected && connector.account ? `Signed in as ${connector.account}` : KIND_LABELS[connector.kind];
+    const destination = isSlack ? connector.config?.channelLabel : connector.destination;
+    const destinationText = destination && (isSlack ? `Posting to ${destination}` : `Sending to ${destination}`);
+    const description = !connector.connected
+        ? signedIn
+            ? `Signed in${connector.account ? ` as ${connector.account}` : ''} — setup didn’t finish`
+            : KIND_LABELS[connector.kind]
+        : [connector.account && `Signed in as ${connector.account}`, destinationText].filter(Boolean).join(' · ') || KIND_LABELS[connector.kind];
+    const help = showFields
+        ? connector.help
+        : signedIn && !connector.connected
+          ? `Signed in, but Kesami couldn’t finish setting up ${connector.label}. Try again, or paste a token instead.`
+          : ONE_CLICK_HELP[connector.provider] || `Sign in with ${connector.label} and Kesami sets everything up.`;
+    const signInLabel = isSlack
+        ? connector.connected
+            ? 'Change channel'
+            : 'Add to Slack'
+        : signedIn
+          ? 'Sign in again'
+          : `Connect ${connector.label}`;
 
     return (
         <div className="overflow-hidden rounded-lg border bg-muted">
@@ -98,12 +142,12 @@ function ConnectorCard({ connector, connectors, disabled }) {
 
             {expanded && (
                 <div className="space-y-4 border-t border-border px-4 py-4">
-                    <p className="text-footnote text-muted-foreground">{connector.help}</p>
+                    <p className="text-footnote text-muted-foreground">{help}</p>
                     {['slack', 'jira'].includes(connector.provider) && <p className="text-footnote text-muted-foreground">After connecting, open a finished meeting → Summary → Share summary to Slack or Jira. Review the text and confirm each manual delivery.{connector.provider === 'jira' && ' Summary sharing creates one recap issue; the legacy Export flow creates tasks.'}</p>}
                     {connector.oauth && !connector.configured && (
                         <p className="text-footnote text-warning">{connector.label} isn’t available in this version of Kesami yet.</p>
                     )}
-                    {connector.fields?.length > 0 && (
+                    {showFields && connector.fields?.length > 0 && (
                         <div className="grid gap-4 sm:grid-cols-2">
                             {connector.fields.map(field => {
                                 const saved = field.secret && connector.config?.[`${field.key}Set`];
@@ -128,30 +172,32 @@ function ConnectorCard({ connector, connectors, disabled }) {
                         </div>
                     )}
                     <div className="flex flex-wrap items-center justify-end gap-2">
+                        {connector.oneClick && (
+                            <Button variant="link" size="sm" className="mr-auto px-0" disabled={busy} onClick={() => setManual(!manual)}>
+                                {manual ? 'Use one-click sign-in instead' : isSlack ? 'Paste a webhook URL instead' : 'Paste a token instead'}
+                            </Button>
+                        )}
+                        {(connector.connected || signedIn) && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={disabled || busy}
+                                onClick={() =>
+                                    run('Disconnecting…', async () => (await connectors.disconnect(connector.provider)) || 'Disconnected.')
+                                }
+                            >
+                                Disconnect
+                            </Button>
+                        )}
                         {connector.connected && (
-                            <>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    disabled={disabled || busy}
-                                    onClick={() =>
-                                        run('Disconnecting…', async () => {
-                                            await connectors.disconnect(connector.provider);
-                                            return 'Disconnected.';
-                                        })
-                                    }
-                                >
-                                    Disconnect
-                                </Button>
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    disabled={disabled || busy}
-                                    onClick={() => run('Checking…', () => connectors.test(connector.provider))}
-                                >
-                                    Test
-                                </Button>
-                            </>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={disabled || busy}
+                                onClick={() => run('Checking…', () => connectors.test(connector.provider))}
+                            >
+                                Test
+                            </Button>
                         )}
                         {connector.oauth ? (
                             !connector.connected && (
@@ -159,10 +205,23 @@ function ConnectorCard({ connector, connectors, disabled }) {
                                     Sign in with Google
                                 </Button>
                             )
+                        ) : oneClick ? (
+                            <>
+                                <Button size="sm" variant={signedIn ? 'secondary' : 'default'} disabled={disabled || busy} onClick={handleSignIn}>
+                                    {signInLabel}
+                                </Button>
+                                {signedIn && !connector.connected && (
+                                    <Button size="sm" disabled={disabled || busy} onClick={handleSetup}>
+                                        Try again
+                                    </Button>
+                                )}
+                            </>
                         ) : (
-                            <Button size="sm" disabled={disabled || busy} onClick={handleSave}>
-                                {connector.connected ? 'Save' : 'Connect'}
-                            </Button>
+                            showFields && (
+                                <Button size="sm" disabled={disabled || busy} onClick={handleSave}>
+                                    {connector.connected ? 'Save' : 'Connect'}
+                                </Button>
+                            )
                         )}
                     </div>
                 </div>

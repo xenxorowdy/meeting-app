@@ -18,7 +18,7 @@ const ExportModal = lazy(() => import('@/components/ExportModal').then(module =>
 const NewMeetingModal = lazy(() => import('@/components/NewMeetingModal').then(module => ({ default: module.NewMeetingModal })));
 const SettingsModal = lazy(() => import('@/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 import { isRecordingSupported } from '@/lib/screenRecorder';
-import { getBackendConnection } from '@/lib/connection.js';
+import { getBackendConnection, whenConnectionReady } from '@/lib/connection.js';
 import { restoreSession, signOut as signOutSession, hasLocalMode, rememberLocalMode } from '@/lib/auth.js';
 import { DesignWorkspace } from '@/components/design/DesignWorkspace';
 import { SignInView } from '@/components/design/SignInView';
@@ -31,6 +31,11 @@ const IS_DESKTOP_SHELL = typeof navigator !== 'undefined' && /Electron/i.test(na
 
 const VIEWS = ['home', 'ask', 'live', 'notes', 'replay', 'history'];
 const NOTES_READY_WIDGET_MS = 8000;
+const RESTORE_SLOW_MS = 4000;
+const RESTORE_WAIT_NOTES = {
+    connection: 'Waiting for macOS to unlock your saved sign-in. If a Keychain dialog is open, enter your Mac password and choose Always Allow.',
+    engine: 'Waiting for the Kesami engine to start.',
+};
 
 export default function App() {
     // null while a stored session is still being restored; otherwise "is the
@@ -41,6 +46,8 @@ export default function App() {
     const [openSettingsOnEntry, setOpenSettingsOnEntry] = useState(false);
     const [restoreFailed, setRestoreFailed] = useState(false);
     const [restoreAttempt, setRestoreAttempt] = useState(0);
+    const [restoreWait, setRestoreWait] = useState('connection');
+    const [restoreSlow, setRestoreSlow] = useState(false);
     const [theme, setTheme] = useTheme();
     const [preferences] = usePreferences();
 
@@ -51,24 +58,37 @@ export default function App() {
     useEffect(() => {
         let cancelled = false;
         let retry = null;
-        if (!getBackendConnection().token) {
-            setEntered(hasLocalMode());
-            return undefined;
-        }
-        restoreSession(restoreAttempt ? { attempts: 1 } : undefined).then(({ account: restored, reachable }) => {
-            if (cancelled || !restoreActiveRef.current) return;
-            if (!reachable) {
-                setRestoreFailed(true);
-                retry = setTimeout(() => setRestoreAttempt(value => value + 1), 5000);
-                return;
-            }
-            setRestoreFailed(false);
-            setAccount(restored);
-            setEntered(Boolean(restored) || hasLocalMode());
-        });
+        setRestoreWait('connection');
+        setRestoreSlow(false);
+        const slow = setTimeout(() => setRestoreSlow(true), RESTORE_SLOW_MS);
+        whenConnectionReady()
+            .then(() => {
+                if (cancelled || !restoreActiveRef.current) return null;
+                if (!getBackendConnection().token) {
+                    setEntered(hasLocalMode());
+                    return null;
+                }
+                setRestoreWait('engine');
+                return restoreSession(restoreAttempt ? { attempts: 1 } : undefined);
+            })
+            .then(result => {
+                if (!result || cancelled || !restoreActiveRef.current) return;
+                if (!result.reachable) {
+                    setRestoreFailed(true);
+                    retry = setTimeout(() => setRestoreAttempt(value => value + 1), 5000);
+                    return;
+                }
+                setRestoreFailed(false);
+                setAccount(result.account);
+                setEntered(Boolean(result.account) || hasLocalMode());
+            })
+            .catch(() => {
+                if (!cancelled && restoreActiveRef.current) setEntered(false);
+            });
         return () => {
             cancelled = true;
             clearTimeout(retry);
+            clearTimeout(slow);
         };
     }, [restoreAttempt]);
 
@@ -113,7 +133,10 @@ export default function App() {
                     </div>
                 ) : (
                     <div className="ks-session-restore" role="status">
-                        <LogoMark size={22} live /> Restoring your session…
+                        <span className="ks-session-restore-line">
+                            <LogoMark size={22} live /> Restoring your session…
+                        </span>
+                        {restoreSlow ? <p className="ks-session-restore-note">{RESTORE_WAIT_NOTES[restoreWait]}</p> : null}
                     </div>
                 )}
             </div>
@@ -595,7 +618,7 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                         isOpen={isNewMeetingOpen}
                         onClose={() => setIsNewMeetingOpen(false)}
                         providers={calendar.providers}
-                        onCreated={calendar.refreshEvents}
+                        onCreated={calendar.reloadEvents}
                         onOpenCalendarSettings={() => {
                             setIsNewMeetingOpen(false);
                             openSettings('calendar');

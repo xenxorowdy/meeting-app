@@ -36,13 +36,13 @@ export function LiveNotes({ notes = [], canWrite = false, hint, onAddNote, onDel
     };
 
     return (
-        <section aria-label="Your notes" className="flex h-full flex-col overflow-hidden rounded-xl border">
-            <div className="flex items-center justify-between gap-4 p-4 hairline-bottom">
+        <section aria-label="Your notes" className="ks-notes-editor flex h-full flex-col overflow-hidden rounded-xl border">
+            <div className="ks-notes-heading flex items-center justify-between gap-4 p-4 hairline-bottom">
                 <h3 className="text-headline font-semibold">Your notes</h3>
                 <span className="tnum text-footnote text-muted-foreground">{notes.length}</span>
             </div>
 
-            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div ref={listRef} className="ks-notes-list min-h-0 flex-1 overflow-y-auto">
                 {notes.length === 0 ? (
                     <p className="max-w-sm p-4 text-callout text-muted-foreground">
                         Jot what matters as it happens. Each note is stamped with the moment you wrote it, and the summary is written around them.
@@ -70,7 +70,7 @@ export function LiveNotes({ notes = [], canWrite = false, hint, onAddNote, onDel
                 )}
             </div>
 
-            <div className="flex flex-col gap-2 p-4 hairline-top">
+            <div className="ks-notes-composer flex flex-col gap-2 p-4 hairline-top">
                 {error && <p className="text-footnote text-warning">{error}</p>}
                 <Textarea
                     rows={2}

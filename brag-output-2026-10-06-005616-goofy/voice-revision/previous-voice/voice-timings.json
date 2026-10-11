@@ -1,0 +1,50 @@
+[
+  {
+    "id": "hook",
+    "text": "A meeting bot? Sorry. Private party.",
+    "start": 0.15,
+    "deadline": 3.6,
+    "duration": 2.368,
+    "end": 2.518
+  },
+  {
+    "id": "widget",
+    "text": "Tiny widget. Record, pause, ask away.",
+    "start": 4.05,
+    "deadline": 7.55,
+    "duration": 2.432,
+    "end": 6.481999999999999
+  },
+  {
+    "id": "languages",
+    "text": "English, Hindi, Tamil. Even Hinglish.",
+    "start": 8.1,
+    "deadline": 11.55,
+    "duration": 2.24,
+    "end": 10.34
+  },
+  {
+    "id": "folders",
+    "text": "Your meetings have folders. Fancy.",
+    "start": 12.05,
+    "deadline": 15.5,
+    "duration": 2.0906666666666665,
+    "end": 14.140666666666668
+  },
+  {
+    "id": "history",
+    "text": "Forgot last week\u2019s decision? Ask your meetings. Receipts included.",
+    "start": 16.05,
+    "deadline": 20.85,
+    "duration": 3.8186666666666667,
+    "end": 19.868666666666666
+  },
+  {
+    "id": "outro",
+    "text": "Your brain\u2019s backup dancer.",
+    "start": 21.5,
+    "deadline": 23.9,
+    "duration": 1.5573333333333332,
+    "end": 23.057333333333332
+  }
+]

@@ -72,15 +72,6 @@ function trustedIpc(ipcMain) {
                 return handler(event, ...args);
             });
         },
-        on(channel, handler) {
-            ipcMain.on(channel, (event, ...args) => {
-                if (!allowed(channel, event)) {
-                    event.returnValue = null;
-                    return;
-                }
-                handler(event, ...args);
-            });
-        },
     };
 }
 

@@ -55,12 +55,23 @@ pub mod audio {
     pub const HEADER_SIZE: usize = 16;
     pub const STREAM_MIC: u32 = 0;
     pub const STREAM_SYSTEM: u32 = 1;
+    pub const GAP_FLAG: u32 = 0x8000_0000;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct AudioPacket {
         pub stream_id: u32,
         pub timestamp_ms: i64,
         pub pcm: Vec<u8>,
+    }
+
+    impl AudioPacket {
+        pub fn gap(&self) -> Option<(u32, i64)> {
+            if self.stream_id & GAP_FLAG == 0 {
+                return None;
+            }
+            let samples = self.pcm.get(..4)?.try_into().ok().map(u32::from_le_bytes)?;
+            Some((self.stream_id & !GAP_FLAG, samples as i64))
+        }
     }
 
     /// Incremental parser for the native helper's 16-byte little-endian packet protocol.
@@ -174,6 +185,22 @@ pub mod audio {
                     timestamp_ms: 1234,
                     pcm: vec![0, 1, 2, 3]
                 }
+            );
+        }
+
+        #[test]
+        fn a_gap_packet_reports_its_stream_and_skipped_samples() {
+            let encoded = encode_packet(STREAM_MIC | GAP_FLAG, 1234, &48_000u32.to_le_bytes());
+            let packets = PacketParser::default().feed(&encoded);
+
+            assert_eq!(packets[0].gap(), Some((STREAM_MIC, 48_000)));
+            assert_eq!(
+                AudioPacket { stream_id: STREAM_SYSTEM, timestamp_ms: 0, pcm: vec![0; 4] }.gap(),
+                None
+            );
+            assert_eq!(
+                AudioPacket { stream_id: STREAM_SYSTEM | GAP_FLAG, timestamp_ms: 0, pcm: vec![0; 2] }.gap(),
+                None
             );
         }
 
@@ -408,6 +435,17 @@ pub mod vad {
             finished
         }
 
+        pub fn skip(&mut self, ms: i64) -> Option<Utterance> {
+            let residual_ms = self.ms_of(self.residual.len()) as i64;
+            let in_speech = self.in_speech;
+            let segment = self.flush();
+            if !in_speech {
+                self.clock_ms += residual_ms;
+            }
+            self.clock_ms += ms;
+            segment
+        }
+
         /// Close whatever is buffered, for use when a meeting stops.
         pub fn flush(&mut self) -> Option<Utterance> {
             let residual: Vec<u8> = std::mem::take(&mut self.residual);
@@ -504,6 +542,31 @@ pub mod vad {
             let flushed = detector.flush().expect("speech should be flushed");
             assert!(flushed.end_ms > flushed.start_ms);
             assert!(detector.flush().is_none());
+        }
+
+        #[test]
+        fn a_skip_closes_open_speech_and_moves_the_clock_past_the_gap() {
+            let mut detector = SpeechDetector::new(VadConfig::default());
+            detector.feed(&silence(1_000));
+            detector.feed(&tone(1_010, 8_000));
+
+            let closed = detector.skip(5_000).expect("open speech should close at the gap");
+            assert_eq!(closed.end_ms, 2_010);
+            assert_eq!(detector.clock_ms(), 7_010);
+
+            assert!(detector.feed(&tone(1_000, 8_000)).is_empty());
+            let resumed = detector.feed(&silence(1_000));
+            assert_eq!(resumed.len(), 1);
+            assert_eq!(resumed[0].start_ms, 7_010);
+        }
+
+        #[test]
+        fn a_skip_in_silence_only_moves_the_clock() {
+            let mut detector = SpeechDetector::new(VadConfig::default());
+            detector.feed(&silence(1_010));
+
+            assert!(detector.skip(3_000).is_none());
+            assert_eq!(detector.clock_ms(), 4_010);
         }
     }
 }

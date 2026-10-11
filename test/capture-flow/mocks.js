@@ -12,6 +12,7 @@ export function resetMocks({ recordingSupported = false, deferredRecorder = fals
         system: [],
         recorders: [],
         audio: [],
+        skips: [],
         requests: [],
         events: null,
         meeting: null,
@@ -31,6 +32,7 @@ export function createBackendSocket({ onEvent, onConnectionChange }) {
     onConnectionChange('online');
     return {
         sendAudio: (stream, pcm) => current.audio.push({ stream, pcm: Array.from(pcm) }),
+        skipAudio: (stream, samples) => current.skips.push({ stream, samples }),
         close: () => { current.events = null; },
     };
 }

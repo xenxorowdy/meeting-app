@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-11",
+  "designSystem": "DESIGN.md",
+  "fonts": [
+    "native SF/system",
+    "DM Mono"
+  ],
+  "palette": "existing coral, light/dark",
+  "motion": "CSS, no motion library",
+  "spacing": "existing four-point scale",
+  "framework": "React 19 / Vite 6 / Tailwind 3"
+}

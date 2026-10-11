@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Calendar, Check, Copy, Mail, Pencil, Plus, RotateCw, Sparkles, Square, Trash2, User } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { MarkdownText } from '@/components/MarkdownText';
+import { SummaryTemplatePicker, SummaryTemplateContent, useSummaryTemplate } from './SummaryTemplates';
 import { copyToClipboard } from '@/lib/clipboard';
 import { initialsFor } from '@/lib/speakers';
 import { readingMinutes, speakerColor } from '@/components/design/designHelpers';
@@ -95,6 +95,7 @@ function ComposeFooter({ hint, saving, discarding, onCancel, onSave, onKeepEditi
 }
 
 export function SummaryEditor({ meeting, people = [], onUpdateMeeting, onRegenerateSummary, isGenerating = false }) {
+    const templateModel = useSummaryTemplate(meeting);
     const meetingId = meeting?.id ?? 'none';
     const listId = useId();
     const sectionRef = useRef(null);
@@ -393,6 +394,7 @@ export function SummaryEditor({ meeting, people = [], onUpdateMeeting, onRegener
                 </div>
 
                 <div className="ks-notes-actions">
+                    <SummaryTemplatePicker model={templateModel} disabled={saving || isGenerating} />
                     {onRegenerateSummary && (
                         <button
                             ref={regenerateRef}
@@ -507,7 +509,7 @@ export function SummaryEditor({ meeting, people = [], onUpdateMeeting, onRegener
                                     </button>
                                 </div>
                                 {originalSummary ? (
-                                    <MarkdownText className="ks-notes-prose" markdown={originalSummary} />
+                                    <SummaryTemplateContent template={templateModel.selected} meeting={meeting} />
                                 ) : (
                                     <p className="ks-notes-empty">No summary yet. End a recording to generate one.</p>
                                 )}

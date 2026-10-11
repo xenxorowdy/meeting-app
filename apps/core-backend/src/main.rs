@@ -482,6 +482,56 @@ fn remote_identity(participants: &SpeechLog, start_ms: i64, end_ms: i64) -> Opti
         .filter(|name| Some(name.as_str()) != participants.self_name())
 }
 
+fn skip_audio(
+    session: &mut Session,
+    stream_id: u32,
+    samples: i64,
+    live_sarvam: bool,
+    heard: &mut Vec<(i64, i64, Vec<u8>)>,
+) {
+    let skipped_ms = samples * 1000 / dsp::SAMPLE_RATE as i64;
+    if stream_id == STREAM_MIC {
+        let Some(epoch) = session.mic_epoch_ms else {
+            return;
+        };
+        session.mic_samples += samples;
+        if live_sarvam {
+            let held = if session.echo_suppression {
+                session.echo.drain_microphone()
+            } else {
+                Vec::new()
+            };
+            if let Some(live) = session.live.as_ref() {
+                if !held.is_empty() {
+                    live.feed(STREAM_MIC, &held);
+                }
+                live.skip(STREAM_MIC, skipped_ms);
+            }
+        }
+        if let Some(mut utterance) = session.mic_vad.skip(skipped_ms) {
+            utterance.start_ms += epoch;
+            utterance.end_ms += epoch;
+            if !(session.echo_suppression && session.echo.is_echo(utterance.start_ms, &utterance.pcm)) {
+                remember_speech(&mut session.mic_speech, utterance.start_ms, utterance.end_ms);
+            }
+        }
+    } else {
+        let Some(epoch) = session.system_epoch_ms else {
+            return;
+        };
+        session.system_samples += samples;
+        if !live_sarvam {
+            return;
+        }
+        if let Some(live) = session.live.as_ref() {
+            live.skip(stream_id, skipped_ms);
+        }
+        if let Some(utterance) = session.system_vad.skip(skipped_ms) {
+            heard.push((utterance.start_ms + epoch, utterance.end_ms + epoch, utterance.pcm));
+        }
+    }
+}
+
 fn remember_speech(intervals: &mut Vec<(i64, i64)>, start_ms: i64, end_ms: i64) {
     if end_ms <= start_ms {
         return;
@@ -1137,6 +1187,11 @@ impl AppState {
             metadata = json!({});
         }
         metadata["transcriptionProvider"] = json!(provider);
+        if metadata.get("collectionId").map_or(true, Value::is_null) {
+            if let Some(folder) = workspace::folder_for_event(&self.store, &metadata).await {
+                metadata["collectionId"] = json!(folder);
+            }
+        }
         let meeting = Meeting {
             id: Uuid::new_v4().to_string(),
             title: payload
@@ -1272,6 +1327,12 @@ impl AppState {
             live.finish(LIVE_FLUSH_BUDGET).await;
         }
 
+        let current_metadata = self.session.lock().await.current.as_ref().map(|meeting| meeting.metadata.clone());
+        let calendar_folder = match current_metadata {
+            Some(metadata) => workspace::folder_for_event(&self.store, &metadata).await,
+            None => None,
+        };
+
         let mut session = self.session.lock().await;
         let mut meeting = session
             .current
@@ -1291,6 +1352,14 @@ impl AppState {
         let ended = now_ms();
         meeting.ended_at = Some(ended);
         meeting.duration_seconds = ((ended - meeting.started_at).max(0)) / 1000;
+        if let Some(folder) = calendar_folder {
+            if !meeting.metadata.is_object() {
+                meeting.metadata = json!({});
+            }
+            if meeting.metadata.get("collectionId").map_or(true, Value::is_null) {
+                meeting.metadata["collectionId"] = json!(folder);
+            }
+        }
         session.current = Some(meeting.clone());
         drop(session);
 
@@ -1550,9 +1619,7 @@ impl AppState {
         if targets.is_empty() {
             return;
         }
-        let Ok(value) = serde_json::to_value(meeting) else {
-            return;
-        };
+        let value = connectors::delivery_value(meeting);
         let notes = connectors::MeetingNotes::from_meeting(&value);
         // External tasks always require a reviewed per-action confirmation.
         targets.retain(|provider| connectors::allows_automatic_delivery(provider) && notes.wants(provider));
@@ -1635,12 +1702,18 @@ impl AppState {
             .map(|meeting| (meeting.id.clone(), meeting.started_at));
         let mut heard = Vec::new();
 
-        for AudioPacket {
-            stream_id,
-            timestamp_ms,
-            pcm,
-        } in packets
-        {
+        for packet in packets {
+            if let Some((stream_id, samples)) = packet.gap() {
+                if recording && meeting.is_some() {
+                    skip_audio(&mut session, stream_id, samples, live_sarvam, &mut heard);
+                }
+                continue;
+            }
+            let AudioPacket {
+                stream_id,
+                timestamp_ms,
+                pcm,
+            } = packet;
             let pcm = match session.denoiser.as_mut() {
                 Some(denoiser) if stream_id == STREAM_MIC => denoiser.process(&pcm),
                 _ => pcm,
@@ -1679,6 +1752,14 @@ impl AppState {
                         let played_at =
                             epoch + session.system_samples * 1000 / dsp::SAMPLE_RATE as i64;
                         session.echo.append_played(played_at, &pcm);
+                        if live_sarvam {
+                            let released = session.echo.release_microphone();
+                            if let Some(live) = session.live.as_ref() {
+                                for window in released {
+                                    live.feed(STREAM_MIC, &window);
+                                }
+                            }
+                        }
                     }
                     session.system_samples += pcm.len() as i64 / 2;
                 } else if live_sarvam {
@@ -2151,6 +2232,8 @@ impl AppState {
                         .echo
                         .repeats_meeting_audio(turn.start_ms, &turn.text)
                 {
+                    drop(session);
+                    self.clear_interim(meeting_id, stream_id).await;
                     return;
                 }
             } else {
@@ -2184,15 +2267,41 @@ impl AppState {
 
     async fn remember_meeting_partial(&self, meeting_id: &str, text: &str) {
         let mut session = self.session.lock().await;
-        if !session.echo_suppression {
+        if !session.echo_suppression
+            || session.current.as_ref().map(|meeting| meeting.id.as_str()) != Some(meeting_id)
+        {
             return;
         }
-        let started_at = match session.current.as_ref() {
-            Some(meeting) if meeting.id == meeting_id => meeting.started_at,
-            _ => return,
+        let Some(epoch) = session.system_epoch_ms else {
+            return;
         };
-        let at_ms = (now_ms() - started_at).max(0);
+        let at_ms = epoch + session.system_samples * 1000 / dsp::SAMPLE_RATE as i64;
         session.echo.remember_partial(at_ms, text);
+    }
+
+    async fn partial_repeats_meeting_audio(&self, text: &str) -> bool {
+        let session = self.session.lock().await;
+        if !session.echo_suppression {
+            return false;
+        }
+        let Some(epoch) = session.mic_epoch_ms else {
+            return false;
+        };
+        let at_ms = epoch + session.mic_samples * 1000 / dsp::SAMPLE_RATE as i64;
+        session.echo.repeats_meeting_audio(at_ms, text)
+    }
+
+    async fn clear_interim(&self, meeting_id: &str, stream_id: u32) {
+        self.emit(
+            "transcript_interim",
+            json!({
+                "meetingId": meeting_id,
+                "channel": channel_name(stream_id),
+                "speaker": speaker_name(stream_id),
+                "text": "",
+            }),
+        )
+        .await;
     }
 
     async fn live_speaker(&self, stream_id: u32) -> String {
@@ -2220,6 +2329,9 @@ impl AppState {
                 LiveEvent::Partial { stream_id, text } => {
                     if stream_id != STREAM_MIC {
                         self.remember_meeting_partial(&meeting_id, &text).await;
+                    } else if self.partial_repeats_meeting_audio(&text).await {
+                        self.clear_interim(&meeting_id, stream_id).await;
+                        continue;
                     }
                     let speaker = self.live_speaker(stream_id).await;
                     self.emit(
@@ -2357,6 +2469,7 @@ async fn main() -> io::Result<()> {
     let billing = Arc::new(billing::BillingStore::load(settings::data_dir().join("billing.sqlite3")).await?);
     let billing_config = billing::ProviderConfig::from_env();
     let supabase = Arc::new(SupabaseDb::detect());
+    let connectors = Arc::new(ConnectorService::new(settings.clone(), calendar.clone(), events.clone()));
     let state = AppState {
         started_at: now_ms(),
         session,
@@ -2369,7 +2482,7 @@ async fn main() -> io::Result<()> {
         summarizer: summarizer.clone(),
         settings: settings.clone(),
         calendar: calendar.clone(),
-        connectors: Arc::new(ConnectorService::new(settings.clone(), calendar.clone())),
+        connectors,
         podcast: podcast.clone(),
         accounts,
         billing,
@@ -3379,6 +3492,18 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 Err(error) => json_response(400, json!({"error":error})),
             }
         }
+        ("GET", "/api/folders/rules") | ("POST", "/api/folders/rules") => {
+            match workspace::folder_rules(&state.store, (req.method == "POST").then_some(&body)).await {
+                Ok(result) => {
+                    let filed: Vec<String> = result["filed"].as_array().into_iter().flatten().filter_map(Value::as_str).map(String::from).collect();
+                    for id in filed {
+                        state.refresh_completed_meeting(&id).await;
+                    }
+                    json_response(200, result)
+                }
+                Err(error) => json_response(400, json!({"error":error})),
+            }
+        }
         (_, path) if path == "/api/chat" || path.starts_with("/api/chat/") => {
             chat::route(req, state, &body).await
         }
@@ -3627,6 +3752,14 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                     }
                 }
                 if let Some(enabled) = object.get("echoSuppression").and_then(Value::as_bool) {
+                    if session.echo_suppression && !enabled {
+                        let held = session.echo.drain_microphone();
+                        if let Some(live) = session.live.as_ref() {
+                            if !held.is_empty() {
+                                live.feed(STREAM_MIC, &held);
+                            }
+                        }
+                    }
                     session.echo_suppression = enabled;
                 }
             }
@@ -3758,18 +3891,25 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             }
         }
         ("POST", "/api/connectors/connect") => {
-            if state.security.hosted {
+            let provider = body
+                .get("provider")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if state.security.hosted && connectors::spec_for(provider).is_some_and(|spec| spec.oauth.is_some()) {
                 return json_response(
                     409,
                     json!({"error": "Google sign-in requires the local backend. Hosted OAuth is not configured."}),
                 );
             }
-            let provider = body
-                .get("provider")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
             match state.connectors.connect(provider).await {
                 Ok(value) => json_response(200, value),
+                Err(cause) => json_response(400, json!({"error": cause})),
+            }
+        }
+        ("POST", "/api/connectors/setup") => {
+            let provider = body.get("provider").and_then(Value::as_str).unwrap_or_default();
+            match state.connectors.setup(provider).await {
+                Ok(connector) => json_response(200, json!({"success": true, "connector": connector})),
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
@@ -3779,7 +3919,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             match state.connectors.disconnect(provider).await {
-                Ok(()) => json_response(200, json!({"success": true, "provider": provider})),
+                Ok(message) => json_response(200, json!({"success": true, "provider": provider, "message": message})),
                 Err(cause) => json_response(400, json!({"error": cause})),
             }
         }
@@ -3812,7 +3952,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
             let Some(meeting) = state.store.get(meeting_id).await else {
                 return json_response(404, json!({"error": "Meeting not found"}));
             };
-            let value = serde_json::to_value(&meeting).unwrap_or_else(|_| json!({}));
+            let value = connectors::delivery_value(&meeting);
             if !force && connectors::delivered_ok(&value, provider) {
                 return json_response(
                     409,
@@ -3877,7 +4017,7 @@ async fn route(req: &HttpRequest, state: &AppState) -> (u16, &'static str, Strin
                 .query
                 .get("minutesAhead")
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(2880);
+                .unwrap_or(4320);
             json_response(200, state.calendar.events(back, ahead).await)
         }
         ("POST", "/api/calendar/events") => {

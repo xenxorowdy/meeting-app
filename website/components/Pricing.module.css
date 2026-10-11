@@ -1,0 +1,202 @@
+.pricing {
+    padding: var(--s-9) 0;
+}
+
+.head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s-5);
+}
+
+.headCopy {
+    display: grid;
+    gap: var(--s-4);
+}
+
+.headCopy h2 {
+    max-width: 11em;
+}
+
+.toggle {
+    display: inline-flex;
+    padding: var(--s-1);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+}
+
+.toggle button {
+    min-height: 44px;
+    padding: 0 var(--s-3);
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fg-dim);
+    font-size: var(--t-small);
+    font-stretch: 112%;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background-color 200ms var(--ease),
+        color 200ms var(--ease);
+}
+
+/* The active option follows the attribute the head script set, so it is right before hydration. */
+:global(html:not([data-currency='inr'])) .toggle .usd,
+:global(html[data-currency='inr']) .toggle .inr {
+    background: var(--fg);
+    color: var(--bg);
+}
+
+.showInr {
+    display: none;
+}
+
+:global(html[data-currency='inr']) .showInr {
+    display: inline;
+}
+
+:global(html[data-currency='inr']) .showUsd {
+    display: none;
+}
+
+.plans {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: var(--s-4);
+    margin-top: var(--s-7);
+    align-items: stretch;
+}
+
+.pro,
+.free {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    padding: var(--s-5);
+    border-radius: 24px;
+}
+
+/* Pro sits on the orange tint inside the section's one orange border; Free is a plain white card. */
+.pro {
+    background: var(--orange-tint);
+    border: 1px solid var(--orange);
+}
+
+/* The tint under a tint loses contrast, so Pro's badge is a solid orange fill instead. */
+.pro :global(.chip) {
+    background: var(--orange);
+    color: var(--ink);
+}
+
+.free {
+    background: var(--bg-raised);
+    border: 1px solid var(--line-strong);
+}
+
+.planHead {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+}
+
+.planName {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: var(--t-h3);
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+
+.price {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-2);
+}
+
+.amount {
+    font-size: clamp(3.5rem, 7vw, 6.5rem);
+    line-height: 1;
+    color: var(--accent-display);
+}
+
+.free .amount {
+    color: var(--fg);
+}
+
+.per {
+    color: var(--fg-mute);
+}
+
+.features {
+    display: grid;
+    gap: var(--s-2);
+    flex: 1;
+}
+
+.features li {
+    display: flex;
+    gap: var(--s-2);
+    color: var(--fg-dim);
+}
+
+.features li::before {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-top: 0.6em;
+    border-radius: 50%;
+    background: var(--orange);
+}
+
+.pro :global(.btn) {
+    width: 100%;
+}
+
+.free :global(.link) {
+    align-self: flex-start;
+}
+
+.enterprise {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-3) var(--s-4);
+    margin-top: var(--s-4);
+    padding: var(--s-4) var(--s-5);
+    border-radius: 24px;
+    border: 1px dashed var(--line-strong);
+}
+
+.enterprise ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1) var(--s-4);
+    margin-left: auto;
+    color: var(--fg-mute);
+    font-size: var(--t-small);
+}
+
+@media (max-width: 960px) {
+    .plans {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .enterprise ul {
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .pro,
+    .free {
+        padding: var(--s-4);
+    }
+
+    .pro :global(.btn) {
+        white-space: normal;
+        text-align: center;
+    }
+}

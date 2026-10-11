@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../apps/desktop/googleSignIn.js'), 'utf8');
 const options = { provider: 'supabase', url: 'https://project.supabase.co' };
 
-function desktop(openExternal, { timeout = 5_000 } = {}) {
+function desktop(openExternal, { timeout = 5_000, onReturn = () => {} } = {}) {
     let handler;
     const context = {
         require: name => name === 'electron' ? {
@@ -18,12 +18,12 @@ function desktop(openExternal, { timeout = 5_000 } = {}) {
         setTimeout: callback => setTimeout(callback, timeout), clearTimeout,
     };
     vm.runInNewContext(source, context);
-    context.module.exports.registerHandlers();
+    context.module.exports.registerHandlers(undefined, { onReturn });
     return input => handler({}, input);
 }
 
 test('Supabase desktop sign-in binds a loopback callback to PKCE and ignores unrelated requests', async () => {
-    let auth, redirect;
+    let auth, redirect, returned = 0;
     const start = desktop(async url => {
         auth = new URL(url);
         assert.equal(auth.origin, options.url);
@@ -40,9 +40,14 @@ test('Supabase desktop sign-in binds a loopback callback to PKCE and ignores unr
         const response = await fetch(`${redirect}?code=one-time-code`);
         assert.equal(response.headers.get('cache-control'), 'no-store');
         assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
-        assert.match(await response.text(), /Return to Kesami/);
-    });
+        const page = await response.text();
+        assert.match(page, /Return to Kesami/);
+        assert.match(page, /href="kesami:\/\/open"/);
+        assert.equal(page.includes('one-time-code'), false);
+        assert.equal(page.includes('verifier'), false);
+    }, { onReturn: () => { returned++; } });
     const authorization = await start(options);
+    assert.equal(returned, 1, 'only a validated callback raises Kesami');
     assert.equal(authorization.code, 'one-time-code');
     assert.equal(crypto.createHash('sha256').update(authorization.verifier).digest('base64url'), auth.searchParams.get('code_challenge'));
     assert.deepEqual(Object.keys(authorization).sort(), ['code', 'verifier']);
@@ -89,7 +94,8 @@ test('denied, missing-code, and timed-out attempts release the listener', async 
         let redirect;
         const start = desktop(async url => {
             redirect = new URL(url).searchParams.get('redirect_to');
-            await fetch(`${redirect}?${query}`);
+            const response = await fetch(`${redirect}?${query}`);
+            assert.match(await response.text(), /Open Kesami to try signing in again/);
         });
         await assert.rejects(start(options), message);
         await assert.rejects(fetch(redirect), /fetch failed/);

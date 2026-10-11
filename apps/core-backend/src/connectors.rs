@@ -1,7 +1,16 @@
 use chrono::{TimeZone, Utc};
 use reqwest::{Client, RequestBuilder};
 use serde_json::{json, Map, Value};
-use std::{sync::Arc, time::Duration};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex as StdMutex},
+    time::Duration,
+};
+use tokio::{
+    sync::{broadcast, Mutex},
+    time::Instant,
+};
 
 use crate::calendar::{self, CalendarService};
 use crate::library::timecode as clock;
@@ -19,6 +28,12 @@ const NOTION_VERSION: &str = "2022-06-28";
 const NOTION_TEXT_LIMIT: usize = 1900;
 const NOTION_BLOCK_LIMIT: usize = 100;
 const SLACK_TEXT_LIMIT: usize = 38000;
+const ONE_CLICK_POLL: Duration = Duration::from_secs(2);
+const ONE_CLICK_WINDOW: Duration = Duration::from_secs(10 * 60);
+const ONE_CLICK_CACHE: Duration = Duration::from_secs(10 * 60);
+const ONE_CLICK_RETRY: Duration = Duration::from_secs(60);
+const REFRESH_MARGIN_MS: i64 = 60_000;
+const DESTINATION_NAME: &str = "Kesami Meetings";
 const DOCS_FOLDER_NAME: &str = "Kesami Meetings";
 const DRIVE_FOLDER_MIME: &str = "application/vnd.google-apps.folder";
 const DRIVE_DOC_MIME: &str = "application/vnd.google-apps.document";
@@ -38,6 +53,19 @@ pub struct Spec {
     pub help: &'static str,
     pub fields: &'static [Field],
     pub oauth: Option<&'static str>,
+    pub destination: &'static [&'static str],
+}
+
+fn authorize_prefix(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        SLACK => "https://slack.com/oauth/v2/authorize?",
+        NOTION => "https://api.notion.com/v1/oauth/authorize?",
+        LINEAR => "https://linear.app/oauth/authorize?",
+        JIRA => "https://auth.atlassian.com/authorize?",
+        ASANA => "https://app.asana.com/-/oauth_authorize?",
+        CLICKUP => "https://app.clickup.com/api?",
+        _ => return None,
+    })
 }
 
 const fn field(
@@ -67,6 +95,7 @@ pub const SPECS: [Spec; 7] = [
             field("channelLabel", "Channel label (display only)", false, false, "#meeting-recaps"),
         ],
         oauth: None,
+        destination: &[],
     },
     Spec {
         id: NOTION,
@@ -78,6 +107,7 @@ pub const SPECS: [Spec; 7] = [
             field("parentPageId", "Parent page link or ID", false, true, "https://www.notion.so/Meeting-notes-…"),
         ],
         oauth: None,
+        destination: &["parentPageId"],
     },
     Spec {
         id: GOOGLE_DOCS,
@@ -86,6 +116,7 @@ pub const SPECS: [Spec; 7] = [
         help: "Sign in with Google. Each meeting becomes a Google Doc — notes plus the full transcript — in a “Kesami Meetings” folder in your Drive. Kesami can only see the files it creates.",
         fields: &[],
         oauth: Some(calendar::GOOGLE_DOCS),
+        destination: &[],
     },
     Spec {
         id: LINEAR,
@@ -97,6 +128,7 @@ pub const SPECS: [Spec; 7] = [
             field("teamKey", "Team key", false, true, "ENG"),
         ],
         oauth: None,
+        destination: &["teamKey"],
     },
     Spec {
         id: JIRA,
@@ -111,6 +143,7 @@ pub const SPECS: [Spec; 7] = [
             field("issueType", "Issue type", false, false, "Task"),
         ],
         oauth: None,
+        destination: &["cloudId", "projectKey"],
     },
     Spec {
         id: ASANA,
@@ -122,6 +155,7 @@ pub const SPECS: [Spec; 7] = [
             field("projectId", "Project link or ID", false, true, "https://app.asana.com/0/1200000000000000/list"),
         ],
         oauth: None,
+        destination: &["projectId"],
     },
     Spec {
         id: CLICKUP,
@@ -133,6 +167,7 @@ pub const SPECS: [Spec; 7] = [
             field("listId", "List link or ID", false, true, "https://app.clickup.com/9012345678/v/li/901234567890"),
         ],
         oauth: None,
+        destination: &["listId"],
     },
 ];
 
@@ -157,13 +192,24 @@ pub fn allows_automatic_delivery(provider: &str) -> bool {
     spec_for(provider).is_some_and(|spec| spec.kind != "tasks")
 }
 
+fn signed_in(config: &Map<String, Value>) -> Option<&Map<String, Value>> {
+    config
+        .get("oauth")
+        .and_then(Value::as_object)
+        .filter(|oauth| !text(oauth, "accessToken").is_empty())
+}
+
 pub fn is_connected(spec: &Spec, config: &Map<String, Value>) -> bool {
-    spec.oauth.is_none()
-        && spec
-            .fields
-            .iter()
-            .filter(|field| field.required)
-            .all(|field| !text(config, field.key).is_empty())
+    if spec.oauth.is_some() {
+        return false;
+    }
+    if signed_in(config).is_some() {
+        return spec.destination.iter().all(|key| !text(config, key).is_empty());
+    }
+    spec.fields
+        .iter()
+        .filter(|field| field.required)
+        .all(|field| !text(config, field.key).is_empty())
 }
 
 pub fn public_config(spec: &Spec, config: &Map<String, Value>, oauth: Option<&Value>) -> Value {
@@ -186,7 +232,11 @@ pub fn public_config(spec: &Spec, config: &Map<String, Value>, oauth: Option<&Va
             .unwrap_or_else(|| is_connected(spec, config)),
         "oauth": spec.oauth.is_some(),
         "configured": oauth.map(|status| status["configured"] == json!(true)).unwrap_or(true),
-        "account": oauth.and_then(|status| status.get("account")).cloned().unwrap_or(Value::Null),
+        "account": oauth
+            .and_then(|status| status.get("account").cloned())
+            .or_else(|| signed_in(config).map(|tokens| json!(text(tokens, "account"))).filter(|account| account != ""))
+            .unwrap_or(Value::Null),
+        "signedIn": signed_in(config).is_some(),
         "autoPush": config.get("autoPush").and_then(Value::as_bool).unwrap_or(false),
         "config": out,
         "fields": spec.fields.iter().map(|field| json!({
@@ -196,6 +246,7 @@ pub fn public_config(spec: &Spec, config: &Map<String, Value>, oauth: Option<&Va
             "required": field.required,
             "placeholder": field.placeholder,
         })).collect::<Vec<_>>(),
+        "destination": text(config, "destinationLabel"),
     })
 }
 
@@ -215,6 +266,9 @@ pub fn merge_config(
         let value = value.trim();
         if field.secret && value.is_empty() {
             continue;
+        }
+        if field.secret {
+            next.remove("oauth");
         }
         next.insert(field.key.to_string(), Value::String(value.to_string()));
     }
@@ -389,6 +443,15 @@ pub struct ActionItem {
     pub deadline: Option<String>,
     pub due_date: Option<String>,
     pub priority: Option<String>,
+    pub completed: bool,
+    pub commitment: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DoneAction {
+    pub label: String,
+    pub title: String,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -401,7 +464,97 @@ pub struct MeetingNotes {
     pub summary_markdown: String,
     pub key_decisions: Vec<String>,
     pub action_items: Vec<ActionItem>,
+    pub commitments: Vec<ActionItem>,
+    pub done_actions: Vec<DoneAction>,
+    pub notes_url: Option<String>,
     pub transcript: Vec<TranscriptLine>,
+}
+
+const COMMITMENT_KINDS: [&str; 3] = ["explicit_commitment", "other_person_commitment", "suggested_action"];
+
+fn normalized(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches('.')
+        .to_lowercase()
+}
+
+fn meeting_commitments(meeting: &Value, tasks: &[ActionItem]) -> Vec<ActionItem> {
+    let raw_tasks = meeting.get("actionItems").and_then(Value::as_array).cloned().unwrap_or_default();
+    let task_ids: Vec<&str> = raw_tasks.iter().filter_map(|task| task["id"].as_str()).collect();
+    let linked: Vec<&str> = raw_tasks.iter().filter_map(|task| task["commitmentId"].as_str()).collect();
+    let mut seen: Vec<String> = tasks.iter().map(|task| normalized(&task.task)).collect();
+    let mut out = Vec::new();
+    for candidate in meeting
+        .pointer("/metadata/meetingCommitments/candidates")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let field = |key: &str| candidate[key].as_str().map(str::trim).filter(|value| !value.is_empty());
+        if field("status") == Some("dismissed")
+            || !field("classification").is_some_and(|kind| COMMITMENT_KINDS.contains(&kind))
+            || field("actionItemId").is_some_and(|id| task_ids.contains(&id))
+            || field("id").is_some_and(|id| linked.contains(&id))
+        {
+            continue;
+        }
+        let Some(action) = field("reviewedAction").or_else(|| field("targetAction")) else {
+            continue;
+        };
+        let key = normalized(action);
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key);
+        let deadline = meaningful(field("dueDate"), &["TBD", "none", "n/a"]);
+        out.push(ActionItem {
+            task: action.to_string(),
+            owner: meaningful(field("reviewedPerson").or_else(|| field("person")), &["Unknown", "Unassigned"]),
+            due_date: deadline.clone().filter(|due| is_iso_date(due)),
+            deadline,
+            priority: None,
+            completed: false,
+            commitment: Some(field("commitment").unwrap_or(action).to_string()),
+        });
+    }
+    out
+}
+
+fn meeting_done_actions(meeting: &Value) -> Vec<DoneAction> {
+    meeting
+        .pointer("/metadata/postMeetingActions/items")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| item["status"] == "succeeded")
+        .filter_map(|item| {
+            let title = item.pointer("/review/title").and_then(Value::as_str).unwrap_or_default().trim().to_string();
+            let url = item.pointer("/result/url").and_then(Value::as_str).filter(|url| url.starts_with("https://")).map(str::to_string);
+            let label = match item.pointer("/review/destination").and_then(Value::as_str)? {
+                "google_calendar" => "Calendar event".to_string(),
+                "jira" => match item.pointer("/result/key").and_then(Value::as_str) {
+                    Some(key) => format!("Jira issue {key}"),
+                    None => "Jira issue".to_string(),
+                },
+                "slack" => "Summary posted to Slack".to_string(),
+                _ => return None,
+            };
+            Some(DoneAction { label, title, url })
+        })
+        .collect()
+}
+
+pub fn delivery_value(meeting: &crate::Meeting) -> Value {
+    let mut value = serde_json::to_value(meeting).unwrap_or_else(|_| json!({}));
+    if !crate::commitments::current(meeting) {
+        if let Some(metadata) = value.get_mut("metadata").and_then(Value::as_object_mut) {
+            metadata.remove("meetingCommitments");
+        }
+    }
+    value
 }
 
 fn is_iso_date(value: &str) -> bool {
@@ -469,6 +622,7 @@ impl MeetingNotes {
                         ..Default::default()
                     });
                 }
+                let completed = item.get("completed").and_then(Value::as_bool).unwrap_or(false);
                 let task = item.get("task").and_then(Value::as_str)?.trim().to_string();
                 let deadline = meaningful(
                     item.get("deadline").and_then(Value::as_str),
@@ -480,10 +634,17 @@ impl MeetingNotes {
                     due_date: deadline.clone().filter(|d| is_iso_date(d)),
                     deadline,
                     priority: meaningful(item.get("priority").and_then(Value::as_str), &[]),
+                    completed,
+                    commitment: None,
                 })
             })
             .filter(|item| !item.task.is_empty())
-            .collect();
+            .collect::<Vec<_>>();
+        let commitments = meeting_commitments(meeting, &action_items);
+        let notes_url = [NOTION, GOOGLE_DOCS].iter().find_map(|provider| {
+            let delivery = meeting.pointer(&format!("/metadata/connectorDeliveries/{provider}"))?;
+            (delivery["ok"] == json!(true)).then(|| delivery["url"].as_str().map(str::to_string)).flatten()
+        });
         Self {
             id: meeting
                 .get("id")
@@ -517,6 +678,9 @@ impl MeetingNotes {
                 .map(str::to_string)
                 .collect(),
             action_items,
+            commitments,
+            done_actions: meeting_done_actions(meeting),
+            notes_url,
             transcript: meeting
                 .get("transcript")
                 .and_then(Value::as_array)
@@ -541,14 +705,23 @@ impl MeetingNotes {
     pub fn has_content(&self) -> bool {
         !self.summary_markdown.is_empty()
             || !self.action_items.is_empty()
+            || !self.commitments.is_empty()
             || !self.key_decisions.is_empty()
     }
 
     pub fn wants(&self, provider: &str) -> bool {
         match spec_for(provider).map(|spec| spec.kind) {
-            Some("tasks") => !self.action_items.is_empty(),
+            Some("tasks") => !self.follow_ups().is_empty(),
             _ => self.has_content(),
         }
+    }
+
+    pub fn follow_ups(&self) -> Vec<&ActionItem> {
+        self.action_items
+            .iter()
+            .filter(|item| !item.completed)
+            .chain(self.commitments.iter())
+            .collect()
     }
 
     fn meta_line(&self) -> String {
@@ -571,15 +744,21 @@ impl MeetingNotes {
         if let Some(deadline) = &item.deadline {
             lines.push(format!("Due: {deadline}"));
         }
+        if let Some(said) = &item.commitment {
+            lines.push(format!("Commitment made in the meeting: “{said}”"));
+        }
         lines.push(format!(
             "From the meeting “{}” ({}).",
             self.title,
             self.meta_line()
         ));
+        if let Some(url) = &self.notes_url {
+            lines.push(format!("Meeting notes: {url}"));
+        }
         let summary = first_paragraph(&self.summary_markdown);
         if !summary.is_empty() {
             lines.push(String::new());
-            lines.push(summary);
+            lines.push(format!("Summary: {summary}"));
         }
         lines.push(String::new());
         lines.push("Created by Kesami.".into());
@@ -644,14 +823,25 @@ pub fn slack_payload(notes: &MeetingNotes) -> Value {
         }
     }
     if !notes.action_items.is_empty() && !notes.summary_markdown.contains("## Next steps") {
-        text.push_str("\n*Action items*\n");
+        text.push_str("\n*Tasks*\n");
         for item in &notes.action_items {
-            let owner = item
-                .owner
-                .as_deref()
-                .map(|o| format!(" — {o}"))
-                .unwrap_or_default();
-            text.push_str(&format!("☐ {}{owner}\n", item.task));
+            text.push_str(&format!("{} {}\n", if item.completed { "☑" } else { "☐" }, item_line(item)));
+        }
+    }
+    if !notes.commitments.is_empty() {
+        text.push_str("\n*Commitments*\n");
+        for item in &notes.commitments {
+            text.push_str(&format!("☐ {}\n", item_line(item)));
+        }
+    }
+    if !notes.done_actions.is_empty() {
+        text.push_str("\n*Done after the meeting*\n");
+        for done in &notes.done_actions {
+            let title = match &done.url {
+                Some(url) => format!("<{url}|{}>", done.title.replace(['<', '>', '|'], " ")),
+                None => done.title.clone(),
+            };
+            text.push_str(&format!("✓ {}: {title}\n", done.label));
         }
     }
     json!({ "text": truncate(text.trim_end(), SLACK_TEXT_LIMIT), "mrkdwn": true })
@@ -671,8 +861,29 @@ fn notion_block(kind: &str, content: &str) -> Value {
     json!({"object": "block", "type": kind, kind: {"rich_text": notion_text(&plain)}})
 }
 
-fn notion_todo(content: &str) -> Value {
-    json!({"object": "block", "type": "to_do", "to_do": {"rich_text": notion_text(content), "checked": false}})
+fn notion_todo(content: &str, checked: bool) -> Value {
+    json!({"object": "block", "type": "to_do", "to_do": {"rich_text": notion_text(content), "checked": checked}})
+}
+
+fn notion_link(label: &str, title: &str, url: Option<&str>) -> Value {
+    let mut spans = vec![json!({"type": "text", "text": {"content": format!("{label}: ")}})];
+    let mut text = json!({"content": truncate(title, NOTION_TEXT_LIMIT)});
+    if let Some(url) = url {
+        text["link"] = json!({"url": url});
+    }
+    spans.push(json!({"type": "text", "text": text}));
+    json!({"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": spans}})
+}
+
+fn item_line(item: &ActionItem) -> String {
+    let mut line = item.task.clone();
+    if let Some(owner) = &item.owner {
+        line.push_str(&format!(" — {owner}"));
+    }
+    if let Some(deadline) = &item.deadline {
+        line.push_str(&format!(" (due {deadline})"));
+    }
+    line
 }
 
 pub fn notion_blocks(notes: &MeetingNotes) -> Vec<Value> {
@@ -712,16 +923,21 @@ pub fn notion_blocks(notes: &MeetingNotes) -> Vec<Value> {
         );
     }
     if !notes.action_items.is_empty() {
-        blocks.push(notion_block("heading_2", "Action items"));
+        blocks.push(notion_block("heading_2", "Tasks"));
         for item in &notes.action_items {
-            let mut line = item.task.clone();
-            if let Some(owner) = &item.owner {
-                line.push_str(&format!(" — {owner}"));
-            }
-            if let Some(deadline) = &item.deadline {
-                line.push_str(&format!(" (due {deadline})"));
-            }
-            blocks.push(notion_todo(&line));
+            blocks.push(notion_todo(&item_line(item), item.completed));
+        }
+    }
+    if !notes.commitments.is_empty() {
+        blocks.push(notion_block("heading_2", "Commitments"));
+        for item in &notes.commitments {
+            blocks.push(notion_todo(&item_line(item), false));
+        }
+    }
+    if !notes.done_actions.is_empty() {
+        blocks.push(notion_block("heading_2", "Done after the meeting"));
+        for done in &notes.done_actions {
+            blocks.push(notion_link(&done.label, &done.title, done.url.as_deref()));
         }
     }
     blocks.truncate(NOTION_BLOCK_LIMIT);
@@ -792,6 +1008,98 @@ fn slack_target(config: &Map<String, Value>) -> Value {
         text(config, "webhookUrl")
     ])));
     target
+}
+
+fn slack_grant_config(
+    current: &Map<String, Value>,
+    grant: &Value,
+) -> Result<(Map<String, Value>, String), String> {
+    let url = grant["webhookUrl"]
+        .as_str()
+        .map(str::trim)
+        .filter(|url| valid_slack_webhook(url))
+        .ok_or("Slack didn’t return a usable webhook. Try again.")?;
+    let channel = grant["channel"].as_str().unwrap_or_default().trim();
+    let workspace = grant["workspace"].as_str().unwrap_or_default().trim();
+    let label = match (channel.is_empty(), workspace.is_empty()) {
+        (false, false) => format!("{channel} · {workspace}"),
+        (false, true) => channel.to_string(),
+        (true, false) => workspace.to_string(),
+        (true, true) => String::new(),
+    };
+    let next = merge_config(
+        spec_for(SLACK).ok_or("unknown connector: slack")?,
+        current,
+        &json!({ "webhookUrl": url, "channelLabel": label }),
+    )?;
+    Ok((next, label))
+}
+
+fn oauth_grant_config(
+    spec: &Spec,
+    current: &Map<String, Value>,
+    grant: &Value,
+    now_ms: i64,
+) -> Result<Map<String, Value>, String> {
+    let present = |key: &str| grant[key].as_str().map(str::trim).filter(|value| !value.is_empty());
+    let access = present("accessToken")
+        .ok_or_else(|| format!("{} didn’t return an access token. Try again.", spec.label))?;
+    let mut oauth = Map::new();
+    oauth.insert("accessToken".into(), json!(access));
+    for key in ["refreshToken", "account", "workspace"] {
+        if let Some(value) = present(key) {
+            oauth.insert(key.into(), json!(value));
+        }
+    }
+    if let Some(seconds) = grant["expiresIn"].as_i64().filter(|seconds| *seconds > 0) {
+        oauth.insert("expiresAt".into(), json!(now_ms + seconds * 1000));
+    }
+    let mut next = current.clone();
+    for field in spec.fields.iter().filter(|field| field.secret) {
+        next.remove(field.key);
+    }
+    next.insert("oauth".into(), Value::Object(oauth));
+    Ok(next)
+}
+
+fn refreshed_oauth(oauth: &Map<String, Value>, tokens: &Value, now_ms: i64) -> Option<Map<String, Value>> {
+    let access = tokens["accessToken"].as_str().map(str::trim).filter(|value| !value.is_empty())?;
+    let mut next = oauth.clone();
+    next.insert("accessToken".into(), json!(access));
+    if let Some(refresh) = tokens["refreshToken"].as_str().map(str::trim).filter(|value| !value.is_empty()) {
+        next.insert("refreshToken".into(), json!(refresh));
+    }
+    match tokens["expiresIn"].as_i64().filter(|seconds| *seconds > 0) {
+        Some(seconds) => next.insert("expiresAt".into(), json!(now_ms + seconds * 1000)),
+        None => next.remove("expiresAt"),
+    };
+    Some(next)
+}
+
+fn needs_refresh(oauth: &Map<String, Value>, now_ms: i64) -> bool {
+    oauth
+        .get("expiresAt")
+        .and_then(Value::as_i64)
+        .is_some_and(|expires_at| expires_at - REFRESH_MARGIN_MS <= now_ms)
+}
+
+fn setup_failure(spec: &Spec, error: &str) -> String {
+    let what = if spec.kind == "tasks" { "tasks" } else { "notes" };
+    format!("Signed in to {}, but Kesami couldn’t set up where to send {what}: {error}", spec.label)
+}
+
+fn disconnect_message(spec: &Spec, revoked: Option<bool>) -> String {
+    match (spec.id, revoked) {
+        (_, Some(true)) => format!("Disconnected and revoked Kesami’s access to {}.", spec.label),
+        (SLACK, _) => "Disconnected. To stop the webhook entirely, remove the Kesami app from the channel’s Integrations in Slack.".into(),
+        (JIRA, Some(false)) => "Disconnected. To remove Kesami’s access completely, open your Atlassian account settings → Connected apps.".into(),
+        (CLICKUP, Some(false)) => "Disconnected. To remove Kesami’s access completely, remove it from your ClickUp workspace’s connected apps.".into(),
+        (_, Some(false)) => format!(
+            "Disconnected, but Kesami couldn’t revoke its access just now. Remove Kesami from {}’s connected apps to revoke it.",
+            spec.label
+        ),
+        (_, None) => "Disconnected.".into(),
+    }
 }
 
 pub(crate) fn reviewed_slack_body(title: &str, body: &str) -> Value {
@@ -958,10 +1266,13 @@ pub fn google_doc_html(notes: &MeetingNotes) -> String {
                 .collect::<Vec<_>>(),
         ));
     }
-    if !notes.action_items.is_empty() {
-        body.push_str("<h2>Action items</h2><ul>");
-        for item in &notes.action_items {
-            let mut line = format!("☐ {}", escape_html(&item.task));
+    for (heading, items) in [("Tasks", &notes.action_items), ("Commitments", &notes.commitments)] {
+        if items.is_empty() {
+            continue;
+        }
+        body.push_str(&format!("<h2>{heading}</h2><ul>"));
+        for item in items {
+            let mut line = format!("{} {}", if item.completed { "☑" } else { "☐" }, escape_html(&item.task));
             if let Some(owner) = &item.owner {
                 line.push_str(&format!(" — <b>{}</b>", escape_html(owner)));
             }
@@ -969,6 +1280,17 @@ pub fn google_doc_html(notes: &MeetingNotes) -> String {
                 line.push_str(&format!(" (due {})", escape_html(deadline)));
             }
             body.push_str(&format!("<li>{line}</li>"));
+        }
+        body.push_str("</ul>");
+    }
+    if !notes.done_actions.is_empty() {
+        body.push_str("<h2>Done after the meeting</h2><ul>");
+        for done in &notes.done_actions {
+            let title = match &done.url {
+                Some(url) => format!("<a href=\"{}\">{}</a>", escape_html(url), escape_html(&done.title)),
+                None => escape_html(&done.title),
+            };
+            body.push_str(&format!("<li>✓ {}: {title}</li>", escape_html(&done.label)));
         }
         body.push_str("</ul>");
     }
@@ -1043,22 +1365,121 @@ fn error_detail(status: reqwest::StatusCode, body: &Value, raw: &str) -> String 
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct Endpoints {
+    cloud: Option<String>,
+    notion: String,
+    linear: String,
+    atlassian: String,
+    asana: String,
+    clickup: String,
+    poll: Duration,
+}
+
+impl Endpoints {
+    fn live() -> Self {
+        Self {
+            cloud: crate::supabase_auth::cloud_origin(),
+            notion: "https://api.notion.com".into(),
+            linear: "https://api.linear.app".into(),
+            atlassian: "https://api.atlassian.com".into(),
+            asana: "https://app.asana.com".into(),
+            clickup: "https://api.clickup.com".into(),
+            poll: ONE_CLICK_POLL,
+        }
+    }
+}
+
 pub struct ConnectorService {
+    endpoints: Endpoints,
     http: Client,
     settings: Arc<SettingsStore>,
     calendar: Arc<CalendarService>,
+    events: broadcast::Sender<String>,
+    attempts: StdMutex<HashMap<&'static str, u64>>,
+    one_click: Mutex<Option<(Instant, Vec<String>)>>,
+    refreshing: Mutex<()>,
+}
+
+fn id_of(value: &Value) -> Option<String> {
+    match value {
+        Value::String(id) if !id.is_empty() => Some(id.clone()),
+        Value::Number(id) => Some(id.to_string()),
+        _ => None,
+    }
 }
 
 impl ConnectorService {
-    pub fn new(settings: Arc<SettingsStore>, calendar: Arc<CalendarService>) -> Self {
+    pub fn new(
+        settings: Arc<SettingsStore>,
+        calendar: Arc<CalendarService>,
+        events: broadcast::Sender<String>,
+    ) -> Self {
+        Self::with_endpoints(settings, calendar, events, Endpoints::live())
+    }
+
+    fn with_endpoints(
+        settings: Arc<SettingsStore>,
+        calendar: Arc<CalendarService>,
+        events: broadcast::Sender<String>,
+        endpoints: Endpoints,
+    ) -> Self {
         Self {
+            endpoints,
             http: Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
             settings,
             calendar,
+            events,
+            attempts: StdMutex::default(),
+            one_click: Mutex::new(None),
+            refreshing: Mutex::new(()),
         }
+    }
+
+    async fn one_click_providers(&self) -> Vec<String> {
+        let Some(origin) = self.endpoints.cloud.clone() else {
+            return Vec::new();
+        };
+        let mut cached = self.one_click.lock().await;
+        if let Some((until, providers)) = cached.as_ref() {
+            if Instant::now() < *until {
+                return providers.clone();
+            }
+        }
+        let fetched = match self
+            .http
+            .get(format!("{origin}/v1/connectors"))
+            .timeout(Duration::from_secs(4))
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => response.json::<Value>().await.ok(),
+            _ => None,
+        };
+        let (ttl, providers) = match fetched.as_ref().and_then(|body| body["providers"].as_array()) {
+            Some(list) => (
+                ONE_CLICK_CACHE,
+                list.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>(),
+            ),
+            None => (ONE_CLICK_RETRY, Vec::new()),
+        };
+        *cached = Some((Instant::now() + ttl, providers.clone()));
+        providers
+    }
+
+    fn present(
+        &self,
+        spec: &Spec,
+        config: &Map<String, Value>,
+        oauth: Option<&Value>,
+        one_click: &[String],
+    ) -> Value {
+        let mut connector = public_config(spec, config, oauth);
+        connector["oneClick"] = json!(spec.oauth.is_none() && one_click.iter().any(|id| id == spec.id));
+        connector
     }
 
     async fn oauth_status(&self, spec: &Spec) -> Option<Value> {
@@ -1092,10 +1513,625 @@ impl ConnectorService {
 
     pub async fn connect(self: &Arc<Self>, provider: &str) -> Result<Value, String> {
         let spec = spec_for(provider).ok_or_else(|| format!("unknown connector: {provider}"))?;
-        let oauth = spec
-            .oauth
-            .ok_or_else(|| format!("{} connects with a token, not a sign-in.", spec.label))?;
-        self.calendar.begin(oauth).await
+        match spec.oauth {
+            Some(oauth) => self.calendar.begin(oauth).await,
+            None => self.begin_one_click(spec).await,
+        }
+    }
+
+    fn next_attempt(&self, provider: &'static str) -> u64 {
+        let mut attempts = self.attempts.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let attempt = attempts.entry(provider).or_default();
+        *attempt += 1;
+        *attempt
+    }
+
+    fn current_attempt(&self, provider: &str) -> u64 {
+        let attempts = self.attempts.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        attempts.get(provider).copied().unwrap_or_default()
+    }
+
+    async fn begin_one_click(self: &Arc<Self>, spec: &'static Spec) -> Result<Value, String> {
+        let paste = if spec.id == SLACK { "Paste a webhook URL instead." } else { "Paste a token instead." };
+        let origin = self
+            .endpoints
+            .cloud
+            .clone()
+            .ok_or_else(|| format!("One-click {} needs the Kesami cloud. {paste}", spec.label))?;
+        let started = self
+            .http
+            .post(format!("{origin}/v1/connectors/{}/start", spec.id))
+            .send()
+            .await
+            .map_err(|_| {
+                format!(
+                    "Couldn’t reach Kesami to start {} sign-in. Check your connection and try again.",
+                    spec.label
+                )
+            })?;
+        let ok = started.status().is_success();
+        let body: Value = started.json().await.unwrap_or(Value::Null);
+        if !ok {
+            return Err(body["error"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("{} sign-in is unavailable right now. {paste}", spec.label)));
+        }
+        let prefix = authorize_prefix(spec.id).unwrap_or("https://");
+        let auth_url = body["authUrl"].as_str().filter(|url| url.starts_with(prefix));
+        let ticket = body["ticket"].as_str().filter(|ticket| !ticket.is_empty());
+        let (Some(auth_url), Some(ticket)) = (auth_url, ticket) else {
+            return Err("Kesami sent an unexpected sign-in response. Try again.".into());
+        };
+        let service = Arc::clone(self);
+        let claim = format!("{origin}/v1/connectors/{}/claim", spec.id);
+        let ticket = ticket.to_string();
+        let attempt = self.next_attempt(spec.id);
+        tokio::spawn(async move {
+            let data = match service.await_grant(spec, &claim, &ticket).await {
+                Ok(account) => json!({ "provider": spec.id, "connected": true, "account": account }),
+                Err(_) if service.current_attempt(spec.id) != attempt => return,
+                Err(error) => json!({ "provider": spec.id, "connected": false, "error": error }),
+            };
+            let _ = service.events.send(
+                json!({
+                    "type": "connector_connection",
+                    "data": data,
+                    "timestamp": Utc::now().timestamp_millis(),
+                })
+                .to_string(),
+            );
+        });
+        Ok(json!({ "authUrl": auth_url, "provider": spec.id }))
+    }
+
+    async fn await_grant(&self, spec: &'static Spec, claim: &str, ticket: &str) -> Result<Option<String>, String> {
+        let deadline = Instant::now() + ONE_CLICK_WINDOW;
+        while Instant::now() < deadline {
+            tokio::time::sleep(self.endpoints.poll).await;
+            let Ok(response) = self.http.post(claim).json(&json!({ "ticket": ticket })).send().await else {
+                continue;
+            };
+            let status = response.status();
+            if status == reqwest::StatusCode::ACCEPTED || status.is_server_error() {
+                continue;
+            }
+            let body: Value = response.json().await.unwrap_or(Value::Null);
+            if !status.is_success() {
+                return Err(body["error"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{} didn’t finish connecting. Try again.", spec.label)));
+            }
+            return self.adopt_grant(spec, &body).await;
+        }
+        Err(format!("{} sign-in timed out. Try again.", spec.label))
+    }
+
+    async fn adopt_grant(&self, spec: &'static Spec, grant: &Value) -> Result<Option<String>, String> {
+        if spec.id == SLACK {
+            let (next, label) = slack_grant_config(&self.config(SLACK).await, grant)?;
+            self.store_config(SLACK, &next).await?;
+            return Ok(Some(label).filter(|label| !label.is_empty()));
+        }
+        let mut config =
+            oauth_grant_config(spec, &self.config(spec.id).await, grant, Utc::now().timestamp_millis())?;
+        self.store_config(spec.id, &config).await?;
+        let setup = self.setup_destination(spec, &mut config).await;
+        if signed_in(&config).is_some_and(|oauth| text(oauth, "account").is_empty()) {
+            self.identify(spec, &mut config).await;
+        }
+        self.store_config(spec.id, &config).await?;
+        setup.map_err(|error| setup_failure(spec, &error))?;
+        Ok(signed_in(&config).map(|oauth| text(oauth, "account")).filter(|account| !account.is_empty()))
+    }
+
+    async fn identify(&self, spec: &Spec, config: &mut Map<String, Value>) {
+        let account = match spec.id {
+            LINEAR => self
+                .linear(config, "query { viewer { name email } }", json!({}))
+                .await
+                .ok()
+                .and_then(|data| {
+                    data.pointer("/viewer/email")
+                        .or_else(|| data.pointer("/viewer/name"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                }),
+            CLICKUP => self
+                .authed_call(spec, config, "ClickUp", |auth| {
+                    self.http.get(format!("{}/api/v2/user", self.endpoints.clickup)).header("Authorization", auth)
+                })
+                .await
+                .ok()
+                .and_then(|body| {
+                    body.pointer("/user/email")
+                        .or_else(|| body.pointer("/user/username"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                }),
+            JIRA if !text(config, "cloudId").is_empty() => {
+                let base = self.jira_base(config);
+                self.authed_call(spec, config, "Jira", |auth| {
+                    self.jira(self.http.get(format!("{base}/rest/api/3/myself")), auth)
+                })
+                .await
+                .ok()
+                .and_then(|me| {
+                    me.get("emailAddress")
+                        .or_else(|| me.get("displayName"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+            }
+            _ => None,
+        };
+        let Some(account) = account.filter(|account| !account.trim().is_empty()) else {
+            return;
+        };
+        if let Some(oauth) = config.get_mut("oauth").and_then(Value::as_object_mut) {
+            oauth.insert("account".into(), json!(account.trim()));
+        }
+    }
+
+    async fn refresh(&self, spec: &Spec, config: &mut Map<String, Value>) -> Result<(), String> {
+        let reconnect = format!("Sign in to {} again in Settings → Connectors.", spec.label);
+        let _renewing = self.refreshing.lock().await;
+        let now = Utc::now().timestamp_millis();
+        let before = signed_in(config).map(|oauth| text(oauth, "accessToken"));
+        let stored = self.config(spec.id).await;
+        if let Some(latest) = signed_in(&stored) {
+            if Some(text(latest, "accessToken")) != before && !needs_refresh(latest, now) {
+                config.insert("oauth".into(), Value::Object(latest.clone()));
+                return Ok(());
+            }
+        }
+        let oauth = signed_in(config).cloned().ok_or_else(|| reconnect.clone())?;
+        let refresh_token = text(&oauth, "refreshToken");
+        let origin = self.endpoints.cloud.clone().filter(|_| !refresh_token.is_empty());
+        let Some(origin) = origin else {
+            return Err(format!("{}: {reconnect}", spec.label));
+        };
+        let response = self
+            .http
+            .post(format!("{origin}/v1/connectors/{}/refresh", spec.id))
+            .json(&json!({ "refreshToken": refresh_token }))
+            .send()
+            .await
+            .map_err(|_| format!("{}: couldn’t reach Kesami to renew the sign-in. Try again.", spec.label))?;
+        let status = response.status();
+        let body: Value = response.json().await.unwrap_or(Value::Null);
+        let renewed = refreshed_oauth(&oauth, &body, now).filter(|_| status.is_success());
+        let Some(renewed) = renewed else {
+            let fallback = if status == reqwest::StatusCode::UNAUTHORIZED {
+                reconnect.as_str()
+            } else {
+                "couldn’t renew the sign-in. Try again."
+            };
+            return Err(format!("{}: {}", spec.label, body["error"].as_str().unwrap_or(fallback)));
+        };
+        config.insert("oauth".into(), Value::Object(renewed.clone()));
+        let mut latest = self.config(spec.id).await;
+        if signed_in(&latest).is_some() {
+            latest.insert("oauth".into(), Value::Object(renewed));
+            self.store_config(spec.id, &latest).await?;
+        }
+        Ok(())
+    }
+
+    async fn authorization(
+        &self,
+        spec: &Spec,
+        config: &mut Map<String, Value>,
+        renew: bool,
+    ) -> Result<String, String> {
+        let stale = match signed_in(config) {
+            Some(oauth) => renew || needs_refresh(oauth, Utc::now().timestamp_millis()),
+            None => {
+                return Ok(match spec.id {
+                    NOTION | ASANA => format!("Bearer {}", text(config, "token")),
+                    LINEAR => text(config, "apiKey"),
+                    CLICKUP => text(config, "token"),
+                    JIRA => format!(
+                        "Basic {}",
+                        BASE64.encode(format!("{}:{}", text(config, "email"), text(config, "apiToken")))
+                    ),
+                    _ => String::new(),
+                })
+            }
+        };
+        if stale {
+            self.refresh(spec, config).await?;
+        }
+        Ok(format!(
+            "Bearer {}",
+            signed_in(config).map(|oauth| text(oauth, "accessToken")).unwrap_or_default()
+        ))
+    }
+
+    async fn authed(
+        &self,
+        spec: &Spec,
+        config: &mut Map<String, Value>,
+        what: &str,
+        build: impl Fn(&str) -> RequestBuilder,
+    ) -> Result<(reqwest::StatusCode, Value, String), String> {
+        let auth = self.authorization(spec, config, false).await?;
+        let first = self.exchange(build(&auth), what).await?;
+        let renewable = signed_in(config).is_some_and(|oauth| !text(oauth, "refreshToken").is_empty());
+        if first.0 != reqwest::StatusCode::UNAUTHORIZED || !renewable {
+            return Ok(first);
+        }
+        let auth = self.authorization(spec, config, true).await?;
+        self.exchange(build(&auth), what).await
+    }
+
+    async fn authed_call(
+        &self,
+        spec: &Spec,
+        config: &mut Map<String, Value>,
+        what: &str,
+        build: impl Fn(&str) -> RequestBuilder,
+    ) -> Result<Value, String> {
+        let (status, body, raw) = self.authed(spec, config, what, build).await?;
+        if !status.is_success() {
+            return Err(format!("{what}: {}", error_detail(status, &body, &raw)));
+        }
+        Ok(if body.is_null() { Value::String(raw) } else { body })
+    }
+
+    async fn jira_sites(&self, config: &mut Map<String, Value>) -> Result<Vec<Value>, String> {
+        let spec = spec_for(JIRA).ok_or("unknown connector: jira")?;
+        let api = self.endpoints.atlassian.clone();
+        let body = self
+            .authed_call(spec, config, "Jira", |auth| {
+                self.jira(self.http.get(format!("{api}/oauth/token/accessible-resources")), auth)
+            })
+            .await?;
+        let mut seen = std::collections::HashSet::new();
+        Ok(body
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|site| {
+                site["scopes"]
+                    .as_array()
+                    .is_some_and(|scopes| scopes.iter().any(|scope| scope.as_str().is_some_and(|scope| scope.ends_with(":jira-work"))))
+            })
+            .filter(|site| seen.insert(site["id"].as_str().unwrap_or_default().to_string()))
+            .cloned()
+            .collect())
+    }
+
+    async fn setup_destination(&self, spec: &Spec, config: &mut Map<String, Value>) -> Result<(), String> {
+        match spec.id {
+            NOTION => self.setup_notion(spec, config).await,
+            LINEAR => self.setup_linear(config).await,
+            JIRA => self.setup_jira(spec, config).await,
+            ASANA => self.setup_asana(spec, config).await,
+            CLICKUP => self.setup_clickup(spec, config).await,
+            _ => Ok(()),
+        }
+    }
+
+    async fn setup_notion(&self, spec: &Spec, config: &mut Map<String, Value>) -> Result<(), String> {
+        let api = self.endpoints.notion.clone();
+        if let Some(page) = notion_page_id(&text(config, "parentPageId")) {
+            let existing = self
+                .authed_call(spec, config, "Notion", |auth| {
+                    self.notion(self.http.get(format!("{api}/v1/pages/{page}")), auth)
+                })
+                .await;
+            if existing.is_ok_and(|page| page["archived"] != json!(true) && page["in_trash"] != json!(true)) {
+                return Ok(());
+            }
+        }
+        let title = json!({"title": [{"type": "text", "text": {"content": DESTINATION_NAME}}]});
+        let private = json!({"parent": {"type": "workspace", "workspace": true}, "properties": {"title": title}});
+        let created = match self
+            .authed_call(spec, config, "Notion", |auth| {
+                self.notion(self.http.post(format!("{api}/v1/pages")), auth).json(&private)
+            })
+            .await
+        {
+            Ok(page) => page,
+            Err(_) => {
+                let search = json!({
+                    "filter": {"property": "object", "value": "page"},
+                    "sort": {"timestamp": "last_edited_time", "direction": "descending"},
+                    "page_size": 1
+                });
+                let shared = self
+                    .authed_call(spec, config, "Notion", |auth| {
+                        self.notion(self.http.post(format!("{api}/v1/search")), auth).json(&search)
+                    })
+                    .await?;
+                let parent = shared
+                    .pointer("/results/0/id")
+                    .and_then(Value::as_str)
+                    .ok_or("share at least one page with Kesami when you sign in to Notion")?
+                    .to_string();
+                let nested = json!({"parent": {"page_id": parent}, "properties": {"title": title}});
+                self.authed_call(spec, config, "Notion", |auth| {
+                    self.notion(self.http.post(format!("{api}/v1/pages")), auth).json(&nested)
+                })
+                .await?
+            }
+        };
+        let id = created["id"].as_str().ok_or("Notion created the page without an id")?;
+        config.insert("parentPageId".into(), json!(id));
+        config.insert("destinationLabel".into(), json!(DESTINATION_NAME));
+        Ok(())
+    }
+
+    async fn setup_linear(&self, config: &mut Map<String, Value>) -> Result<(), String> {
+        let data = self
+            .linear(
+                config,
+                "query { viewer { teams(first: 50) { nodes { id key name } } } teams(first: 50) { nodes { id key name } } }",
+                json!({}),
+            )
+            .await?;
+        let teams: Vec<Value> = [data.pointer("/viewer/teams/nodes"), data.pointer("/teams/nodes")]
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_array)
+            .flatten()
+            .cloned()
+            .collect();
+        let known = text(config, "teamKey");
+        let team = teams
+            .iter()
+            .find(|team| !known.is_empty() && team["key"] == json!(known))
+            .or_else(|| teams.first())
+            .ok_or("this Linear account can’t see any teams")?;
+        let key = team["key"].as_str().ok_or("Linear returned a team without a key")?;
+        config.insert("teamKey".into(), json!(key));
+        config.insert(
+            "destinationLabel".into(),
+            json!(format!("{} ({key})", team["name"].as_str().unwrap_or(key))),
+        );
+        Ok(())
+    }
+
+    async fn setup_jira(&self, spec: &Spec, config: &mut Map<String, Value>) -> Result<(), String> {
+        let sites = self.jira_sites(config).await?;
+        let known = text(config, "cloudId");
+        let site = sites
+            .iter()
+            .find(|site| site["id"] == json!(known))
+            .or_else(|| sites.first())
+            .ok_or("this Atlassian account has no Jira sites")?
+            .clone();
+        let cloud = site["id"].as_str().unwrap_or_default();
+        if cloud != known {
+            config.remove("projectKey");
+            config.remove("issueType");
+        }
+        config.insert("cloudId".into(), json!(cloud));
+        if let Some(url) = site["url"].as_str().filter(|url| url.starts_with("https://")) {
+            config.insert("siteUrl".into(), json!(url.trim_end_matches('/')));
+        }
+        let site_name = site["name"].as_str().unwrap_or("Jira").to_string();
+        let base = self.jira_base(config);
+        let valid_key = |key: &str| !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let known_project = text(config, "projectKey");
+        let mut project = Value::Null;
+        if valid_key(&known_project) {
+            project = self
+                .authed_call(spec, config, "Jira", |auth| {
+                    self.jira(self.http.get(format!("{base}/rest/api/3/project/{known_project}")), auth)
+                })
+                .await
+                .unwrap_or(Value::Null);
+        }
+        if project["key"].as_str().is_none() {
+            let found = self
+                .authed_call(spec, config, "Jira", |auth| {
+                    self.jira(
+                        self.http.get(format!(
+                            "{base}/rest/api/3/project/search?action=create&orderBy=-lastIssueUpdatedTime&maxResults=1"
+                        )),
+                        auth,
+                    )
+                })
+                .await?;
+            project = found.pointer("/values/0").cloned().unwrap_or(Value::Null);
+        }
+        let key = project["key"]
+            .as_str()
+            .filter(|key| valid_key(key))
+            .ok_or_else(|| format!("you can’t create issues in any project on {site_name}"))?
+            .to_string();
+        let types = self
+            .authed_call(spec, config, "Jira", |auth| {
+                self.jira(
+                    self.http.get(format!("{base}/rest/api/3/issue/createmeta/{key}/issuetypes?maxResults=200")),
+                    auth,
+                )
+            })
+            .await
+            .unwrap_or(Value::Null);
+        let names: Vec<&str> = types["issueTypes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|kind| kind["subtask"] != json!(true))
+            .filter_map(|kind| kind["name"].as_str())
+            .collect();
+        let kind = names
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case("Task"))
+            .or_else(|| names.first())
+            .copied()
+            .unwrap_or("Task");
+        config.insert("projectKey".into(), json!(key));
+        config.insert("issueType".into(), json!(kind));
+        config.insert(
+            "destinationLabel".into(),
+            json!(format!("{} ({key}) · {site_name}", project["name"].as_str().unwrap_or(&key))),
+        );
+        Ok(())
+    }
+
+    async fn setup_asana(&self, spec: &Spec, config: &mut Map<String, Value>) -> Result<(), String> {
+        let api = format!("{}/api/1.0", self.endpoints.asana);
+        if let Some(project) = asana_project_id(&text(config, "projectId")) {
+            let existing = self
+                .authed_call(spec, config, "Asana", |auth| {
+                    self.http
+                        .get(format!("{api}/projects/{project}?opt_fields=name,archived"))
+                        .header("Authorization", auth)
+                })
+                .await;
+            if existing.is_ok_and(|body| body.pointer("/data/archived") != Some(&json!(true))) {
+                return Ok(());
+            }
+        }
+        let me = self
+            .authed_call(spec, config, "Asana", |auth| {
+                self.http
+                    .get(format!("{api}/users/me?opt_fields=workspaces.name,workspaces.is_organization"))
+                    .header("Authorization", auth)
+            })
+            .await?;
+        let workspace = me
+            .pointer("/data/workspaces/0")
+            .cloned()
+            .ok_or("this Asana account has no workspaces")?;
+        let workspace_id = workspace["gid"]
+            .as_str()
+            .filter(|gid| gid.chars().all(|c| c.is_ascii_digit()))
+            .ok_or("Asana returned a workspace without an id")?
+            .to_string();
+        let workspace_name = workspace["name"].as_str().unwrap_or("Asana").to_string();
+        let existing = self
+            .authed_call(spec, config, "Asana", |auth| {
+                self.http
+                    .get(format!("{api}/workspaces/{workspace_id}/projects?archived=false&limit=100&opt_fields=name"))
+                    .header("Authorization", auth)
+            })
+            .await
+            .unwrap_or(Value::Null);
+        let reused = existing["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|project| project["name"] == json!(DESTINATION_NAME))
+            .and_then(|project| project["gid"].as_str())
+            .map(str::to_string);
+        let project = match reused {
+            Some(project) => project,
+            None => {
+                let target = if workspace["is_organization"] == json!(true) {
+                    let teams = self
+                        .authed_call(spec, config, "Asana", |auth| {
+                            self.http
+                                .get(format!("{api}/users/me/teams?organization={workspace_id}&opt_fields=name"))
+                                .header("Authorization", auth)
+                        })
+                        .await?;
+                    let team = teams
+                        .pointer("/data/0/gid")
+                        .and_then(Value::as_str)
+                        .filter(|gid| gid.chars().all(|c| c.is_ascii_digit()))
+                        .ok_or_else(|| format!("join a team in {workspace_name} so Kesami can create its project"))?
+                        .to_string();
+                    format!("{api}/teams/{team}/projects")
+                } else {
+                    format!("{api}/workspaces/{workspace_id}/projects")
+                };
+                let body = json!({"data": {"name": DESTINATION_NAME, "notes": "Tasks and commitments from your meetings, created by Kesami."}});
+                let created = self
+                    .authed_call(spec, config, "Asana", |auth| {
+                        self.http.post(&target).header("Authorization", auth).json(&body)
+                    })
+                    .await?;
+                created
+                    .pointer("/data/gid")
+                    .and_then(Value::as_str)
+                    .ok_or("Asana created the project without an id")?
+                    .to_string()
+            }
+        };
+        config.insert("projectId".into(), json!(project));
+        config.insert("destinationLabel".into(), json!(format!("{DESTINATION_NAME} · {workspace_name}")));
+        Ok(())
+    }
+
+    async fn setup_clickup(&self, spec: &Spec, config: &mut Map<String, Value>) -> Result<(), String> {
+        let api = format!("{}/api/v2", self.endpoints.clickup);
+        if let Some(list) = clickup_list_id(&text(config, "listId")) {
+            let existing = self
+                .authed_call(spec, config, "ClickUp", |auth| {
+                    self.http.get(format!("{api}/list/{list}")).header("Authorization", auth)
+                })
+                .await;
+            if existing.is_ok_and(|list| list["archived"] != json!(true)) {
+                return Ok(());
+            }
+        }
+        let teams = self
+            .authed_call(spec, config, "ClickUp", |auth| self.http.get(format!("{api}/team")).header("Authorization", auth))
+            .await?;
+        let team = teams
+            .pointer("/teams/0/id")
+            .and_then(id_of)
+            .ok_or("this ClickUp account has no workspaces")?;
+        let spaces = self
+            .authed_call(spec, config, "ClickUp", |auth| {
+                self.http.get(format!("{api}/team/{team}/space?archived=false")).header("Authorization", auth)
+            })
+            .await?;
+        let space = spaces.pointer("/spaces/0").cloned().ok_or("create a Space in ClickUp first")?;
+        let space_id = id_of(&space["id"]).ok_or("ClickUp returned a Space without an id")?;
+        let space_name = space["name"].as_str().unwrap_or("ClickUp").to_string();
+        let lists = self
+            .authed_call(spec, config, "ClickUp", |auth| {
+                self.http.get(format!("{api}/space/{space_id}/list?archived=false")).header("Authorization", auth)
+            })
+            .await
+            .unwrap_or(Value::Null);
+        let reused = lists["lists"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|list| list["name"] == json!(DESTINATION_NAME))
+            .and_then(|list| id_of(&list["id"]));
+        let list = match reused {
+            Some(list) => list,
+            None => {
+                let body = json!({"name": DESTINATION_NAME, "content": "Tasks and commitments from your meetings, created by Kesami."});
+                let created = self
+                    .authed_call(spec, config, "ClickUp", |auth| {
+                        self.http
+                            .post(format!("{api}/space/{space_id}/list"))
+                            .header("Authorization", auth)
+                            .json(&body)
+                    })
+                    .await?;
+                id_of(&created["id"]).ok_or("ClickUp created the list without an id")?
+            }
+        };
+        config.insert("listId".into(), json!(list));
+        config.insert("destinationLabel".into(), json!(format!("{DESTINATION_NAME} · {space_name}")));
+        Ok(())
+    }
+
+    pub async fn setup(&self, provider: &str) -> Result<Value, String> {
+        let spec = spec_for(provider).ok_or_else(|| format!("unknown connector: {provider}"))?;
+        let mut config = self.config(provider).await;
+        if signed_in(&config).is_none() {
+            return Err(format!("Sign in to {} first.", spec.label));
+        }
+        let outcome = self.setup_destination(spec, &mut config).await;
+        if signed_in(&config).is_some_and(|oauth| text(oauth, "account").is_empty()) {
+            self.identify(spec, &mut config).await;
+        }
+        self.store_config(provider, &config).await?;
+        outcome.map_err(|error| setup_failure(spec, &error))?;
+        let oauth = self.oauth_status(spec).await;
+        Ok(self.present(spec, &config, oauth.as_ref(), &self.one_click_providers().await))
     }
 
     async fn config(&self, provider: &str) -> Map<String, Value> {
@@ -1108,14 +2144,11 @@ impl ConnectorService {
     }
 
     pub async fn status(&self) -> Value {
+        let one_click = self.one_click_providers().await;
         let mut providers = Vec::new();
         for spec in SPECS.iter() {
             let oauth = self.oauth_status(spec).await;
-            providers.push(public_config(
-                spec,
-                &self.config(spec.id).await,
-                oauth.as_ref(),
-            ));
+            providers.push(self.present(spec, &self.config(spec.id).await, oauth.as_ref(), &one_click));
         }
         json!({ "providers": providers })
     }
@@ -1125,19 +2158,46 @@ impl ConnectorService {
         let next = merge_config(spec, &self.config(provider).await, incoming)?;
         self.store_config(provider, &next).await?;
         let oauth = self.oauth_status(spec).await;
-        Ok(public_config(spec, &next, oauth.as_ref()))
+        Ok(self.present(spec, &next, oauth.as_ref(), &self.one_click_providers().await))
     }
 
-    pub async fn disconnect(&self, provider: &str) -> Result<(), String> {
+    pub async fn disconnect(&self, provider: &str) -> Result<String, String> {
         let spec = spec_for(provider).ok_or_else(|| format!("unknown connector: {provider}"))?;
         if let Some(oauth) = spec.oauth {
             self.calendar.disconnect(oauth).await?;
         }
+        let config = self.config(provider).await;
+        let revoked = match signed_in(&config) {
+            Some(oauth) => Some(self.revoke(spec, oauth).await),
+            None => None,
+        };
         self.settings
             .set_credential(&credential_key(provider), None)
             .await
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        Ok(disconnect_message(spec, revoked))
+    }
+
+    async fn revoke(&self, spec: &Spec, oauth: &Map<String, Value>) -> bool {
+        let Some(origin) = self.endpoints.cloud.clone() else {
+            return false;
+        };
+        let tokens = json!({
+            "accessToken": text(oauth, "accessToken"),
+            "refreshToken": text(oauth, "refreshToken"),
+        });
+        let Ok(response) = self
+            .http
+            .post(format!("{origin}/v1/connectors/{}/revoke", spec.id))
+            .timeout(Duration::from_secs(10))
+            .json(&tokens)
+            .send()
+            .await
+        else {
+            return false;
+        };
+        response.status().is_success()
+            && response.json::<Value>().await.is_ok_and(|body| body["revoked"] == json!(true))
     }
 
     pub async fn auto_push_targets(&self) -> Vec<&'static str> {
@@ -1195,30 +2255,43 @@ impl ConnectorService {
         })
     }
 
-    fn notion(&self, request: RequestBuilder, token: &str) -> RequestBuilder {
+    fn notion(&self, request: RequestBuilder, auth: &str) -> RequestBuilder {
         request
-            .bearer_auth(token)
+            .header("Authorization", auth)
             .header("Notion-Version", NOTION_VERSION)
     }
 
-    fn jira(&self, request: RequestBuilder, config: &Map<String, Value>) -> RequestBuilder {
+    fn jira(&self, request: RequestBuilder, auth: &str) -> RequestBuilder {
         request
-            .basic_auth(text(config, "email"), Some(text(config, "apiToken")))
+            .header("Authorization", auth)
             .header("Accept", "application/json")
     }
 
-    fn jira_base(config: &Map<String, Value>) -> String {
+    fn jira_base(&self, config: &Map<String, Value>) -> String {
+        if signed_in(config).is_some() {
+            return format!("{}/ex/jira/{}", self.endpoints.atlassian, text(config, "cloudId"));
+        }
+        Self::jira_browse(config)
+    }
+
+    fn jira_browse(config: &Map<String, Value>) -> String {
         text(config, "siteUrl").trim_end_matches('/').to_string()
+    }
+
+    fn jira_link(config: &Map<String, Value>, key: &str) -> Option<String> {
+        let browse = Self::jira_browse(config);
+        (!browse.is_empty()).then(|| format!("{browse}/browse/{key}"))
     }
 
     async fn create_jira_issue(
         &self,
-        config: &Map<String, Value>,
+        spec: &Spec,
+        config: &mut Map<String, Value>,
         notes: &MeetingNotes,
         item: &ActionItem,
         labelled: &mut bool,
     ) -> Result<(Option<String>, Option<String>), String> {
-        let base = Self::jira_base(config);
+        let base = self.jira_base(config);
         loop {
             let issue = jira_issue(
                 notes,
@@ -1228,15 +2301,14 @@ impl ConnectorService {
                 *labelled,
             );
             let (status, body, raw) = self
-                .exchange(
-                    self.jira(self.http.post(format!("{base}/rest/api/3/issue")), config)
-                        .json(&issue),
-                    "Jira",
-                )
+                .authed(spec, config, "Jira", |auth| {
+                    self.jira(self.http.post(format!("{base}/rest/api/3/issue")), auth)
+                        .json(&issue)
+                })
                 .await?;
             if status.is_success() {
                 let key = body.get("key").and_then(Value::as_str).map(str::to_string);
-                let url = key.as_ref().map(|key| format!("{base}/browse/{key}"));
+                let url = key.as_deref().and_then(|key| Self::jira_link(config, key));
                 return Ok((key, url));
             }
             if *labelled && jira_rejected_labels(&body) {
@@ -1322,18 +2394,19 @@ impl ConnectorService {
 
     async fn linear(
         &self,
-        config: &Map<String, Value>,
+        config: &mut Map<String, Value>,
         query: &str,
         variables: Value,
     ) -> Result<Value, String> {
+        let spec = spec_for(LINEAR).ok_or("unknown connector: linear")?;
+        let request = json!({"query": query, "variables": variables});
         let body = self
-            .call(
+            .authed_call(spec, config, "Linear", |auth| {
                 self.http
-                    .post("https://api.linear.app/graphql")
-                    .header("Authorization", text(config, "apiKey"))
-                    .json(&json!({"query": query, "variables": variables})),
-                "Linear",
-            )
+                    .post(format!("{}/graphql", self.endpoints.linear))
+                    .header("Authorization", auth)
+                    .json(&request)
+            })
             .await?;
         if let Some(message) = body.pointer("/errors/0/message").and_then(Value::as_str) {
             return Err(format!("Linear: {message}"));
@@ -1341,7 +2414,7 @@ impl ConnectorService {
         Ok(body.get("data").cloned().unwrap_or(Value::Null))
     }
 
-    async fn linear_team_id(&self, config: &Map<String, Value>) -> Result<String, String> {
+    async fn linear_team_id(&self, config: &mut Map<String, Value>) -> Result<String, String> {
         let wanted = text(config, "teamKey");
         let data = self
             .linear(
@@ -1379,11 +2452,12 @@ impl ConnectorService {
     }
 
     pub async fn test(&self, provider: &str) -> Result<String, String> {
-        let (spec, config) = self.connected_config(provider).await?;
+        let (spec, mut config) = self.connected_config(provider).await?;
+        let config = &mut config;
         match spec.id {
             SLACK => {
                 self.call(
-                    self.http.post(text(&config, "webhookUrl")).json(
+                    self.http.post(text(config, "webhookUrl")).json(
                         &json!({"text": "Kesami is connected. Meeting notes will be posted here."}),
                     ),
                     "Slack",
@@ -1392,35 +2466,24 @@ impl ConnectorService {
                 Ok("Posted a test message to the channel.".into())
             }
             NOTION => {
-                let page = notion_page_id(&text(&config, "parentPageId")).unwrap_or_default();
-                self.call(
-                    self.notion(
-                        self.http
-                            .get(format!("https://api.notion.com/v1/pages/{page}")),
-                        &text(&config, "token"),
-                    ),
-                    "Notion",
-                )
+                let page = notion_page_id(&text(config, "parentPageId")).unwrap_or_default();
+                self.authed_call(spec, config, "Notion", |auth| {
+                    self.notion(self.http.get(format!("{}/v1/pages/{page}", self.endpoints.notion)), auth)
+                })
                 .await?;
                 Ok("Kesami can write under that page.".into())
             }
             LINEAR => {
-                self.linear_team_id(&config).await?;
-                Ok(format!("Found team {}.", text(&config, "teamKey")))
+                self.linear_team_id(config).await?;
+                Ok(format!("Found team {}.", text(config, "teamKey")))
             }
             JIRA => {
-                let project = text(&config, "projectKey");
+                let project = text(config, "projectKey");
+                let base = self.jira_base(config);
                 let body = self
-                    .call(
-                        self.jira(
-                            self.http.get(format!(
-                                "{}/rest/api/3/project/{project}",
-                                Self::jira_base(&config)
-                            )),
-                            &config,
-                        ),
-                        "Jira",
-                    )
+                    .authed_call(spec, config, "Jira", |auth| {
+                        self.jira(self.http.get(format!("{base}/rest/api/3/project/{project}")), auth)
+                    })
                     .await?;
                 Ok(format!(
                     "Found project {}.",
@@ -1428,14 +2491,13 @@ impl ConnectorService {
                 ))
             }
             ASANA => {
-                let project = asana_project_id(&text(&config, "projectId")).unwrap_or_default();
+                let project = asana_project_id(&text(config, "projectId")).unwrap_or_default();
                 let body = self
-                    .call(
+                    .authed_call(spec, config, "Asana", |auth| {
                         self.http
-                            .get(format!("https://app.asana.com/api/1.0/projects/{project}"))
-                            .bearer_auth(text(&config, "token")),
-                        "Asana",
-                    )
+                            .get(format!("{}/api/1.0/projects/{project}", self.endpoints.asana))
+                            .header("Authorization", auth)
+                    })
                     .await?;
                 Ok(format!(
                     "Found project {}.",
@@ -1463,14 +2525,13 @@ impl ConnectorService {
                 ))
             }
             CLICKUP => {
-                let list = clickup_list_id(&text(&config, "listId")).unwrap_or_default();
+                let list = clickup_list_id(&text(config, "listId")).unwrap_or_default();
                 let body = self
-                    .call(
+                    .authed_call(spec, config, "ClickUp", |auth| {
                         self.http
-                            .get(format!("https://api.clickup.com/api/v2/list/{list}"))
-                            .header("Authorization", text(&config, "token")),
-                        "ClickUp",
-                    )
+                            .get(format!("{}/api/v2/list/{list}", self.endpoints.clickup))
+                            .header("Authorization", auth)
+                    })
                     .await?;
                 Ok(format!(
                     "Found list {}.",
@@ -1527,7 +2588,7 @@ impl ConnectorService {
         description: &str,
     ) -> Result<Value, crate::actions::ActionError> {
         use crate::actions::ActionError;
-        let (_, config) = self.connected_config(JIRA).await.map_err(|_| {
+        let (spec, mut config) = self.connected_config(JIRA).await.map_err(|_| {
             ActionError::permission(
                 "Connect Jira in Settings → Connectors, then review and confirm again.",
             )
@@ -1536,11 +2597,15 @@ impl ConnectorService {
             return Err(ActionError { code:"destination_changed".into(),message:"The Jira destination changed. Reload actions and review the updated destination.".into(),retryable:true,uncertain:false });
         }
         let body = reviewed_jira_body(&config, title, description);
+        let auth = self
+            .authorization(spec, &mut config, false)
+            .await
+            .map_err(|message| ActionError::permission(&message))?;
         let created = crate::action_providers::dispatch(
             self.jira(
                 self.http
-                    .post(format!("{}/rest/api/3/issue", Self::jira_base(&config))),
-                &config,
+                    .post(format!("{}/rest/api/3/issue", self.jira_base(&config))),
+                &auth,
             )
             .json(&body),
         )
@@ -1550,7 +2615,7 @@ impl ConnectorService {
             .filter(|key| !key.is_empty())
             .ok_or_else(ActionError::uncertain)?;
         Ok(
-            json!({"id":created["id"],"key":key,"url":format!("{}/browse/{key}",Self::jira_base(&config))}),
+            json!({"id":created["id"],"key":key,"url":Self::jira_link(&config, key)}),
         )
     }
 
@@ -1597,20 +2662,17 @@ impl ConnectorService {
             }
             NOTION => {
                 let page = notion_page_id(&text(&config, "parentPageId")).unwrap_or_default();
+                let created = notion_page(notes, &page);
                 let body = self
-                    .call(
-                        self.notion(
-                            self.http.post("https://api.notion.com/v1/pages"),
-                            &text(&config, "token"),
-                        )
-                        .json(&notion_page(notes, &page)),
-                        "Notion",
-                    )
+                    .authed_call(spec, &mut config, "Notion", |auth| {
+                        self.notion(self.http.post(format!("{}/v1/pages", self.endpoints.notion)), auth)
+                            .json(&created)
+                    })
                     .await?;
                 let url = body.get("url").and_then(Value::as_str).map(str::to_string);
                 Ok((vec![json!({"title": notes.title, "url": url})], url))
             }
-            LINEAR | JIRA | ASANA | CLICKUP => self.deliver_tasks(spec, &config, notes).await,
+            LINEAR | JIRA | ASANA | CLICKUP => self.deliver_tasks(spec, &mut config, notes).await,
             _ => Err(format!("unknown connector: {provider}")),
         }
     }
@@ -1618,11 +2680,12 @@ impl ConnectorService {
     async fn deliver_tasks(
         &self,
         spec: &Spec,
-        config: &Map<String, Value>,
+        config: &mut Map<String, Value>,
         notes: &MeetingNotes,
     ) -> Result<(Vec<Value>, Option<String>), String> {
-        if notes.action_items.is_empty() {
-            return Err("This meeting has no action items to create tasks from.".into());
+        let follow_ups = notes.follow_ups();
+        if follow_ups.is_empty() {
+            return Err("This meeting has no open tasks or commitments to create.".into());
         }
         let linear_team = if spec.id == LINEAR {
             Some(self.linear_team_id(config).await?)
@@ -1632,7 +2695,7 @@ impl ConnectorService {
         let mut jira_labelled = true;
         let mut created = Vec::new();
         let mut failures = Vec::new();
-        for item in &notes.action_items {
+        for item in follow_ups.iter().copied() {
             let outcome = match spec.id {
                 LINEAR => {
                     let input =
@@ -1649,18 +2712,18 @@ impl ConnectorService {
                     })
                 }
                 JIRA => {
-                    self.create_jira_issue(config, notes, item, &mut jira_labelled)
+                    self.create_jira_issue(spec, config, notes, item, &mut jira_labelled)
                         .await
                 }
                 CLICKUP => {
                     let list = clickup_list_id(&text(config, "listId")).unwrap_or_default();
-                    self.call(
+                    let task = clickup_task(notes, item);
+                    self.authed_call(spec, config, "ClickUp", |auth| {
                         self.http
-                            .post(format!("https://api.clickup.com/api/v2/list/{list}/task"))
-                            .header("Authorization", text(config, "token"))
-                            .json(&clickup_task(notes, item)),
-                        "ClickUp",
-                    )
+                            .post(format!("{}/api/v2/list/{list}/task", self.endpoints.clickup))
+                            .header("Authorization", auth)
+                            .json(&task)
+                    })
                     .await
                     .map(|body| {
                         (
@@ -1674,13 +2737,13 @@ impl ConnectorService {
                 }
                 ASANA => {
                     let project = asana_project_id(&text(config, "projectId")).unwrap_or_default();
-                    self.call(
+                    let task = asana_task(notes, item, &project);
+                    self.authed_call(spec, config, "Asana", |auth| {
                         self.http
-                            .post("https://app.asana.com/api/1.0/tasks")
-                            .bearer_auth(text(config, "token"))
-                            .json(&asana_task(notes, item, &project)),
-                        "Asana",
-                    )
+                            .post(format!("{}/api/1.0/tasks", self.endpoints.asana))
+                            .header("Authorization", auth)
+                            .json(&task)
+                    })
                     .await
                     .map(|body| {
                         (
@@ -1707,9 +2770,9 @@ impl ConnectorService {
         }
         if !failures.is_empty() {
             return Err(format!(
-                "created {} of {} tasks; {}",
+                "created {} of {} items; {}",
                 created.len(),
-                notes.action_items.len(),
+                follow_ups.len(),
                 failures[0]
             ));
         }
@@ -1760,6 +2823,183 @@ mod tests {
         }
         for provider in [SLACK, NOTION, GOOGLE_DOCS] {
             assert!(allows_automatic_delivery(provider));
+        }
+    }
+
+    fn object(value: Value) -> Map<String, Value> {
+        value.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn signed_in_connectors_need_a_destination_and_never_expose_tokens() {
+        let notion = spec_for(NOTION).unwrap();
+        let mut config = object(json!({"oauth": {"accessToken": "secret-access", "refreshToken": "secret-refresh", "account": "riyam@example.com"}}));
+        assert!(!is_connected(notion, &config));
+        config.insert("parentPageId".into(), json!("0123456789abcdef0123456789abcdef"));
+        config.insert("destinationLabel".into(), json!("Kesami Meetings"));
+        assert!(is_connected(notion, &config));
+
+        let public = public_config(notion, &config, None);
+        assert_eq!(public["signedIn"], true);
+        assert_eq!(public["account"], "riyam@example.com");
+        assert_eq!(public["destination"], "Kesami Meetings");
+        assert!(!public.to_string().contains("secret-"));
+        assert_eq!(public["config"]["tokenSet"], false);
+
+        let jira = spec_for(JIRA).unwrap();
+        let mut config = object(json!({"oauth": {"accessToken": "a"}, "cloudId": "site-1"}));
+        assert!(!is_connected(jira, &config), "a site alone is not a destination");
+        config.insert("projectKey".into(), json!("OPS"));
+        assert!(is_connected(jira, &config), "issue type is optional and email/token are not needed");
+        assert!(!is_connected(jira, &object(json!({"oauth": {"accessToken": ""}, "cloudId": "site-1", "projectKey": "OPS"}))));
+    }
+
+    #[test]
+    fn a_sign_in_replaces_pasted_secrets_and_a_pasted_token_replaces_the_sign_in() {
+        let asana = spec_for(ASANA).unwrap();
+        let current = object(json!({"token": "pasted-pat", "projectId": "1200", "autoPush": false}));
+        let grant = json!({"accessToken": "access", "refreshToken": "refresh", "expiresIn": 3600, "account": "riyam@example.com"});
+        let next = oauth_grant_config(asana, &current, &grant, 1_000).unwrap();
+        assert!(next.get("token").is_none());
+        assert_eq!(next["projectId"], "1200");
+        assert_eq!(next["oauth"], json!({"accessToken": "access", "refreshToken": "refresh", "account": "riyam@example.com", "expiresAt": 3_601_000}));
+        assert!(oauth_grant_config(asana, &current, &json!({"refreshToken": "r"}), 0).is_err());
+
+        let pasted = merge_config(asana, &next, &json!({"token": "new-pat"})).unwrap();
+        assert!(pasted.get("oauth").is_none());
+        let kept = merge_config(asana, &next, &json!({"token": ""})).unwrap();
+        assert!(kept.get("oauth").is_some(), "a blank secret keeps the sign-in");
+    }
+
+    #[test]
+    fn refresh_keeps_rotated_tokens_and_tracks_expiry() {
+        let oauth = object(json!({"accessToken": "old", "refreshToken": "r1", "expiresAt": 10_000, "account": "a@example.com"}));
+        assert!(needs_refresh(&oauth, 10_000 - REFRESH_MARGIN_MS));
+        assert!(!needs_refresh(&oauth, 10_000 - REFRESH_MARGIN_MS - 1));
+        assert!(!needs_refresh(&object(json!({"accessToken": "never-expires"})), i64::MAX));
+
+        let rotated = refreshed_oauth(&oauth, &json!({"accessToken": "new", "refreshToken": "r2", "expiresIn": 60}), 5_000).unwrap();
+        assert_eq!(rotated, object(json!({"accessToken": "new", "refreshToken": "r2", "expiresAt": 65_000, "account": "a@example.com"})));
+        let kept = refreshed_oauth(&oauth, &json!({"accessToken": "new"}), 5_000).unwrap();
+        assert_eq!(kept["refreshToken"], "r1");
+        assert!(kept.get("expiresAt").is_none());
+        assert!(refreshed_oauth(&oauth, &json!({"error": "invalid_grant"}), 0).is_none());
+    }
+
+    #[test]
+    fn provider_ids_may_be_numbers_or_strings() {
+        assert_eq!(id_of(&json!(901234)), Some("901234".into()));
+        assert_eq!(id_of(&json!("9012")), Some("9012".into()));
+        assert_eq!(id_of(&json!("")), None);
+    }
+
+    fn meeting_with_commitments() -> Value {
+        let mut meeting = meeting();
+        meeting["actionItems"] = json!([
+            {"id": "t1", "task": "Write the changelog", "owner": "Aditi", "deadline": "2026-10-02", "priority": "High"},
+            {"id": "t2", "task": "Book the demo room", "owner": "Unassigned", "deadline": "TBD", "completed": true},
+            {"id": "t3", "task": "Send the pricing sheet", "owner": "Riyam", "commitmentId": "c-linked"}
+        ]);
+        meeting["metadata"]["meetingCommitments"] = json!({"candidates": [
+            {"id": "c1", "classification": "explicit_commitment", "person": "Riyam", "commitment": "I'll share the beta build with design by Thursday.", "targetAction": "share the beta build with design", "dueDate": "2026-10-09", "status": "candidate"},
+            {"id": "c2", "classification": "other_person_commitment", "person": "Speaker 2", "reviewedPerson": "Mei", "commitment": "Mei said she'd check with legal.", "targetAction": "check with legal", "reviewedAction": "Check the contract with legal", "dueDate": "", "status": "reviewed"},
+            {"id": "c3", "classification": "explicit_commitment", "person": "Riyam", "commitment": "I'll write the changelog.", "targetAction": "Write the changelog.", "status": "candidate"},
+            {"id": "c4", "classification": "explicit_commitment", "person": "Riyam", "commitment": "I'll call the vendor.", "targetAction": "call the vendor", "status": "dismissed"},
+            {"id": "c5", "classification": "explicit_commitment", "person": "Riyam", "commitment": "I'll update the deck.", "targetAction": "update the deck", "actionItemId": "t1", "status": "candidate"},
+            {"id": "c-linked", "classification": "explicit_commitment", "person": "Riyam", "commitment": "I'll send the pricing sheet.", "targetAction": "send the pricing sheet", "status": "candidate"},
+            {"id": "c6", "classification": "speculation", "person": "Riyam", "commitment": "Maybe we could rebrand.", "targetAction": "rebrand", "status": "candidate"}
+        ]});
+        meeting["metadata"]["postMeetingActions"] = json!({"version": 1, "items": [
+            {"id": "a1", "status": "succeeded", "review": {"destination": "jira", "title": "Pricing recap"}, "result": {"key": "OPS-12", "url": "https://acme.atlassian.net/browse/OPS-12"}},
+            {"id": "a2", "status": "succeeded", "review": {"destination": "google_calendar", "title": "Pricing follow-up"}, "result": {"url": "https://calendar.google.com/event?eid=1"}},
+            {"id": "a3", "status": "failed", "review": {"destination": "slack", "title": "Launch plan sync"}},
+            {"id": "a4", "status": "succeeded", "review": {"destination": "local_task", "title": "Already a task"}}
+        ]});
+        meeting["metadata"]["connectorDeliveries"] = json!({"notion": {"ok": true, "url": "https://www.notion.so/Launch-plan-sync-123"}});
+        meeting
+    }
+
+    #[test]
+    fn commitments_join_tasks_once_and_actions_already_taken_are_listed() {
+        let notes = MeetingNotes::from_meeting(&meeting_with_commitments());
+        let commitments: Vec<(&str, Option<&str>, Option<&str>)> = notes
+            .commitments
+            .iter()
+            .map(|item| (item.task.as_str(), item.owner.as_deref(), item.due_date.as_deref()))
+            .collect();
+        assert_eq!(
+            commitments,
+            vec![("share the beta build with design", Some("Riyam"), Some("2026-10-09")), ("Check the contract with legal", Some("Mei"), None)]
+        );
+        assert_eq!(notes.commitments[0].commitment.as_deref(), Some("I'll share the beta build with design by Thursday."));
+        let follow_ups: Vec<&str> = notes.follow_ups().iter().map(|item| item.task.as_str()).collect();
+        assert_eq!(
+            follow_ups,
+            ["Write the changelog", "Send the pricing sheet", "share the beta build with design", "Check the contract with legal"],
+            "completed tasks are not re-created; linked, dismissed, duplicate and speculative commitments are left out"
+        );
+        assert_eq!(notes.done_actions.len(), 2);
+        assert_eq!(notes.done_actions[0].label, "Jira issue OPS-12");
+        assert_eq!(notes.notes_url.as_deref(), Some("https://www.notion.so/Launch-plan-sync-123"));
+        assert!(notes.wants(LINEAR));
+
+        let slack = slack_payload(&notes)["text"].as_str().unwrap().to_string();
+        assert!(slack.contains("*Commitments*\n☐ share the beta build with design — Riyam (due 2026-10-09)"));
+        assert!(slack.contains("✓ Jira issue OPS-12: <https://acme.atlassian.net/browse/OPS-12|Pricing recap>"));
+        assert!(!slack.contains("Launch plan sync>"), "failed actions are not reported as done");
+
+        let blocks = Value::Array(notion_blocks(&notes)).to_string();
+        assert!(blocks.contains("\"Commitments\"") && blocks.contains("\"Done after the meeting\""));
+        assert!(blocks.contains("\"checked\":true"), "a completed task stays checked in the notes");
+        assert!(blocks.contains("\"url\":\"https://calendar.google.com/event?eid=1\""));
+
+        let doc = google_doc_html(&notes);
+        assert!(doc.contains("<h2>Commitments</h2>") && doc.contains("☑ Book the demo room"));
+
+        let description = notes.task_description(notes.follow_ups()[2]);
+        assert!(description.contains("Commitment made in the meeting: “I'll share the beta build with design by Thursday.”"));
+        assert!(description.contains("Meeting notes: https://www.notion.so/Launch-plan-sync-123"));
+        assert!(description.contains("Summary: We agreed to ship on Friday."));
+    }
+
+    #[test]
+    fn a_meeting_with_only_commitments_still_creates_tasks() {
+        let mut meeting = meeting_with_commitments();
+        meeting["actionItems"] = json!([]);
+        let notes = MeetingNotes::from_meeting(&meeting);
+        assert!(notes.wants(ASANA));
+        assert_eq!(notes.follow_ups().len(), 5);
+        meeting["metadata"].as_object_mut().unwrap().remove("meetingCommitments");
+        assert!(!MeetingNotes::from_meeting(&meeting).wants(ASANA));
+    }
+
+    #[test]
+    fn slack_one_click_grant_replaces_the_webhook_and_keeps_preferences() {
+        let current = json!({"webhookUrl":"https://hooks.slack.com/services/T/B/old","channelLabel":"#old","autoPush":true})
+            .as_object()
+            .unwrap()
+            .clone();
+        let grant = json!({"webhookUrl":"https://hooks.slack.com/services/T/B/new","channel":"#recaps","workspace":"Acme"});
+        let (next, label) = slack_grant_config(&current, &grant).unwrap();
+        assert_eq!(label, "#recaps · Acme");
+        assert_eq!(text(&next, "webhookUrl"), "https://hooks.slack.com/services/T/B/new");
+        assert_eq!(text(&next, "channelLabel"), "#recaps · Acme");
+        assert_eq!(next["autoPush"], true);
+        assert!(is_connected(spec_for(SLACK).unwrap(), &next));
+
+        let (_, label) = slack_grant_config(
+            &Map::new(),
+            &json!({"webhookUrl":"https://hooks.slack.com/services/T/B/new","channel":"","workspace":"Acme"}),
+        )
+        .unwrap();
+        assert_eq!(label, "Acme");
+
+        for bad in [
+            json!({"channel":"#recaps"}),
+            json!({"webhookUrl":"","channel":"#recaps"}),
+            json!({"webhookUrl":"https://evil.example/services/T/B/x"}),
+        ] {
+            assert!(slack_grant_config(&current, &bad).is_err(), "{bad}");
         }
     }
 
@@ -2076,5 +3316,394 @@ mod tests {
         value["metadata"]["connectorDeliveries"] = json!({"linear": {"ok": true}});
         assert!(delivered_ok(&value, LINEAR));
         assert!(!delivered_ok(&value, ASANA));
+    }
+
+    mod live {
+        use super::*;
+        use bytes::Bytes;
+        use http_body_util::{BodyExt, Full};
+        use hyper::{server::conn::http1, service::service_fn, Request, Response};
+        use hyper_util::rt::TokioIo;
+        use std::path::PathBuf;
+
+        #[derive(Clone, Debug)]
+        struct Seen {
+            method: String,
+            path: String,
+            auth: String,
+            body: Value,
+        }
+
+        type Handler = Arc<dyn Fn(&Seen) -> (u16, Value) + Send + Sync>;
+        type Log = Arc<StdMutex<Vec<Seen>>>;
+
+        async fn fake_server(handler: Handler) -> (String, Log) {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let log: Log = Arc::default();
+            let seen_log = log.clone();
+            tokio::spawn(async move {
+                while let Ok((stream, _)) = listener.accept().await {
+                    let handler = handler.clone();
+                    let log = seen_log.clone();
+                    tokio::spawn(async move {
+                        let service = service_fn(move |req: Request<hyper::body::Incoming>| {
+                            let handler = handler.clone();
+                            let log = log.clone();
+                            async move {
+                                let method = req.method().to_string();
+                                let path = req.uri().path_and_query().map(|path| path.to_string()).unwrap_or_default();
+                                let auth = req
+                                    .headers()
+                                    .get("authorization")
+                                    .and_then(|value| value.to_str().ok())
+                                    .unwrap_or_default()
+                                    .to_string();
+                                let bytes = req.into_body().collect().await.map(|body| body.to_bytes()).unwrap_or_default();
+                                let seen = Seen { method, path, auth, body: serde_json::from_slice(&bytes).unwrap_or(Value::Null) };
+                                let (status, reply) = handler(&seen);
+                                log.lock().unwrap().push(seen);
+                                let mut response = Response::new(Full::new(Bytes::from(reply.to_string())));
+                                *response.status_mut() = hyper::StatusCode::from_u16(status).unwrap();
+                                Ok::<_, std::convert::Infallible>(response)
+                            }
+                        });
+                        let _ = http1::Builder::new().serve_connection(TokioIo::new(stream), service).await;
+                    });
+                }
+            });
+            (origin, log)
+        }
+
+        struct Harness {
+            service: Arc<ConnectorService>,
+            settings: Arc<SettingsStore>,
+            events: broadcast::Sender<String>,
+            log: Log,
+            dir: PathBuf,
+        }
+
+        impl Drop for Harness {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.dir);
+            }
+        }
+
+        impl Harness {
+            async fn start(handler: Handler) -> Self {
+                let (origin, log) = fake_server(handler).await;
+                let dir = std::env::temp_dir().join(format!("kesami-connectors-{}", uuid::Uuid::new_v4().simple()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let settings = Arc::new(SettingsStore::at(&dir));
+                let (events, _) = broadcast::channel(16);
+                let calendar = Arc::new(CalendarService::new(settings.clone(), events.clone()));
+                let endpoints = Endpoints {
+                    cloud: Some(origin.clone()),
+                    notion: format!("{origin}/notion"),
+                    linear: format!("{origin}/linear"),
+                    atlassian: format!("{origin}/atlassian"),
+                    asana: format!("{origin}/asana"),
+                    clickup: format!("{origin}/clickup"),
+                    poll: Duration::from_millis(20),
+                };
+                let service = Arc::new(ConnectorService::with_endpoints(settings.clone(), calendar, events.clone(), endpoints));
+                Self { service, settings, events, log, dir }
+            }
+
+            async fn store(&self, provider: &str, config: Value) {
+                self.settings.set_credential(&credential_key(provider), Some(&config.to_string())).await.unwrap();
+            }
+
+            async fn stored(&self, provider: &str) -> Map<String, Value> {
+                self.service.config(provider).await
+            }
+
+            fn seen(&self, path: &str) -> Vec<Seen> {
+                self.log.lock().unwrap().iter().filter(|seen| seen.path.starts_with(path)).cloned().collect()
+            }
+
+            async fn next_connection(&self, events: &mut broadcast::Receiver<String>) -> Value {
+                loop {
+                    let raw = tokio::time::timeout(Duration::from_secs(5), events.recv()).await.unwrap().unwrap();
+                    let event: Value = serde_json::from_str(&raw).unwrap();
+                    if event["type"] == "connector_connection" {
+                        return event["data"].clone();
+                    }
+                }
+            }
+        }
+
+        fn provider<'a>(status: &'a Value, id: &str) -> &'a Value {
+            status["providers"].as_array().unwrap().iter().find(|entry| entry["provider"] == id).unwrap()
+        }
+
+        const PAGE: &str = "01234567-89ab-cdef-0123-456789abcdef";
+
+        #[tokio::test]
+        async fn notion_one_click_creates_a_private_kesami_page_and_hides_tokens() {
+            let claims = Arc::new(StdMutex::new(0));
+            let counter = claims.clone();
+            let harness = Harness::start(Arc::new(move |seen: &Seen| match (seen.method.as_str(), seen.path.as_str()) {
+                ("GET", "/v1/connectors") => (200, json!({"providers": ["notion", "linear"]})),
+                ("POST", "/v1/connectors/notion/start") => (
+                    200,
+                    json!({"authUrl": "https://api.notion.com/v1/oauth/authorize?client_id=x&state=s", "ticket": "ticket-1"}),
+                ),
+                ("POST", "/v1/connectors/notion/claim") if seen.body["ticket"] == "ticket-1" => {
+                    let mut count = counter.lock().unwrap();
+                    *count += 1;
+                    if *count < 3 {
+                        (202, json!({"pending": true}))
+                    } else {
+                        (200, json!({"accessToken": "notion-access", "refreshToken": "notion-refresh", "account": "riyam@example.com", "workspace": "Acme"}))
+                    }
+                }
+                ("POST", "/notion/v1/pages") if seen.auth == "Bearer notion-access" && seen.body["parent"]["workspace"] == true => {
+                    (200, json!({"id": PAGE, "url": "https://www.notion.so/Kesami-Meetings"}))
+                }
+                ("GET", path) if path == format!("/notion/v1/pages/{PAGE}") && seen.auth == "Bearer notion-access" => (200, json!({})),
+                _ => (404, json!({"message": "unexpected"})),
+            }))
+            .await;
+            let mut events = harness.events.subscribe();
+
+            let started = harness.service.connect(NOTION).await.unwrap();
+            assert!(started["authUrl"].as_str().unwrap().starts_with("https://api.notion.com/v1/oauth/authorize?"));
+            let connected = harness.next_connection(&mut events).await;
+            assert_eq!(connected, json!({"provider": "notion", "connected": true, "account": "riyam@example.com"}));
+            assert_eq!(*claims.lock().unwrap(), 3);
+            let created = harness.seen("/notion/v1/pages");
+            assert_eq!(created[0].body["properties"]["title"]["title"][0]["text"]["content"], DESTINATION_NAME);
+
+            let status = harness.service.status().await;
+            let notion = provider(&status, NOTION);
+            assert_eq!((notion["connected"].as_bool(), notion["signedIn"].as_bool()), (Some(true), Some(true)));
+            assert_eq!(notion["oneClick"], true);
+            assert_eq!(notion["destination"], DESTINATION_NAME);
+            assert_eq!(provider(&status, LINEAR)["oneClick"], true);
+            assert_eq!(provider(&status, JIRA)["oneClick"], false);
+            assert_eq!(provider(&status, GOOGLE_DOCS)["oneClick"], false);
+            assert!(!status.to_string().contains("notion-access") && !status.to_string().contains("notion-refresh"));
+
+            assert_eq!(harness.service.test(NOTION).await.unwrap(), "Kesami can write under that page.");
+            harness.service.status().await;
+            assert_eq!(harness.seen("/v1/connectors").iter().filter(|seen| seen.method == "GET").count(), 1, "the provider list is cached");
+
+            harness.service.setup(NOTION).await.unwrap();
+            assert_eq!(harness.seen("/notion/v1/pages").iter().filter(|seen| seen.method == "POST").count(), 1, "an existing page is reused");
+        }
+
+        #[tokio::test]
+        async fn notion_falls_back_to_a_shared_page_when_it_cannot_create_a_private_one() {
+            let harness = Harness::start(Arc::new(|seen: &Seen| match (seen.method.as_str(), seen.path.as_str()) {
+                ("POST", "/notion/v1/pages") if seen.body["parent"]["workspace"] == true => (400, json!({"message": "workspace parent not allowed"})),
+                ("POST", "/notion/v1/pages") if seen.body["parent"]["page_id"] == "shared-page" => (200, json!({"id": PAGE})),
+                ("POST", "/notion/v1/search") => (200, json!({"results": [{"id": "shared-page"}]})),
+                _ => (404, json!({})),
+            }))
+            .await;
+            harness.store(NOTION, json!({"oauth": {"accessToken": "a"}})).await;
+            let ready = harness.service.setup(NOTION).await.unwrap();
+            assert_eq!(ready["connected"], true);
+            assert_eq!(harness.stored(NOTION).await["parentPageId"], PAGE);
+        }
+
+        #[tokio::test]
+        async fn a_cancelled_sign_in_reaches_the_app_and_keeps_pasted_settings() {
+            let harness = Harness::start(Arc::new(|seen: &Seen| match seen.path.as_str() {
+                "/v1/connectors/linear/start" => (200, json!({"authUrl": "https://linear.app/oauth/authorize?x=1", "ticket": "t"})),
+                "/v1/connectors/linear/claim" => (400, json!({"error": "Linear connection was cancelled."})),
+                "/v1/connectors/asana/start" => (200, json!({"authUrl": "https://evil.example/authorize", "ticket": "t"})),
+                _ => (404, json!({})),
+            }))
+            .await;
+            harness.store(LINEAR, json!({"apiKey": "lin_api_pasted", "teamKey": "ENG"})).await;
+            let mut events = harness.events.subscribe();
+            harness.service.connect(LINEAR).await.unwrap();
+            let outcome = harness.next_connection(&mut events).await;
+            assert_eq!(outcome["connected"], false);
+            assert_eq!(outcome["error"], "Linear connection was cancelled.");
+            assert_eq!(harness.stored(LINEAR).await["apiKey"], "lin_api_pasted");
+            assert!(harness.service.connect(ASANA).await.unwrap_err().contains("unexpected sign-in response"));
+        }
+
+        #[tokio::test]
+        async fn linear_tokens_renew_before_expiry_and_after_a_401_then_ask_to_sign_in_again() {
+            let revoked = Arc::new(StdMutex::new(Vec::<String>::new()));
+            let rejected = revoked.clone();
+            let teams = json!({"data": {"teams": {"nodes": [{"id": "team-1", "key": "ENG", "name": "Engineering"}]}}});
+            let harness = Harness::start(Arc::new(move |seen: &Seen| match seen.path.as_str() {
+                "/v1/connectors/linear/refresh" => match seen.body["refreshToken"].as_str() {
+                    Some("r1") => (200, json!({"accessToken": "fresh", "refreshToken": "r2", "expiresIn": 86_400})),
+                    Some("r2") => (200, json!({"accessToken": "fresher", "refreshToken": "r3", "expiresIn": 86_400})),
+                    _ => (401, json!({"error": "Sign in to Linear again in Settings → Connectors."})),
+                },
+                "/linear/graphql" => {
+                    let token = seen.auth.trim_start_matches("Bearer ").to_string();
+                    if ["fresh", "fresher"].contains(&token.as_str()) && !rejected.lock().unwrap().contains(&token) {
+                        (200, teams.clone())
+                    } else {
+                        (401, json!({"errors": [{"message": "Authentication required"}]}))
+                    }
+                }
+                _ => (404, json!({})),
+            }))
+            .await;
+            harness.store(LINEAR, json!({"oauth": {"accessToken": "expired", "refreshToken": "r1", "expiresAt": 1_000}, "teamKey": "ENG"})).await;
+
+            assert_eq!(harness.service.test(LINEAR).await.unwrap(), "Found team ENG.");
+            let oauth = harness.stored(LINEAR).await["oauth"].clone();
+            assert_eq!((oauth["accessToken"].as_str(), oauth["refreshToken"].as_str()), (Some("fresh"), Some("r2")));
+            assert!(oauth["expiresAt"].as_i64().unwrap() > Utc::now().timestamp_millis());
+            assert!(harness.seen("/linear/graphql").iter().all(|seen| seen.auth != "Bearer expired"), "an expired token is renewed before use");
+
+            revoked.lock().unwrap().push("fresh".into());
+            assert_eq!(harness.service.test(LINEAR).await.unwrap(), "Found team ENG.");
+            assert_eq!(harness.stored(LINEAR).await["oauth"]["refreshToken"], "r3");
+            assert_eq!(harness.seen("/v1/connectors/linear/refresh").len(), 2);
+
+            revoked.lock().unwrap().push("fresher".into());
+            let failure = harness.service.test(LINEAR).await.unwrap_err();
+            assert!(failure.contains("Sign in to Linear again"), "{failure}");
+        }
+
+        #[tokio::test]
+        async fn jira_sets_itself_up_and_files_tasks_and_commitments_through_the_gateway() {
+            let created = Arc::new(StdMutex::new(0));
+            let next = created.clone();
+            let projects = Arc::new(StdMutex::new(json!([])));
+            let available = projects.clone();
+            let harness = Harness::start(Arc::new(move |seen: &Seen| {
+                if seen.path.starts_with("/v1/connectors/jira/") {
+                    return match seen.path.as_str() {
+                        "/v1/connectors/jira/start" => (200, json!({"authUrl": "https://auth.atlassian.com/authorize?x=1", "ticket": "t"})),
+                        "/v1/connectors/jira/claim" => (200, json!({"accessToken": "jira-access", "expiresIn": 3600})),
+                        _ => (404, json!({})),
+                    };
+                }
+                if seen.auth != "Bearer jira-access" {
+                    return (401, json!({}));
+                }
+                match (seen.method.as_str(), seen.path.as_str()) {
+                    ("GET", "/atlassian/oauth/token/accessible-resources") => (
+                        200,
+                        json!([
+                            {"id": "wiki-1", "name": "Acme wiki", "url": "https://acme.atlassian.net", "scopes": ["read:confluence-content.all"]},
+                            {"id": "cloud-1", "name": "Acme", "url": "https://acme.atlassian.net/", "scopes": ["read:jira-work", "write:jira-work"]}
+                        ]),
+                    ),
+                    ("GET", "/atlassian/ex/jira/cloud-1/rest/api/3/project/search?action=create&orderBy=-lastIssueUpdatedTime&maxResults=1") => {
+                        (200, json!({"values": available.lock().unwrap().clone()}))
+                    }
+                    ("GET", "/atlassian/ex/jira/cloud-1/rest/api/3/issue/createmeta/OPS/issuetypes?maxResults=200") => {
+                        (200, json!({"issueTypes": [{"name": "Sub-task", "subtask": true}, {"name": "Story"}, {"name": "Task"}]}))
+                    }
+                    ("GET", "/atlassian/ex/jira/cloud-1/rest/api/3/myself") => (200, json!({"emailAddress": "riyam@acme.com"})),
+                    ("GET", "/atlassian/ex/jira/cloud-1/rest/api/3/project/OPS") => (200, json!({"key": "OPS", "name": "Operations"})),
+                    ("POST", "/atlassian/ex/jira/cloud-1/rest/api/3/issue") => {
+                        let mut count = next.lock().unwrap();
+                        *count += 1;
+                        (201, json!({"id": "1", "key": format!("OPS-{count}")}))
+                    }
+                    _ => (404, json!({})),
+                }
+            }))
+            .await;
+            let mut events = harness.events.subscribe();
+
+            harness.service.connect(JIRA).await.unwrap();
+            let failed = harness.next_connection(&mut events).await;
+            assert_eq!(failed["connected"], false);
+            assert_eq!(
+                failed["error"],
+                "Signed in to Jira, but Kesami couldn’t set up where to send tasks: you can’t create issues in any project on Acme"
+            );
+            let status = harness.service.status().await;
+            assert_eq!((provider(&status, JIRA)["signedIn"].as_bool(), provider(&status, JIRA)["connected"].as_bool()), (Some(true), Some(false)));
+
+            *projects.lock().unwrap() = json!([{"key": "OPS", "name": "Operations"}]);
+            let ready = harness.service.setup(JIRA).await.unwrap();
+            assert_eq!(ready["connected"], true);
+            assert_eq!(ready["account"], "riyam@acme.com");
+            assert_eq!(ready["destination"], "Operations (OPS) · Acme");
+            let stored = harness.stored(JIRA).await;
+            assert_eq!((stored["siteUrl"].as_str(), stored["issueType"].as_str()), (Some("https://acme.atlassian.net"), Some("Task")));
+            assert_eq!(harness.service.test(JIRA).await.unwrap(), "Found project Operations.");
+
+            let delivery = harness.service.send(JIRA, &meeting_with_commitments()).await;
+            assert_eq!(delivery["ok"], true, "{delivery}");
+            let issues: Vec<Seen> = harness
+                .seen("/atlassian/ex/jira/cloud-1/rest/api/3/issue")
+                .into_iter()
+                .filter(|seen| seen.method == "POST")
+                .collect();
+            let titles: Vec<&str> = issues.iter().filter_map(|seen| seen.body["fields"]["summary"].as_str()).collect();
+            assert_eq!(titles, ["Write the changelog", "Send the pricing sheet", "share the beta build with design", "Check the contract with legal"]);
+            assert!(issues[2].body["fields"]["description"].to_string().contains("Commitment made in the meeting"));
+            assert_eq!(delivery["items"][0]["url"], "https://acme.atlassian.net/browse/OPS-1");
+        }
+
+        #[tokio::test]
+        async fn linear_asana_and_clickup_set_up_a_home_for_tasks_without_asking() {
+            let harness = Harness::start(Arc::new(|seen: &Seen| match (seen.method.as_str(), seen.path.as_str()) {
+                ("POST", "/linear/graphql") => (
+                    200,
+                    json!({"data": {"viewer": {"teams": {"nodes": [{"id": "t2", "key": "DES", "name": "Design"}]}}, "teams": {"nodes": [{"id": "t1", "key": "ENG", "name": "Engineering"}, {"id": "t2", "key": "DES", "name": "Design"}]}}}),
+                ),
+                ("GET", "/asana/api/1.0/users/me?opt_fields=workspaces.name,workspaces.is_organization") => {
+                    (200, json!({"data": {"workspaces": [{"gid": "1", "name": "Acme", "is_organization": true}]}}))
+                }
+                ("GET", "/asana/api/1.0/workspaces/1/projects?archived=false&limit=100&opt_fields=name") => (200, json!({"data": [{"gid": "5", "name": "Roadmap"}]})),
+                ("GET", "/asana/api/1.0/users/me/teams?organization=1&opt_fields=name") => (200, json!({"data": [{"gid": "77", "name": "Product"}]})),
+                ("POST", "/asana/api/1.0/teams/77/projects") => (201, json!({"data": {"gid": "900", "name": DESTINATION_NAME}})),
+                ("GET", "/clickup/api/v2/team") => (200, json!({"teams": [{"id": "9001", "name": "Acme"}]})),
+                ("GET", "/clickup/api/v2/team/9001/space?archived=false") => (200, json!({"spaces": [{"id": 77, "name": "Product"}]})),
+                ("GET", "/clickup/api/v2/space/77/list?archived=false") => {
+                    (200, json!({"lists": [{"id": "501", "name": "Inbox"}, {"id": "502", "name": DESTINATION_NAME}]}))
+                }
+                _ => (404, json!({})),
+            }))
+            .await;
+            for provider in [LINEAR, ASANA, CLICKUP] {
+                harness.store(provider, json!({"oauth": {"accessToken": format!("{provider}-access"), "account": "riyam@acme.com"}})).await;
+            }
+
+            let linear = harness.service.setup(LINEAR).await.unwrap();
+            assert_eq!((linear["connected"].as_bool(), linear["destination"].as_str()), (Some(true), Some("Design (DES)")), "the user's own team wins");
+
+            let asana = harness.service.setup(ASANA).await.unwrap();
+            assert_eq!(asana["destination"], format!("{DESTINATION_NAME} · Acme"));
+            assert_eq!(harness.stored(ASANA).await["projectId"], "900");
+            assert_eq!(harness.seen("/asana/api/1.0/teams/77/projects")[0].body["data"]["name"], DESTINATION_NAME);
+
+            let clickup = harness.service.setup(CLICKUP).await.unwrap();
+            assert_eq!(clickup["destination"], format!("{DESTINATION_NAME} · Product"));
+            assert_eq!(harness.stored(CLICKUP).await["listId"], "502");
+            assert!(harness.seen("/clickup").iter().all(|seen| seen.method == "GET" && seen.auth == "Bearer clickup-access"), "an existing Kesami list is reused");
+        }
+
+        #[tokio::test]
+        async fn disconnect_revokes_signed_in_access_and_says_what_is_left_to_do() {
+            let harness = Harness::start(Arc::new(|seen: &Seen| match seen.path.as_str() {
+                "/v1/connectors/asana/revoke" => (200, json!({"revoked": true})),
+                "/v1/connectors/jira/revoke" => (200, json!({"revoked": false})),
+                _ => (404, json!({})),
+            }))
+            .await;
+            harness.store(ASANA, json!({"oauth": {"accessToken": "a", "refreshToken": "r"}, "projectId": "11"})).await;
+            harness.store(JIRA, json!({"oauth": {"accessToken": "j", "refreshToken": "jr"}, "cloudId": "c"})).await;
+            harness.store(NOTION, json!({"token": "ntn_pasted", "parentPageId": PAGE})).await;
+
+            assert_eq!(harness.service.disconnect(ASANA).await.unwrap(), "Disconnected and revoked Kesami’s access to Asana.");
+            assert_eq!(harness.seen("/v1/connectors/asana/revoke")[0].body, json!({"accessToken": "a", "refreshToken": "r"}));
+            assert!(harness.stored(ASANA).await.is_empty());
+
+            assert!(harness.service.disconnect(JIRA).await.unwrap().contains("Connected apps"));
+            assert!(harness.stored(JIRA).await.is_empty());
+
+            assert_eq!(harness.service.disconnect(NOTION).await.unwrap(), "Disconnected.");
+            assert!(harness.seen("/v1/connectors/notion").is_empty(), "pasted tokens are not sent to Kesami");
+            assert!(harness.service.disconnect(SLACK).await.unwrap().contains("Integrations"));
+        }
     }
 }

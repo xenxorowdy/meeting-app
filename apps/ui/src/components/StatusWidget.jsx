@@ -7,7 +7,7 @@ import { StreamingText } from '@/components/StreamingText';
 import { LevelHistory } from '@/components/widget/LevelHistory';
 import { useLiveStatus } from '@/hooks/useLiveStatus';
 import { useMeetingChat } from '@/hooks/useMeetingChat';
-import { citationTime } from '@/lib/chat';
+import { citationTime, readableExcerpt } from '@/lib/chat';
 import { useTheme } from '@/lib/theme';
 import { CallDetectedPrompt } from '@/components/CallDetectedPrompt';
 
@@ -241,7 +241,7 @@ function WidgetAsk({ chat, connection, isLive, visible }) {
                                         {message.citations.map(citation => (
                                             <div key={citation.number} className="ksw-source" data-citation={citation.number}>
                                                 <strong>{citation.title || 'Meeting'}{Number.isFinite(citation.startMs) ? ` · ${citationTime(citation.startMs)}` : ''}</strong>
-                                                <p>{citation.available === false ? 'This source is no longer available.' : citation.excerpt}</p>
+                                                <p>{citation.available === false ? 'This source is no longer available.' : readableExcerpt(citation.excerpt).text}</p>
                                             </div>
                                         ))}
                                     </details>

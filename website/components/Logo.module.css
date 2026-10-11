@@ -1,0 +1,39 @@
+.mark {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    border-radius: 28%;
+    background: var(--orange);
+}
+
+.bar {
+    position: absolute;
+    top: 50%;
+    width: 11.25%;
+    border-radius: 999px;
+    background: #fff;
+    transform: translateY(-50%);
+}
+
+.live .bar {
+    animation: talk 1.1s var(--ease) infinite alternate;
+}
+
+@keyframes talk {
+    from {
+        transform: translateY(-50%) scaleY(1);
+    }
+    to {
+        transform: translateY(-50%) scaleY(0.45);
+    }
+}
+
+.wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-stretch: 125%;
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+}

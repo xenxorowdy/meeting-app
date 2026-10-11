@@ -628,7 +628,7 @@ impl CalendarService {
                     ("timeMax", rfc3339(end)),
                     ("singleEvents", "true".into()),
                     ("orderBy", "startTime".into()),
-                    ("maxResults", "25".into()),
+                    ("maxResults", "100".into()),
                 ]),
             _ => self
                 .http
@@ -638,7 +638,7 @@ impl CalendarService {
                     ("startDateTime", rfc3339(start)),
                     ("endDateTime", rfc3339(end)),
                     ("$orderby", "start/dateTime".into()),
-                    ("$top", "25".into()),
+                    ("$top", "100".into()),
                 ]),
         };
 
@@ -776,6 +776,7 @@ fn normalize(provider: &str, item: &Value) -> Option<Value> {
             "eventUrl": item.get("htmlLink").and_then(Value::as_str).filter(|url| is_http_url(url)),
             "organizer": item.pointer("/organizer/email").and_then(Value::as_str),
             "attendees": attendees,
+            "seriesId": item.get("recurringEventId").and_then(Value::as_str),
         }))
     } else {
         if item.get("isCancelled").and_then(Value::as_bool) == Some(true) {
@@ -819,6 +820,7 @@ fn normalize(provider: &str, item: &Value) -> Option<Value> {
             "eventUrl": item.get("webLink").and_then(Value::as_str).filter(|url| is_http_url(url)),
             "organizer": item.pointer("/organizer/emailAddress/address").and_then(Value::as_str),
             "attendees": attendees,
+            "seriesId": item.get("seriesMasterId").and_then(Value::as_str),
         }))
     }
 }

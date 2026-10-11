@@ -10,7 +10,21 @@ const assert = require('node:assert/strict');
 const UI_DIST = process.env.KESAMI_UI_DIST ? path.resolve(process.env.KESAMI_UI_DIST) : path.resolve(__dirname, '../../apps/ui/dist');
 
 const CONTRAST_PROBE = `(() => {
-    const channels = value => (value.match(/[\\d.]+/g) || []).map(Number);
+    // Resolve modern CSS colors (including OKLCH) to sRGB before WCAG math.
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const cache = new Map();
+    const channels = value => {
+        if (cache.has(value)) return cache.get(value);
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = value;
+        context.fillRect(0, 0, 1, 1);
+        const pixel = context.getImageData(0, 0, 1, 1).data;
+        const result = [pixel[0], pixel[1], pixel[2], pixel[3] / 255];
+        cache.set(value, result);
+        return result;
+    };
     const luminance = rgb => {
         const [r, g, b] = rgb.map(value => {
             const channel = value / 255;
@@ -106,6 +120,32 @@ async function run() {
         await settle();
         await fs.writeFile(path.join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG());
     };
+    const captureResponsive = async (name, selector) => {
+        const size = window.getContentSize();
+        const theme = await evaluate("document.querySelector('.ks-app')?.dataset.theme || 'dark'");
+        for (const mode of ['dark', 'light']) {
+            await evaluate(`window.fixtureSetTheme(${JSON.stringify(mode)})`);
+            for (const width of [320, 375, 414, 768]) {
+                window.setContentSize(width, 900);
+                await settle();
+                const layout = await evaluate(`(() => { const node = document.querySelector(${JSON.stringify(selector)}); return { root: document.documentElement.scrollWidth, viewport: innerWidth, scroll: node?.scrollWidth, width: node?.clientWidth, overflowing: [...(node?.querySelectorAll('*') || [])].filter(el => el.getBoundingClientRect().right > node.getBoundingClientRect().right + 1).slice(0, 6).map(el => el.className) }; })()`);
+                await capture(`rounded-${name}-${mode}-${width}`);
+                assert(layout.root <= layout.viewport && layout.scroll <= layout.width, `${name} ${mode} ${width}px: ${JSON.stringify(layout)}`);
+                if (await evaluate("!!document.querySelector('.ks-recording-hud')")) {
+                    assert(await evaluate(`(() => {
+                        const panel = document.querySelector('.ks-meeting-panel').getBoundingClientRect();
+                        const hud = document.querySelector('.ks-recording-hud').getBoundingClientRect();
+                        const input = document.querySelector('.ks-notes-composer textarea')?.getBoundingClientRect();
+                        return panel.height > 80 && hud.top >= panel.bottom && hud.bottom <= innerHeight
+                            && (!input || (input.top >= panel.top && input.bottom <= panel.bottom));
+                    })()`), `${name} ${mode} ${width}px keeps the content and recording controls visible`);
+                }
+            }
+        }
+        window.setContentSize(...size);
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await settle();
+    };
     const waitFor = async (expression, label, timeoutMs = 5000) => {
         assert(
             await evaluate(
@@ -120,6 +160,13 @@ async function run() {
     assert(await evaluate("!document.querySelector('.ks-welcome input') && !document.body.textContent.includes('Connection & preferences') && !document.body.textContent.includes('NEW ACCOUNT')"), 'sign-in has no credential fields or anonymous entry');
     assert(await evaluate("document.querySelector('.ks-welcome-primary').disabled && document.body.textContent.includes('Open the Kesami desktop app')"), 'browser-only sign-in explains why Google is unavailable');
     await capture('01-sign-in');
+    await captureResponsive('sign-in', '.ks-welcome');
+    for (const mode of ['light', 'dark']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(mode)})`);
+        const contrast = await evaluate(CONTRAST_PROBE.replace('SELECTORS', JSON.stringify(['.ks-welcome-poster h1', '.ks-welcome-primary'])));
+        assert(contrast.every(item => item.ratio >= 4.5), `${mode} sign-in contrast: ${JSON.stringify(contrast)}`);
+    }
+    await evaluate("window.fixtureSetTheme('dark')");
     if (process.argv.includes('--workspace-only')) {
         await evaluate('window.fixtureEnterWorkspace()');
     } else {
@@ -131,6 +178,15 @@ async function run() {
         await click('Continue with Google');
         await waitFor("document.querySelector('.ks-welcome-error')?.textContent.includes('cancelled or denied')", 'Google cancellation is visible');
         assert(await evaluate("!document.querySelector('.ks-welcome-primary').disabled"), 'failed sign-in allows retry');
+        for (const mode of ['dark', 'light']) {
+            await evaluate(`window.fixtureSetTheme(${JSON.stringify(mode)})`);
+            const target = await evaluate("(() => { const r = document.querySelector('.ks-welcome-primary').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()");
+            window.webContents.sendInputEvent({ type: 'mouseMove', ...target });
+            await settle();
+            const contrast = await evaluate(CONTRAST_PROBE.replace('SELECTORS', JSON.stringify(['.ks-welcome-primary'])));
+            assert(contrast[0].ratio >= 4.5, `${mode} Google hover contrast: ${JSON.stringify(contrast)}`);
+        }
+
         await evaluate("window.fixtureGoogleError = null; window.kesamiGoogleSignIn.start = () => { window.fixtureGoogleAttempts++; return new Promise(resolve => { window.fixtureResolveGoogle = resolve; }); }; void 0");
         await evaluate("document.querySelector('.ks-welcome-primary').click(); document.querySelector('.ks-welcome-primary').click()");
         await waitFor("document.querySelector('.ks-welcome-primary').textContent.includes('Waiting for Google')", 'pending Google sign-in shows loading');
@@ -143,15 +199,76 @@ async function run() {
     }
     await capture('02-home');
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 3);
+    assert.equal(await evaluate("document.querySelectorAll('.ks-agenda-day').length"), 2, 'calendar shows two days per page');
+    assert(await evaluate("document.querySelector('[aria-label=\"Previous two days\"]').disabled"), 'calendar cannot page into the past');
+    const initialDates = await evaluate("[...document.querySelectorAll('.ks-agenda-date')].map(date => date.getAttribute('aria-label'))");
+    await evaluate('window.fixtureCalendarRequests = []');
+    await evaluate("document.querySelector('[aria-label=\"Next two days\"]').click()");
+    await settle();
+    assert.notDeepEqual(await evaluate("[...document.querySelectorAll('.ks-agenda-date')].map(date => date.getAttribute('aria-label'))"), initialDates);
+    assert(await evaluate("document.querySelector('.ks-agenda-card').textContent.includes('Sprint Planning')"), 'the second page shows meetings from the six-day fetch');
+    assert.equal(await evaluate('window.fixtureCalendarRequests.length'), 0, 'paging the agenda never refetches');
+    assert(await evaluate("!document.querySelector('[aria-label=\"Next two days\"]').disabled"), 'calendar offers a third page');
+    await evaluate("document.querySelector('[aria-label=\"Next two days\"]').click()");
+    await settle();
+    assert(await evaluate("document.querySelector('[aria-label=\"Next two days\"]').disabled"), 'calendar stops after six days');
+    await click('Today');
+    await evaluate('window.fixtureCalls = []');
+    await evaluate("document.querySelector('[aria-label=\"Choose a folder for Design System Weekly\"]').click()");
+    await settle();
+    assert(await evaluate("document.activeElement?.closest('.ks-folder-picker') !== null"), 'the folder picker takes focus');
+    assert(await evaluate("document.querySelector('.ks-folder-picker').textContent.includes('New folder “Design System”')"), 'the picker suggests a folder name from the meeting title');
+    await capture('02-agenda-folder-picker');
+    await evaluate("[...document.querySelectorAll('.ks-folder-picker-list button')].find(button => button.textContent.includes('Design Sync')).click()");
+    await waitFor("document.querySelector('.ks-folder-picker-series')", 'choosing a folder for a recurring meeting offers to auto-add future ones');
+    assert.deepEqual(
+        await evaluate("window.fixtureCalls.filter(call => call.path === '/api/folders/rules' && call.method === 'POST').map(call => call.body)"),
+        [{ provider: 'google', eventId: '1', seriesId: 'design-weekly', folderId: 'design', applyToSeries: false }],
+        'the event is filed before the series question'
+    );
+    await capture('02-agenda-folder-auto-add');
+    await click('Auto-add');
+    await waitFor("!document.querySelector('.ks-folder-picker')", 'answering closes the picker');
+    assert.equal(await evaluate("window.fixtureCalls.filter(call => call.path === '/api/folders/rules' && call.method === 'POST').at(-1).body.applyToSeries"), true);
+    assert(await evaluate("document.querySelector('[aria-label=\"Folder for Design System Weekly: Design Sync\"]') !== null"), 'the agenda row shows its folder');
+    await evaluate("document.querySelector('[aria-label=\"Choose a folder for 1:1 with Alex\"]').click()");
+    await settle();
+    await evaluate("document.querySelector('.ks-folder-picker-create').click()");
+    await waitFor("document.querySelector('[aria-label=\"Folder for 1:1 with Alex: 1:1 with Alex\"]')", 'a one-off meeting creates its suggested folder and closes without the series question');
+    await evaluate("document.querySelector('.ks-sidebar-toggle').click()");
+    await settle();
+    assert(await evaluate("document.querySelector('.ks-workspace').classList.contains('is-sidebar-collapsed') && document.querySelector('.ks-sidebar').getBoundingClientRect().width === 0"), 'sidebar collapses out of view');
+    assert.equal(await evaluate("document.querySelector('.ks-sidebar-expand')?.getAttribute('aria-expanded')"), 'false', 'collapsed sidebar leaves an expand control in the toolbar');
+    await capture('02-home-sidebar-collapsed');
+    await evaluate("document.querySelector('.ks-sidebar-expand').click()");
+    await settle();
+    assert(await evaluate("document.querySelector('.ks-sidebar').getBoundingClientRect().width > 150"), 'sidebar expands again');
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('.ks-agenda-date')].map(date => date.getAttribute('aria-label'))"), initialDates, 'Today resets calendar paging');
     for (const theme of ['light', 'dark']) {
         await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
         await settle();
         await capture(`02-home-${theme}`);
         assert(await evaluate(`(() => {
+            const rows = [...document.querySelectorAll('.ks-agenda-row')];
+            return rows.length > 0 && rows.every(row => {
+                const main = row.querySelector('.ks-agenda-main').getBoundingClientRect();
+                const join = row.querySelector('.ks-agenda-link').getBoundingClientRect();
+                return join.left >= main.right && join.top < main.bottom;
+            });
+        })()`), `${theme} Join links align to the right of event details`);
+        assert(await evaluate(`(() => {
+            const cards = [...document.querySelectorAll('.ks-meeting-card')];
+            return cards.every(card => parseFloat(getComputedStyle(card).borderRadius) > 0)
+                && cards.slice(1).every((card, i) => card.getBoundingClientRect().top - cards[i].getBoundingClientRect().bottom >= 8);
+        })()`), `${theme} meeting rows have rounded corners and gaps`);
+        await evaluate("document.querySelector('[aria-label=\"Search meetings\"]').focus()");
+        assert(await evaluate("getComputedStyle(document.querySelector('.ks-global-search')).outlineStyle === 'none'"), 'search has one focus border without an outer outline');
+        await evaluate("document.activeElement.blur()");
+        assert(await evaluate(`(() => {
             const agenda = document.querySelector('.ks-agenda').getBoundingClientRect();
             const meetings = document.querySelector('.ks-meetings-list').getBoundingClientRect();
-            return agenda.left >= meetings.right;
-        })()`), 'desktop schedule sits beside the meeting library');
+            return agenda.bottom <= meetings.top;
+        })()`), 'desktop schedule sits above the meeting library');
         window.setContentSize(620, 860);
         await settle();
         assert(await evaluate(`document.querySelector('.ks-home-scroll').scrollWidth <= document.querySelector('.ks-home-scroll').clientWidth`), 'narrow dashboard has no horizontal overflow');
@@ -169,6 +286,28 @@ async function run() {
     await settle();
     assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 3);
     await click('Home');
+    for (const theme of ['dark', 'light']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        for (const width of [320, 375, 414, 768]) {
+            window.setContentSize(width, 900);
+            await settle();
+            assert(await evaluate('document.documentElement.scrollWidth <= innerWidth'), `${theme} home fits ${width}px`);
+            assert(await evaluate("document.querySelector('.ks-home').scrollWidth <= document.querySelector('.ks-home').clientWidth"), `${theme} home content fits ${width}px`);
+            assert(await evaluate("!!document.querySelector('.ks-new-meeting button') && !!document.querySelector('[aria-label=\"Workspace tools\"]')"), 'recording and tools remain reachable');
+            await capture(`02-rounded-home-${theme}-${width}`);
+        }
+    }
+    window.setContentSize(1280, 824);
+    await evaluate("window.fixtureSetTheme('dark')");
+    await settle();
+    await click('All meetings');
+    await captureResponsive('library', '.ks-home');
+    await click('List recent todos');
+    await waitFor("document.querySelector('[aria-label=\"Meeting question\"]')?.value.includes('List recent action items')", 'library shortcut drafts a grounded question');
+
+    await click('Ask Kesami');
+    await captureResponsive('ask', '.ks-chat');
+    await click('Home');
     await click('Schedule meeting');
     assert(await evaluate('window.fixtureScheduleOpened'), 'schedule action still opens the scheduling flow');
     await evaluate("document.querySelector('[aria-label=\"Workspace tools\"]').click()");
@@ -181,7 +320,7 @@ async function run() {
     await evaluate('window.fixtureSetEmpty(true)');
     await capture('02-home-empty');
     assert(await evaluate("document.body.textContent.includes('Your next conversation starts here')"));
-    assert(await evaluate("document.body.textContent.includes('Nothing scheduled today')"));
+    assert(await evaluate("document.body.textContent.includes('No events today')"));
     await evaluate('window.fixtureSetEmpty(false)');
     await settle();
     window.setContentSize(794, 1000);
@@ -252,8 +391,17 @@ async function run() {
             if (!dialog?.closest('.ks-app')) return false;
             const style = getComputedStyle(dialog);
             const swatches = [...dialog.querySelectorAll('.ks-color-picker button')];
-            return style.backgroundColor.startsWith('rgb(') && swatches.length === 5
-                && swatches.every(button => getComputedStyle(button).backgroundColor.startsWith('rgb('));
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext('2d');
+            const opaque = color => {
+                context.clearRect(0, 0, 1, 1);
+                context.fillStyle = color;
+                context.fillRect(0, 0, 1, 1);
+                return context.getImageData(0, 0, 1, 1).data[3] === 255;
+            };
+            return opaque(style.backgroundColor) && swatches.length === 5
+                && swatches.every(button => opaque(getComputedStyle(button).backgroundColor));
         })()`), `${theme} folder dialog has an opaque surface and visible color choices`);
         await capture(`02-new-folder-${theme}`);
     }
@@ -270,9 +418,11 @@ async function run() {
     assert(await evaluate("document.body.textContent.includes('Research')"));
     await click('Home');
     await click('New Meeting');
+    assert(await evaluate("!document.querySelector('.ks-meeting-chat')"), 'recording starts with Ask AI closed');
     const midStream = await evaluate("document.querySelector('li[aria-live=\"polite\"] p').textContent");
     await evaluate('new Promise(resolve => setTimeout(resolve, 800))');
     await capture('03-transcript');
+    await captureResponsive('live-transcript', '.ks-meeting-main');
     assert(await evaluate(`(() => {
         const panel = document.querySelector('.ks-meeting-panel').getBoundingClientRect();
         const controls = document.querySelector('.ks-recording-hud').getBoundingClientRect();
@@ -338,7 +488,28 @@ async function run() {
         'a running meeting offers only the views that have something to show'
     );
     assert.equal(await evaluate("[...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Export')"), false);
-    assert(await evaluate("document.querySelector('.ks-meeting-chat') !== null"), 'Ask AI opens alongside a meeting');
+    await click('Notes');
+    await captureResponsive('live-notes', '.ks-meeting-main');
+    for (const theme of ['dark', 'light']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await capture(`03-live-notes-${theme}`);
+        assert(await evaluate(`(() => {
+            const editor = document.querySelector('.ks-notes-editor');
+            const panel = document.querySelector('.ks-meeting-panel').getBoundingClientRect();
+            const input = editor.querySelector('textarea').getBoundingClientRect();
+            const controls = document.querySelector('.ks-recording-hud').getBoundingClientRect();
+            return getComputedStyle(editor).borderTopWidth === '0px' && input.top >= panel.top
+                && input.bottom <= panel.bottom && panel.bottom <= controls.top && controls.bottom <= innerHeight;
+        })()`), `${theme} notes use one panel and keep the editor and recording controls visible`);
+    }
+    await click('Transcript');
+    await evaluate("document.querySelector('.ks-talk-time summary').click()");
+    assert(await evaluate("document.querySelector('.ks-talk-time').open"), 'speaker activity opens on request');
+    await capture('03-speaker-activity');
+    await evaluate("document.querySelector('.ks-talk-time summary').click()");
+    assert(await evaluate("!document.querySelector('.ks-meeting-chat')"), 'switching recording tabs keeps Ask AI closed');
+    await click('Ask AI');
+    assert(await evaluate("document.querySelector('.ks-meeting-chat') !== null"), 'Ask AI opens only when requested');
     await settle();
     assert(await evaluate("document.querySelector('.ks-meeting-chat').textContent.includes('transcript captured when you send')"));
     assert(await evaluate("document.querySelector('.ks-recording-hud') !== null"));
@@ -451,7 +622,24 @@ async function run() {
         await evaluate("document.querySelector('.ks-brief-task input').checked && document.querySelector('.ks-brief-task').classList.contains('is-done')"),
         'next steps tick off from the summary'
     );
+    await evaluate("document.querySelector('.ks-template-picker summary').click()");
+    await click('Weekly Team Meeting');
+    await waitFor("document.querySelector('.ks-template-picker summary').textContent.includes('Weekly Team Meeting')", 'template selection persists locally');
+    assert(await evaluate("document.querySelector('.ks-template-content').textContent.includes('Decisions') && document.querySelector('.ks-template-content').textContent.includes('Action items')"), 'template displays existing structured sections');
+    await evaluate("document.querySelector('.ks-template-picker summary').click()");
+    await click('New template');
+    await evaluate(`(() => { const input = document.querySelector('[aria-label="Template name"]'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'Project review'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await settle();
+    await click('Save template');
+    await waitFor("document.querySelector('.ks-template-picker summary').textContent.includes('Project review')", 'custom template saved and selected');
+    await evaluate("document.querySelector('.ks-template-picker summary').click()");
+    await capture('05-template-picker');
+    await captureResponsive('template-picker', '.ks-meeting-main');
+    assert(await evaluate("(() => { const r = document.querySelector('.ks-template-menu').getBoundingClientRect(); const root = document.querySelector('.ks-meeting-main').getBoundingClientRect(); return r.left >= root.left && r.right <= root.right; })()"), 'template menu stays within meeting view');
+
+    await click('Enhanced notes');
     await capture('05-summary');
+    await captureResponsive('summary', '.ks-meeting-main');
     await click('Commitments');
     await waitFor("[...document.querySelectorAll('button')].some(b => b.textContent === 'Detect commitments' && !b.disabled)", 'commitments empty state loads');
     await evaluate('window.fixtureCommitmentsFails = true');
@@ -798,7 +986,7 @@ async function run() {
             assert(ratio !== null, `${theme}: ${selector} is rendered`);
             assert(ratio >= 4.5, `${theme}: ${selector} contrast ${ratio} must reach 4.5:1`);
         }
-        assert(await evaluate("document.querySelectorAll('.ks-balls i').length >= 3"), `${theme}: the listening indicator is animated`);
+        assert(await evaluate("document.querySelectorAll('.ks-transcribing-wave i, .ks-transcribing-wave-small i, .ks-balls i').length >= 3"), `${theme}: the listening indicator is animated`);
         await click('Stop');
         if (!(await evaluate("document.querySelector('.ks-meeting-chat') !== null"))) await click('Ask AI');
         await evaluate("new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('.ks-chat-starters button:not(:disabled)')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Chat fixture timeout')); } }, 25); })");
@@ -826,6 +1014,7 @@ async function run() {
         assert(await evaluate("[...document.querySelectorAll('.ks-plan-card button')].find(b => b.textContent.includes('Current plan')).disabled"), 'the current plan is marked, not offered');
         assert(await evaluate("document.body.textContent.includes('COMING LATER') && !/contact sales/i.test(document.body.textContent)"), 'Enterprise does not promise a contact path');
         await capture(`13-pricing-${theme}`);
+        if (theme === 'dark') await captureResponsive('pricing', '.ks-account');
         window.setContentSize(794, 1000);
         await settle();
         assert(await evaluate('document.documentElement.scrollWidth <= innerWidth'));
@@ -901,6 +1090,12 @@ async function run() {
             "new Promise((resolve, reject) => { const start = Date.now(); const timer = setInterval(() => { if (document.querySelector('[role=\"dialog\"]')) { clearInterval(timer); resolve(); } else if (Date.now() - start > 5000) { clearInterval(timer); reject(new Error('Lazy settings chunk never loaded')); } }, 25); })"
         );
         assert(await evaluate("document.querySelector('[role=\"dialog\"]').textContent.length > 0"), 'the lazily loaded settings surface rendered');
+        for (const width of [320, 375, 414, 768]) {
+            window.setContentSize(width, 900);
+            await settle();
+            assert(await evaluate("(() => { const dialog = document.querySelector('.ks-settings-dialog'); return dialog.scrollWidth <= dialog.clientWidth && dialog.getBoundingClientRect().right <= innerWidth; })()"), `settings fits ${width}px`);
+            await capture(`rounded-settings-${width}`);
+        }
         assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
     }
     console.log(

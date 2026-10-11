@@ -7,6 +7,7 @@ import { TooltipProvider } from '../../apps/ui/src/components/ui/tooltip';
 import '../../apps/ui/src/design.css';
 
 const noop = () => {};
+window.fixtureCalendarRequests = [];
 const today = new Date();
 today.setHours(10, 0, 0, 0);
 const folders = [
@@ -50,6 +51,7 @@ const base = {
     recording: { videoPath: 'fixture.webm', durationMs: 25000, startedAtMs: today.getTime(), mode: 'screen' },
 };
 window.fixtureCalls = [];
+window.fixtureFolderRules = { events: {}, series: {} };
 const commitmentCandidates = [
     { id: 'promise', classification: 'explicit_commitment', person: 'Alex Rivera', speaker: 'Alex Rivera', targetAction: 'Send a calendar invite', commitment: "I'll send a cal invite after this.", dueDate: '', sourceTurnIds: ['turn-4'], startMs: 16000, confidence: 'high', confidenceReason: 'Explicit promise; review the speaker label.', status: 'pending', references: [] },
     { id: 'suggestion', classification: 'suggested_action', person: '', speaker: 'Maya Chen', targetAction: 'Schedule a Friday session', commitment: "Let's schedule a Friday session.", dueDate: 'Friday', sourceTurnIds: ['turn-3'], startMs: 12000, confidence: 'medium', confidenceReason: 'A suggestion has no accepted owner yet.', status: 'pending', references: [] },
@@ -126,8 +128,22 @@ window.fetch = async (url, options = {}) => {
         return new Response(JSON.stringify({ meeting: updated }));
     }
     if (path === '/api/folders') {
-        if (body) folders.push({ id: 'new-folder', name: body.name });
+        if (body) folders.push({ id: `new-folder-${folders.length}`, name: body.name });
         return new Response(JSON.stringify({ folders }));
+    }
+    if (path === '/api/folders/rules') {
+        if (body) {
+            const rules = window.fixtureFolderRules;
+            const eventKey = `${body.provider}:${body.eventId}`;
+            const seriesKey = body.seriesId ? `${body.provider}:${body.seriesId}` : null;
+            if (body.applyToSeries && seriesKey) {
+                if (body.folderId) rules.series[seriesKey] = body.folderId;
+                else delete rules.series[seriesKey];
+                delete rules.events[eventKey];
+            } else if (body.folderId) rules.events[eventKey] = body.folderId;
+            else delete rules.events[eventKey];
+        }
+        return new Response(JSON.stringify({ rules: window.fixtureFolderRules, filed: [] }));
     }
     if (path === '/api/chat/threads') return new Response(JSON.stringify(body ? { id: 'fixture-live-chat', scope: body.scope } : { threads: [chatThread] }));
     if (path === '/api/chat/threads/fixture-live-chat/messages') {
@@ -266,12 +282,25 @@ function Fixture({ theme }) {
                 deleteMeeting: async () => true,
             }}
             calendar={{
-                events: empty ? [] : ['Q4 Product Roadmap', 'Design System Weekly', '1:1 with Alex'].map((title, i) => ({
-                    id: i,
-                    title,
-                    start: new Date(today.getTime() + i * 14400000).toISOString(),
-                    end: new Date(today.getTime() + (i * 14400 + 3600) * 1000).toISOString(),
-                })),
+                refreshEvents: range => window.fixtureCalendarRequests.push(range),
+                events: empty ? [] : [
+                    ...['Q4 Product Roadmap', 'Design System Weekly', '1:1 with Alex'].map((title, i) => ({
+                        id: i,
+                        provider: 'google',
+                        title,
+                        joinUrl: `https://meet.google.com/fixture-${i}`,
+                        seriesId: title === 'Design System Weekly' ? 'design-weekly' : undefined,
+                        start: new Date(today.getTime() + i * 14400000).toISOString(),
+                        end: new Date(today.getTime() + (i * 14400 + 3600) * 1000).toISOString(),
+                    })),
+                    {
+                        id: 3,
+                        provider: 'google',
+                        title: 'Sprint Planning',
+                        start: new Date(today.getTime() + 2 * 86400000 + 3600000).toISOString(),
+                        end: new Date(today.getTime() + 2 * 86400000 + 7200000).toISOString(),
+                    },
+                ],
                 providers: [{ provider: 'google', label: 'Google Calendar', connected: true, configured: true }],
             }}
             session={{

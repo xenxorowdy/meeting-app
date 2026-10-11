@@ -1,0 +1,32 @@
+[
+  {
+    "clip": "hook",
+    "correlation": 0.9721,
+    "verified": true
+  },
+  {
+    "clip": "widget",
+    "correlation": 0.9702,
+    "verified": true
+  },
+  {
+    "clip": "languages",
+    "correlation": 0.9996,
+    "verified": true
+  },
+  {
+    "clip": "folders",
+    "correlation": 0.996,
+    "verified": true
+  },
+  {
+    "clip": "history",
+    "correlation": 0.9986,
+    "verified": true
+  },
+  {
+    "clip": "outro",
+    "correlation": 0.9606,
+    "verified": true
+  }
+]

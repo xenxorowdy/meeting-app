@@ -96,8 +96,79 @@ with a 1 MiB request limit, one active AI request per user, and a daily allowanc
 of 100 requests (`KESAMI_CLOUD_DAILY_AI_LIMIT` overrides this). This is a relay
 usage safeguard, separate from the desktop plan allowance.
 
-Batch transcription, podcast generation, connector OAuth and one-click MCP setup
+Batch transcription, podcast generation, Google connector OAuth and one-click MCP setup
 are separate from these meeting AI routes.
+
+## One-click connectors
+
+Settings → Connectors offers a one-click sign-in for Slack, Notion, Linear, Jira, Asana and
+ClickUp. Every one of these providers needs the app's client secret to exchange the code,
+and all except Slack and ClickUp also need it to refresh tokens, so the relay brokers the
+OAuth flow and the desktop keeps the tokens:
+
+1. The desktop backend calls `POST /v1/connectors/{provider}/start`. The relay returns the
+   provider's authorize URL and a separate one-time `ticket`.
+2. The provider redirects to `GET /v1/connectors/{provider}/callback`. The relay exchanges the
+   code with the client secret and holds the result in memory for up to 10 minutes.
+3. The desktop backend polls `POST /v1/connectors/{provider}/claim` with the ticket and gets the
+   result once. Slack returns only the incoming-webhook URL (its bot token is discarded); the
+   others return an access token, refresh token and expiry, stored in the local credentials file.
+4. When a token is about to expire, or a call answers 401, the desktop calls
+   `POST /v1/connectors/{provider}/refresh` with its refresh token. The relay adds the client
+   secret and returns the rotated tokens. It stores nothing.
+5. Disconnect calls `POST /v1/connectors/{provider}/revoke`. Notion, Linear and Asana revoke the
+   grant; Slack, Jira and ClickUp have no revoke API, so the app tells the user where to remove
+   Kesami in that product.
+
+`GET /v1/connectors` lists the providers this relay has apps for; the desktop shows the
+one-click button only for those and falls back to the paste-a-token form for the rest.
+
+After signing in, Kesami sets up the destination itself, with no picker. On a later
+sign-in it reuses what it created:
+
+| Provider | Destination |
+| :------- | :---------- |
+| Notion | Creates a private "Kesami Meetings" page in the workspace (or under the first shared page if that isn't allowed) |
+| Linear | The first team the user belongs to |
+| Jira | The first Jira site, the project the user most recently updated, issue type Task |
+| Asana | Creates a "Kesami Meetings" project in the first workspace (in the user's first team for organizations) |
+| ClickUp | Creates a "Kesami Meetings" list in the first Space |
+
+If setup fails (for example, no Jira project the user can create issues in), the card says so
+and offers **Try again** (`POST /api/connectors/setup`) without signing in again.
+
+Every delivery carries the summary, tasks and commitments. Notes apps (Slack, Notion,
+Google Docs) get the summary, tasks, commitments and a "Done after the meeting" list of
+completed post-meeting actions. Task apps create one item per open task and per commitment,
+each with the meeting summary and, when the meeting was sent to Notion or Google Docs, a
+link to those notes. Commitments follow the Actions tab's rules: dismissed and stale
+commitments are skipped, and a commitment linked to a task appears once.
+
+Set the relay's public origin once, then add each provider's app credentials:
+
+```text
+KESAMI_RELAY_PUBLIC_URL=https://<relay-host>
+KESAMI_SLACK_CLIENT_ID=...       KESAMI_SLACK_CLIENT_SECRET=...
+KESAMI_NOTION_CLIENT_ID=...      KESAMI_NOTION_CLIENT_SECRET=...
+KESAMI_LINEAR_CLIENT_ID=...      KESAMI_LINEAR_CLIENT_SECRET=...
+KESAMI_JIRA_CLIENT_ID=...        KESAMI_JIRA_CLIENT_SECRET=...
+KESAMI_ASANA_CLIENT_ID=...       KESAMI_ASANA_CLIENT_SECRET=...
+KESAMI_CLICKUP_CLIENT_ID=...     KESAMI_CLICKUP_CLIENT_SECRET=...
+```
+
+Each provider's redirect URL is `https://<relay-host>/v1/connectors/<provider>/callback`.
+
+| Provider | Where to create the app | Settings that matter |
+| :------- | :---------------------- | :------------------- |
+| Slack | api.slack.com/apps → From scratch | Bot scope `incoming-webhook`; Manage Distribution → activate public distribution |
+| Notion | Developer portal → Public connections | Installation scope **Any workspace** (fixed at creation); capabilities: read, insert and update content, user info with email |
+| Linear | linear.app/settings/api/applications/new | Distribution **public**; the relay asks for `read,issues:create` |
+| Jira | developer.atlassian.com console → OAuth 2.0 integration | Permissions → Jira API with `read:jira-work`, `write:jira-work`, `read:jira-user`; Distribution → enable sharing. Until Atlassian reviews the app, users see an "unreviewed app" warning |
+| Asana | app.asana.com/0/my-apps | Scopes `tasks:write projects:read projects:write teams:read workspaces:read users:read`; Manage distribution → **Any workspace** (Asana's docs disagree on whether outside workspaces also need a review) |
+| ClickUp | Workspace settings → Apps / ClickUp API → Create app | Only workspace owners and admins can create apps; tokens never expire |
+
+Without a provider's ID and secret, its `start` answers 503 and the app keeps the paste form.
+Development builds without `KESAMI_CLOUD_URL` show only the paste forms.
 
 ## Subscription billing
 

@@ -20,7 +20,9 @@
     },
     "build": {
         "electronVersion": "44.5.1",
-        "electronLanguages": ["en"],
+        "electronLanguages": [
+            "en"
+        ],
         "compression": "maximum",
         "appId": "com.kesami.meetings",
         "productName": "Kesami",
@@ -48,7 +50,10 @@
             {
                 "from": "../ui/dist",
                 "to": "ui",
-                "filter": ["**/*", "!**/*.map"]
+                "filter": [
+                    "**/*",
+                    "!**/*.map"
+                ]
             },
             {
                 "from": "../ui/src/lib/calendarEvents.js",
@@ -133,6 +138,14 @@
             "createStartMenuShortcut": true,
             "shortcutName": "Kesami",
             "runAfterFinish": true
-        }
+        },
+        "protocols": [
+            {
+                "name": "Open Kesami",
+                "schemes": [
+                    "kesami"
+                ]
+            }
+        ]
     }
 }

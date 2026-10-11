@@ -462,7 +462,7 @@ function autoRecordHarness({ settings = {}, joinUrl } = {}) {
     const main = { isDestroyed: () => false, webContents: { isLoadingMainFrame: () => false, send: (channel, command) => sent.push(command) } };
     const fetch = path => Promise.resolve(path === '/api/settings' ? { settings } : { events: [event] });
     menubar.create({ onActivateMain: () => (focused += 1), getMainWindow: () => main, version: '1.0.0', fetch });
-    return { event, sent, focused: () => focused };
+    return { event, sent, main, focused: () => focused };
 }
 
 test('a scheduled meeting starts recording by itself at its start time, without stealing focus', async () => {
@@ -500,7 +500,7 @@ test('turning automatic recording off keeps the reminder but never records on it
     const { event, sent } = autoRecordHarness({ settings: { autoRecordMeetings: false } });
     await menubar._testing.poll();
     assert.equal(shown.length, 1);
-    assert.match(shown[0].options.body, /Click to record it/);
+    assert.match(shown[0].options.body, /Click to choose how to record it/);
     assert.equal('closeButtonText' in shown[0].options, false);
     await menubar._testing.render(Date.parse(event.start) + 1000);
     assert.equal(sent.length, 0);
@@ -515,18 +515,39 @@ test('a meeting missed by more than the grace window is not recorded late', asyn
     menubar.destroy();
 });
 
-test('the reminder offers Join for a meeting with a link, and joining opens the call and records now', async () => {
-    const { event, sent } = autoRecordHarness({ joinUrl: 'https://meet.google.com/abc-defg-hij' });
+test('clicking the reminder opens Kesami recording picker without opening the call', async () => {
+    const { event, sent, focused } = autoRecordHarness({ joinUrl: 'https://meet.google.com/abc-defg-hij' });
     await menubar._testing.poll();
     assert.deepEqual(shown[0].options.actions, [{ type: 'button', text: 'Join' }]);
 
-    shown[0].listeners.get('action')();
-    assert.deepEqual(opened, ['https://meet.google.com/abc-defg-hij']);
+    shown[0].listeners.get('click')();
+    assert.deepEqual(opened, []);
+    assert.equal(focused(), 1);
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].auto, undefined, 'a deliberate join records like the Record button');
+    assert.equal(sent[0].type, 'record');
+    assert.equal(sent[0].event.id, event.id);
+    assert.equal(sent[0].event.title, event.title);
+    assert.equal(sent[0].event.provider, event.provider);
 
     await menubar._testing.render(Date.parse(event.start) + 1000);
-    assert.equal(sent.length, 1, 'joining already started it, so the start time does not record twice');
+    assert.equal(sent.length, 1, 'opening the picker cancels the scheduled automatic start');
+    menubar.destroy();
+});
+
+test('Join opens the call and the recording picker with calendar metadata', async () => {
+    const { event, sent, focused } = autoRecordHarness({ joinUrl: 'https://meet.google.com/abc-defg-hij' });
+    await menubar._testing.poll();
+    shown[0].listeners.get('action')();
+    assert.deepEqual(opened, ['https://meet.google.com/abc-defg-hij']);
+    assert.equal(focused(), 1);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].type, 'record');
+    assert.equal(sent[0].auto, undefined);
+    assert.equal(sent[0].event.id, event.id);
+    assert.equal(sent[0].event.title, event.title);
+
+    await menubar._testing.render(Date.parse(event.start) + 1000);
+    assert.equal(sent.length, 1, 'joining already opened the picker, so the start time does not record twice');
     menubar.destroy();
 });
 
@@ -535,5 +556,85 @@ test('the countdown timer wakes for an armed start even while another meeting is
     await menubar._testing.poll();
     const delay = menubar._testing.autoRecordDelay(Date.parse(event.start) - 10_000);
     assert.ok(delay > 10_000 && delay < 11_000, `woke after ${delay}ms`);
+    menubar.destroy();
+});
+
+test('a notification appears at the start time saying the meeting is being recorded', async () => {
+    const { event, sent, focused } = autoRecordHarness();
+    await menubar._testing.poll();
+    await menubar._testing.render(Date.parse(event.start) + 1000);
+    assert.equal(shown.length, 2);
+    assert.equal(shown[1].options.title, event.title);
+    assert.match(shown[1].options.body, /Started now\. Kesami is recording it\./);
+    shown[1].listeners.get('click')();
+    assert.equal(focused(), 1, 'clicking it brings Kesami forward');
+    assert.equal(sent.length, 1, 'clicking it does not start a second recording');
+    await menubar._testing.render(Date.parse(event.start) + 20_000);
+    assert.equal(shown.length, 2, 'one start notification per meeting');
+    menubar.destroy();
+});
+
+test('with automatic recording off, the start notification offers to record', async () => {
+    const { event, sent } = autoRecordHarness({ settings: { autoRecordMeetings: false } });
+    await menubar._testing.poll();
+    await menubar._testing.render(Date.parse(event.start) + 1000);
+    assert.equal(shown.length, 2);
+    assert.match(shown[1].options.body, /Started now\. Click to record it\./);
+    assert.equal(sent.length, 0);
+    shown[1].listeners.get('click')();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].type, 'record');
+    assert.equal(sent[0].event.id, event.id);
+    menubar.destroy();
+});
+
+test('no start notification once someone already acted on the reminder', async () => {
+    const { event } = autoRecordHarness();
+    await menubar._testing.poll();
+    shown[0].listeners.get('click')();
+    await menubar._testing.render(Date.parse(event.start) + 1000);
+    assert.equal(shown.length, 1);
+    menubar.destroy();
+});
+
+test('turning meeting reminders off also silences the start notification', async () => {
+    const { event } = autoRecordHarness({ settings: { meetingReminders: false } });
+    await menubar._testing.poll();
+    await menubar._testing.render(Date.parse(event.start) + 1000);
+    assert.equal(shown.length, 0);
+    menubar.destroy();
+});
+
+test('a notification macOS refuses is remembered instead of failing silently', async () => {
+    autoRecordHarness();
+    await menubar._testing.poll();
+    shown[0].listeners.get('failed')({}, 'UNErrorDomain error 1');
+    assert.equal(menubar._testing.state().notificationFailure, 'UNErrorDomain error 1');
+    shown[0].listeners.get('show')();
+    assert.equal(menubar._testing.state().notificationFailure, null);
+    menubar.destroy();
+});
+
+test('Test notification reports when macOS blocks notifications', async () => {
+    const { main } = autoRecordHarness();
+    const handler = handlers.get(menubar._testing.TEST_NOTIFICATION_CHANNEL);
+    const pending = handler({ sender: main.webContents });
+    shown.at(-1).listeners.get('failed')({}, 'UNErrorDomain error 1');
+    const result = await pending;
+    assert.equal(result.shown, false);
+    assert.equal(result.blocked, true);
+    assert.match(result.reason, /UNErrorDomain error 1/);
+    assert.match(result.reason, /System Settings/);
+    menubar.destroy();
+});
+
+test('Test notification confirms when macOS shows it', async () => {
+    const { main } = autoRecordHarness();
+    const handler = handlers.get(menubar._testing.TEST_NOTIFICATION_CHANNEL);
+    const pending = handler({ sender: main.webContents });
+    shown.at(-1).listeners.get('show')();
+    const result = await pending;
+    assert.equal(result.shown, true);
+    assert.equal(result.confirmed, true);
     menubar.destroy();
 });

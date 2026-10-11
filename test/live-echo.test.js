@@ -12,6 +12,7 @@ const { once } = require('node:events');
 const SAMPLE_RATE = 16000;
 const STREAM_MIC = 0;
 const STREAM_SYSTEM = 1;
+const GAP_FLAG = 0x80000000;
 const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 async function freePort() {
@@ -90,6 +91,12 @@ function audioPacket(streamId, timestampMs, pcm) {
     header.writeBigInt64LE(BigInt(timestampMs), 4);
     header.writeUInt32LE(pcm.length, 12);
     return Buffer.concat([header, pcm]);
+}
+
+function gapPacket(streamId, timestampMs, samples) {
+    const payload = Buffer.alloc(4);
+    payload.writeUInt32LE(samples, 0);
+    return audioPacket((streamId | GAP_FLAG) >>> 0, timestampMs, payload);
 }
 
 function frame(opcode, payload) {
@@ -268,7 +275,7 @@ function* chunk(buffer, size) {
     }
 }
 
-async function runMeeting(t, { meetingAudio, microphone }) {
+async function runMeeting(t, { meetingAudio, microphone, microphoneMuted = null }) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'kesami-echo-'));
     let backend;
     const stub = recogniserStub();
@@ -348,12 +355,19 @@ async function runMeeting(t, { meetingAudio, microphone }) {
     assert.ok(states.includes('RECORDING'), `the meeting never started: ${states.join(',')}`);
 
     let offset = 0;
+    let skipped = 0;
     const startedAt = Date.now();
     const meetingBlocks = [...chunk(meetingAudio, 3200)];
     const microphoneBlocks = [...chunk(microphone, 3200)];
     for (let index = 0; index < meetingBlocks.length; index += 1) {
         socket.sendAudio(audioPacket(STREAM_SYSTEM, startedAt + offset, meetingBlocks[index]));
-        socket.sendAudio(audioPacket(STREAM_MIC, startedAt + offset, microphoneBlocks[index]));
+        if (microphoneMuted && offset >= microphoneMuted[0] && offset < microphoneMuted[1]) {
+            skipped += microphoneBlocks[index].length / 2;
+        } else {
+            if (skipped) socket.sendAudio(gapPacket(STREAM_MIC, startedAt + offset, skipped));
+            skipped = 0;
+            socket.sendAudio(audioPacket(STREAM_MIC, startedAt + offset, microphoneBlocks[index]));
+        }
         offset += (meetingBlocks[index].length / 2 / SAMPLE_RATE) * 1000;
         await new Promise(resolve => setImmediate(resolve));
     }
@@ -416,4 +430,43 @@ test('the user talking over the meeting is still transcribed', { timeout: 120000
         ['mic', 'system'],
         JSON.stringify(turns.map(turn => [turn.channel, turn.speaker, turn.text]))
     );
+});
+
+const FIRST_REMARK_MS = 4000;
+const PAUSE_MS = 1500;
+const UNMUTED_AT_MS = LEAD_IN_MS + FIRST_REMARK_MS + 500;
+const MEETING_MS = LEAD_IN_MS + FIRST_REMARK_MS + PAUSE_MS + SPEECH_MS;
+
+function mutedThenOnSpeaker(answer) {
+    const first = vowel(FIRST_REMARK_MS, 110, [520, 1100, 2400]);
+    const second = vowel(SPEECH_MS, 110, [520, 1100, 2400]);
+    const meetingAudio = Buffer.concat([quiet(LEAD_IN_MS), first, quiet(PAUSE_MS), second]);
+    const secondAt = LEAD_IN_MS + FIRST_REMARK_MS + PAUSE_MS;
+    const microphone = Buffer.concat([quiet(secondAt + 80), answer(second), quiet(SPEECH_MS)]).subarray(0, meetingAudio.length);
+    return { meetingAudio, microphone, microphoneMuted: [LEAD_IN_MS, UNMUTED_AT_MS] };
+}
+
+test('bleed after unmuting is still recognised as the meeting talking', { timeout: 120000 }, async t => {
+    const { turns, fromMicrophone, fromMeeting } = await runMeeting(t, mutedThenOnSpeaker(second => quieter(second, 0.3)));
+
+    assert.ok(loudness(fromMeeting) > 0.02, `the meeting channel was never transcribed: ${loudness(fromMeeting)}`);
+    assert.ok(
+        loudness(fromMicrophone) < loudness(fromMeeting) * 0.02,
+        `the microphone passed the meeting's own audio on to the recogniser after a mute: ${loudness(fromMicrophone)} of ${loudness(fromMeeting)}`
+    );
+    assert.deepEqual(
+        turns.map(turn => turn.channel),
+        ['system'],
+        JSON.stringify(turns.map(turn => [turn.channel, turn.speaker, turn.text]))
+    );
+});
+
+test('the user answering after unmuting is transcribed on the meeting timeline, not shifted back by the mute', { timeout: 120000 }, async t => {
+    const mine = vowel(SPEECH_MS / 2, 215, [780, 1900, 3100]);
+    const { turns, fromMicrophone } = await runMeeting(t, mutedThenOnSpeaker(() => mine));
+
+    assert.ok(loudness(fromMicrophone) > 0.01, `the user's own voice never reached the recogniser: ${loudness(fromMicrophone)}`);
+    const answer = turns.find(turn => turn.channel === 'mic');
+    assert.ok(answer, JSON.stringify(turns.map(turn => [turn.channel, turn.speaker, turn.text])));
+    assert.ok(answer.endMs >= MEETING_MS - 500, `the answer was shifted back by the mute: ${JSON.stringify(answer)}`);
 });

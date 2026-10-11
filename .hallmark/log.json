@@ -1,0 +1,12 @@
+[
+  {
+    "date": "2026-10-09",
+    "scope": "app",
+    "macrostructure": "Workbench",
+    "theme": "Kesami rounded coral",
+    "enrichment": "none",
+    "nav": "side-rail",
+    "footer": "account utility",
+    "brief": "Whole desktop app: minimal, rounded, rich surfaces, fewer visible controls"
+  }
+]

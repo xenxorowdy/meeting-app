@@ -1,3 +1,4 @@
+import { SummaryTemplatePicker, SummaryTemplateContent, useSummaryTemplate } from '../SummaryTemplates';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowLeft,
@@ -250,8 +251,9 @@ export function MeetingDetail({
     onAddNote,
     onDeleteNote,
 }) {
+    const templateModel = useSummaryTemplate(meeting);
     const [tab, setTab] = useState(initialTab || 'transcript');
-    const [chatOpen, setChatOpen] = useState(true);
+    const [chatOpen, setChatOpen] = useState(false);
     const [chatDraft, setChatDraft] = useState(null);
     const [replayCitation, setReplayCitation] = useState(null);
     const [editing, setEditing] = useState(false);
@@ -261,6 +263,10 @@ export function MeetingDetail({
     useEffect(() => {
         setTab(initialTab || 'transcript');
     }, [initialTab, meeting?.id]);
+    useEffect(() => {
+        setChatOpen(false);
+        setChatDraft(null);
+    }, [meeting?.id]);
     useEffect(() => {
         if (citationFocus?.meetingId === meeting?.id) setTab('transcript');
     }, [citationFocus, meeting?.id]);
@@ -462,9 +468,10 @@ export function MeetingDetail({
                             ) : (
                                 <article className="ks-brief">
                                     <div className="ks-brief-kicker">
-                                        <span>Meeting brief</span>
+                                        <SummaryTemplatePicker model={templateModel} disabled={session.isProcessing || session.isGeneratingSummary} />
                                         {meeting?.summaryMarkdown && <span>{readingMinutes(meeting.summaryMarkdown)} min read</span>}
                                     </div>
+                                    {templateModel.selected.id !== 'enhanced' ? <SummaryTemplateContent template={templateModel.selected} meeting={meeting} /> : <>
                                     <div className="ks-brief-lead">
                                         <MarkdownText
                                             markdown={
@@ -484,6 +491,7 @@ export function MeetingDetail({
                                         onJump={jumpToTurns}
                                     />
                                     <NextSteps meeting={meeting} onUpdate={onUpdate} />
+                                    </>}
                                     <footer className="ks-brief-footer">
                                         <p>{meeting?.summaryMarkdown ? 'AI-generated from this meeting. Review important details.' : ''}</p>
                                         {meeting?.summaryMarkdown && <SummarySharing key={meeting.id} meeting={meeting} isConnected={isConnected} disabled={session.isProcessing || session.isGeneratingSummary} onUpdate={onUpdatePostMeetingAction} onSettings={onActionSettings} />}
@@ -530,7 +538,7 @@ export function MeetingDetail({
                         </Suspense>
                     )}
                     {activeTab === 'notes' && (
-                        <div className="ks-detail-scroll">
+                        <div className="ks-detail-scroll ks-notes-scroll">
                             <div className="ks-live-notes">
                                 <LiveNotes
                                     notes={meeting?.notes || []}

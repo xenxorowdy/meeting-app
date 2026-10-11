@@ -7,7 +7,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, MutexGuard, PoisonError,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -72,6 +72,117 @@ const GEMINI_ORIGIN: &str = "https://generativelanguage.googleapis.com";
 const REALTIME_PATH: &str = "/v1/transcription/realtime";
 const MODES: [&str; 5] = ["transcribe", "translate", "verbatim", "translit", "codemix"];
 const AI_UNAVAILABLE: &str = "Meeting AI is unavailable. Try again.";
+const SLACK_WEBHOOK_PREFIX: &str = "https://hooks.slack.com/services/";
+const CONNECTOR_GRANT_TTL: Duration = Duration::from_secs(10 * 60);
+const MAX_CONNECTOR_GRANTS: usize = 256;
+const MAX_CONNECTOR_BODY: usize = 16 * 1024;
+const CONNECTOR_EXPIRED: &str = "This sign-in expired. Start again from Kesami.";
+const CONNECTOR_FAILED: &str = "The sign-in didn’t finish. Try again from Kesami.";
+const NOTION_VERSION: &str = "2026-03-11";
+
+#[derive(Clone, Copy, PartialEq)]
+enum TokenStyle {
+    Form,
+    Json,
+    BasicJson,
+}
+
+struct ConnectorProvider {
+    id: &'static str,
+    env: &'static str,
+    label: &'static str,
+    authorize: &'static str,
+    token_url: &'static str,
+    params: &'static [(&'static str, &'static str)],
+    style: TokenStyle,
+    code_grant_fields: bool,
+    refreshes: bool,
+    revoke_url: Option<&'static str>,
+}
+
+const CONNECTOR_PROVIDERS: [ConnectorProvider; 6] = [
+    ConnectorProvider {
+        id: "slack",
+        env: "SLACK",
+        label: "Slack",
+        authorize: "https://slack.com/oauth/v2/authorize",
+        token_url: "https://slack.com/api/oauth.v2.access",
+        params: &[("scope", "incoming-webhook")],
+        style: TokenStyle::Form,
+        code_grant_fields: false,
+        refreshes: false,
+        revoke_url: None,
+    },
+    ConnectorProvider {
+        id: "notion",
+        env: "NOTION",
+        label: "Notion",
+        authorize: "https://api.notion.com/v1/oauth/authorize",
+        token_url: "https://api.notion.com/v1/oauth/token",
+        params: &[("response_type", "code"), ("owner", "user")],
+        style: TokenStyle::BasicJson,
+        code_grant_fields: true,
+        refreshes: true,
+        revoke_url: Some("https://api.notion.com/v1/oauth/revoke"),
+    },
+    ConnectorProvider {
+        id: "linear",
+        env: "LINEAR",
+        label: "Linear",
+        authorize: "https://linear.app/oauth/authorize",
+        token_url: "https://api.linear.app/oauth/token",
+        params: &[("response_type", "code"), ("scope", "read,issues:create"), ("prompt", "consent")],
+        style: TokenStyle::Form,
+        code_grant_fields: true,
+        refreshes: true,
+        revoke_url: Some("https://api.linear.app/oauth/revoke"),
+    },
+    ConnectorProvider {
+        id: "jira",
+        env: "JIRA",
+        label: "Jira",
+        authorize: "https://auth.atlassian.com/authorize",
+        token_url: "https://auth.atlassian.com/oauth/token",
+        params: &[
+            ("audience", "api.atlassian.com"),
+            ("scope", "read:jira-work write:jira-work read:jira-user offline_access"),
+            ("response_type", "code"),
+            ("prompt", "consent"),
+        ],
+        style: TokenStyle::Json,
+        code_grant_fields: true,
+        refreshes: true,
+        revoke_url: None,
+    },
+    ConnectorProvider {
+        id: "asana",
+        env: "ASANA",
+        label: "Asana",
+        authorize: "https://app.asana.com/-/oauth_authorize",
+        token_url: "https://app.asana.com/-/oauth_token",
+        params: &[("response_type", "code"), ("scope", "tasks:write projects:read projects:write teams:read workspaces:read users:read")],
+        style: TokenStyle::Form,
+        code_grant_fields: true,
+        refreshes: true,
+        revoke_url: Some("https://app.asana.com/-/oauth_revoke"),
+    },
+    ConnectorProvider {
+        id: "clickup",
+        env: "CLICKUP",
+        label: "ClickUp",
+        authorize: "https://app.clickup.com/api",
+        token_url: "https://api.clickup.com/api/v2/oauth/token",
+        params: &[],
+        style: TokenStyle::Json,
+        code_grant_fields: false,
+        refreshes: false,
+        revoke_url: None,
+    },
+];
+
+fn connector_provider(id: &str) -> Option<&'static ConnectorProvider> {
+    CONNECTOR_PROVIDERS.iter().find(|provider| provider.id == id)
+}
 
 #[path = "../cloud_billing_server.rs"]
 mod cloud_billing_server;
@@ -95,6 +206,58 @@ struct Config {
     openai_usage_file: Option<std::path::PathBuf>,
     summary_model: String,
     daily_ai_limit: u64,
+    connectors: HashMap<&'static str, ConnectorApp>,
+}
+
+#[derive(Clone)]
+struct ConnectorApp {
+    client_id: String,
+    client_secret: String,
+    redirect_uri: String,
+    token_url: String,
+    revoke_url: Option<String>,
+}
+
+fn connector_apps(value: impl Fn(&str) -> Option<String>) -> HashMap<&'static str, ConnectorApp> {
+    let Some(origin) = value("KESAMI_RELAY_PUBLIC_URL")
+        .and_then(|raw| Url::parse(raw.trim()).ok())
+        .filter(|url| url.scheme() == "https" && bare(url) && url.path() == "/" && url.query().is_none())
+        .map(|url| url.origin().ascii_serialization())
+    else {
+        return HashMap::new();
+    };
+    CONNECTOR_PROVIDERS
+        .iter()
+        .filter_map(|provider| {
+            let client_id = value(&format!("KESAMI_{}_CLIENT_ID", provider.env))?.trim().to_owned();
+            let client_secret = value(&format!("KESAMI_{}_CLIENT_SECRET", provider.env))?.trim().to_owned();
+            (!client_id.is_empty() && !client_secret.is_empty()).then(|| {
+                (
+                    provider.id,
+                    ConnectorApp {
+                        client_id,
+                        client_secret,
+                        redirect_uri: format!("{origin}/v1/connectors/{}/callback", provider.id),
+                        token_url: provider.token_url.into(),
+                        revoke_url: provider.revoke_url.map(str::to_owned),
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
+enum GrantStep {
+    Waiting,
+    Exchanging,
+    Done(Result<Value, String>),
+}
+
+struct ConnectorGrant {
+    provider: &'static str,
+    ticket: String,
+    created: Instant,
+    step: GrantStep,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -161,6 +324,7 @@ impl Config {
             daily_ai_limit: value("KESAMI_CLOUD_DAILY_AI_LIMIT")
                 .and_then(|raw| positive_integer(&raw))
                 .unwrap_or(DEFAULT_DAILY_AI_LIMIT),
+            connectors: connector_apps(&value),
         })
     }
 
@@ -223,6 +387,7 @@ struct Relay {
     shutdown: watch::Sender<bool>,
     billing: cloud_billing_server::Billing,
     openai_budget: openai::DailyBudget,
+    connector_grants: Mutex<HashMap<String, ConnectorGrant>>,
 }
 
 struct InFlight<'a>(&'a AtomicUsize);
@@ -266,6 +431,12 @@ enum Route {
     Health,
     Generate,
     Capabilities,
+    ConnectorList,
+    ConnectorStart(&'static ConnectorProvider),
+    ConnectorCallback(&'static ConnectorProvider),
+    ConnectorClaim(&'static ConnectorProvider),
+    ConnectorRefresh(&'static ConnectorProvider),
+    ConnectorRevoke(&'static ConnectorProvider),
     Missing,
 }
 
@@ -291,6 +462,7 @@ impl Relay {
             shutdown: watch::Sender::new(false),
             billing,
             openai_budget,
+            connector_grants: Mutex::default(),
         })
     }
 
@@ -366,7 +538,8 @@ impl Relay {
             (&Method::GET, "/health", None) => Route::Health,
             (&Method::POST, "/v1/ai/generate", None) => Route::Generate,
             (&Method::GET, "/v1/capabilities", None) => Route::Capabilities,
-            _ => Route::Missing,
+            (&Method::GET, "/v1/connectors", None) => Route::ConnectorList,
+            (method, path, query) => connector_route(method, path, query).unwrap_or(Route::Missing),
         };
         Ok(match route {
             Route::Health if self.stopping() => json_response(
@@ -376,8 +549,270 @@ impl Relay {
             Route::Health => json_response(StatusCode::OK, json!({ "status": "ok" })),
             Route::Generate => self.generate(req).await,
             Route::Capabilities => self.capabilities(req.headers()).await,
+            Route::ConnectorList => self.connector_list(),
+            Route::ConnectorStart(provider) => self.connector_start(provider),
+            Route::ConnectorCallback(provider) => self.connector_callback(provider, req.uri()).await,
+            Route::ConnectorClaim(provider) => self.connector_claim(provider, req).await,
+            Route::ConnectorRefresh(provider) => self.connector_refresh(provider, req).await,
+            Route::ConnectorRevoke(provider) => self.connector_revoke(provider, req).await,
             Route::Missing => error(StatusCode::NOT_FOUND, "Not found"),
         })
+    }
+
+    fn connector_grants(&self) -> MutexGuard<'_, HashMap<String, ConnectorGrant>> {
+        let mut grants = self.connector_grants.lock().unwrap_or_else(PoisonError::into_inner);
+        grants.retain(|_, grant| grant.created.elapsed() < CONNECTOR_GRANT_TTL);
+        grants
+    }
+
+    fn connector_list(&self) -> Response<Body> {
+        let providers: Vec<&str> = CONNECTOR_PROVIDERS
+            .iter()
+            .map(|provider| provider.id)
+            .filter(|id| self.config.connectors.contains_key(id))
+            .collect();
+        json_response(StatusCode::OK, json!({ "providers": providers }))
+    }
+
+    fn connector_start(&self, provider: &'static ConnectorProvider) -> Response<Body> {
+        let Some(app) = self.config.connectors.get(provider.id) else {
+            return error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &format!("One-click {} isn’t set up yet. Paste a token instead.", provider.label),
+            );
+        };
+        let (Some(state), Some(ticket)) = (random_token(), random_token()) else {
+            return error(StatusCode::SERVICE_UNAVAILABLE, "Sign-in is unavailable. Try again.");
+        };
+        {
+            let mut grants = self.connector_grants();
+            if self.stopping() || grants.len() >= MAX_CONNECTOR_GRANTS {
+                return error(StatusCode::SERVICE_UNAVAILABLE, "Sign-in is busy. Try again in a minute.");
+            }
+            grants.insert(
+                state.clone(),
+                ConnectorGrant {
+                    provider: provider.id,
+                    ticket: ticket.clone(),
+                    created: Instant::now(),
+                    step: GrantStep::Waiting,
+                },
+            );
+        }
+        let mut auth_url = format!(
+            "{}?client_id={}&redirect_uri={}&state={}",
+            provider.authorize,
+            encode_component(&app.client_id),
+            encode_component(&app.redirect_uri),
+            encode_component(&state)
+        );
+        for (key, value) in provider.params {
+            auth_url.push_str(&format!("&{key}={}", encode_component(value)));
+        }
+        json_response(
+            StatusCode::OK,
+            json!({ "authUrl": auth_url, "ticket": ticket, "expiresIn": CONNECTOR_GRANT_TTL.as_secs() }),
+        )
+    }
+
+    async fn connector_callback(&self, provider: &'static ConnectorProvider, uri: &Uri) -> Response<Body> {
+        let failed = format!("{} didn’t connect", provider.label);
+        let Some(app) = self.config.connectors.get(provider.id) else {
+            return page(StatusCode::NOT_FOUND, &failed, "Paste a token in Kesami instead.");
+        };
+        let Ok(mut request) = Url::parse("http://localhost/") else {
+            return page(StatusCode::BAD_REQUEST, &failed, CONNECTOR_FAILED);
+        };
+        request.set_query(uri.query());
+        let param = |name: &str| {
+            request
+                .query_pairs()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.into_owned())
+                .filter(|value| !value.is_empty())
+        };
+        let Some(state) = param("state") else {
+            return page(StatusCode::BAD_REQUEST, &failed, CONNECTOR_EXPIRED);
+        };
+        {
+            let mut grants = self.connector_grants();
+            let Some(grant) = grants.get_mut(&state).filter(|grant| grant.provider == provider.id) else {
+                return page(StatusCode::BAD_REQUEST, &failed, CONNECTOR_EXPIRED);
+            };
+            match grant.step {
+                GrantStep::Waiting => grant.step = GrantStep::Exchanging,
+                GrantStep::Done(Ok(_)) => return connected_page(provider),
+                _ => return page(StatusCode::BAD_REQUEST, &failed, CONNECTOR_EXPIRED),
+            }
+        }
+        let outcome = match (param("code"), param("error")) {
+            (Some(code), None) => self.exchange_connector_code(provider, app, &code).await,
+            (_, Some(reason)) if reason == "access_denied" => {
+                Err(format!("{} connection was cancelled.", provider.label))
+            }
+            _ => Err(CONNECTOR_FAILED.to_owned()),
+        };
+        let response = match &outcome {
+            Ok(_) => connected_page(provider),
+            Err(message) => page(StatusCode::BAD_REQUEST, &failed, message),
+        };
+        if let Some(grant) = self.connector_grants().get_mut(&state) {
+            grant.step = GrantStep::Done(outcome);
+        }
+        response
+    }
+
+    fn token_request(
+        &self,
+        provider: &ConnectorProvider,
+        app: &ConnectorApp,
+        fields: &[(&str, &str)],
+    ) -> reqwest::RequestBuilder {
+        let mut fields = fields.to_vec();
+        if provider.style != TokenStyle::BasicJson {
+            fields.push(("client_id", app.client_id.as_str()));
+            fields.push(("client_secret", app.client_secret.as_str()));
+        }
+        let request = self.http.post(&app.token_url).timeout(AUTH_TIMEOUT);
+        let object: serde_json::Map<String, Value> =
+            fields.iter().map(|(key, value)| ((*key).to_owned(), json!(value))).collect();
+        match provider.style {
+            TokenStyle::Form => request.form(&fields),
+            TokenStyle::Json => request.json(&object),
+            TokenStyle::BasicJson => request
+                .basic_auth(&app.client_id, Some(&app.client_secret))
+                .header("Notion-Version", NOTION_VERSION)
+                .json(&object),
+        }
+    }
+
+    async fn exchange_connector_code(
+        &self,
+        provider: &ConnectorProvider,
+        app: &ConnectorApp,
+        code: &str,
+    ) -> Result<Value, String> {
+        let mut fields = vec![("code", code)];
+        if provider.code_grant_fields {
+            fields.push(("grant_type", "authorization_code"));
+        }
+        if provider.code_grant_fields || provider.id == "slack" {
+            fields.push(("redirect_uri", app.redirect_uri.as_str()));
+        }
+        let response = self
+            .token_request(provider, app, &fields)
+            .send()
+            .await
+            .map_err(|_| CONNECTOR_FAILED.to_owned())?;
+        let ok = response.status().is_success();
+        let body: Value = response.json().await.map_err(|_| CONNECTOR_FAILED.to_owned())?;
+        if !ok {
+            return Err(CONNECTOR_FAILED.to_owned());
+        }
+        connector_grant(provider, &body).ok_or_else(|| CONNECTOR_FAILED.to_owned())
+    }
+
+    async fn connector_body(req: Request<Incoming>) -> Option<Value> {
+        let body = timeout(REQUEST_TIMEOUT, Limited::new(req.into_body(), MAX_CONNECTOR_BODY).collect())
+            .await
+            .ok()?
+            .ok()?
+            .to_bytes();
+        serde_json::from_slice(&body).ok()
+    }
+
+    async fn connector_claim(&self, provider: &'static ConnectorProvider, req: Request<Incoming>) -> Response<Body> {
+        let Some(ticket) = Self::connector_body(req)
+            .await
+            .and_then(|body| body["ticket"].as_str().map(str::to_owned))
+            .filter(|ticket| !ticket.is_empty())
+        else {
+            return error(StatusCode::BAD_REQUEST, "Invalid sign-in request.");
+        };
+        let mut grants = self.connector_grants();
+        let Some(state) = grants
+            .iter()
+            .find(|(_, grant)| grant.ticket == ticket && grant.provider == provider.id)
+            .map(|(state, _)| state.clone())
+        else {
+            return error(StatusCode::NOT_FOUND, CONNECTOR_EXPIRED);
+        };
+        if !matches!(grants[&state].step, GrantStep::Done(_)) {
+            return json_response(StatusCode::ACCEPTED, json!({ "pending": true }));
+        }
+        match grants.remove(&state).map(|grant| grant.step) {
+            Some(GrantStep::Done(Ok(granted))) => json_response(StatusCode::OK, granted),
+            Some(GrantStep::Done(Err(message))) => error(StatusCode::BAD_REQUEST, &message),
+            _ => error(StatusCode::NOT_FOUND, CONNECTOR_EXPIRED),
+        }
+    }
+
+    async fn connector_revoke(&self, provider: &'static ConnectorProvider, req: Request<Incoming>) -> Response<Body> {
+        let Some(app) = self.config.connectors.get(provider.id) else {
+            return error(StatusCode::NOT_FOUND, "Not found");
+        };
+        let Some(body) = Self::connector_body(req).await else {
+            return error(StatusCode::BAD_REQUEST, "Invalid revoke request.");
+        };
+        let token = |key: &str| body[key].as_str().map(str::trim).filter(|token| !token.is_empty()).map(str::to_owned);
+        let (access, refresh) = (token("accessToken"), token("refreshToken"));
+        let unsupported = json_response(StatusCode::OK, json!({ "revoked": false }));
+        let Some(url) = app.revoke_url.as_deref() else {
+            return unsupported;
+        };
+        let request = match (provider.id, access, refresh) {
+            ("notion", Some(access), _) => self
+                .http
+                .post(url)
+                .basic_auth(&app.client_id, Some(&app.client_secret))
+                .header("Notion-Version", NOTION_VERSION)
+                .json(&json!({ "token": access })),
+            ("linear", _, Some(refresh)) => {
+                self.http.post(url).form(&[("token", refresh.as_str()), ("token_type_hint", "refresh_token")])
+            }
+            ("linear", Some(access), None) => {
+                self.http.post(url).form(&[("token", access.as_str()), ("token_type_hint", "access_token")])
+            }
+            ("asana", _, Some(refresh)) => self.http.post(url).form(&[
+                ("client_id", app.client_id.as_str()),
+                ("client_secret", app.client_secret.as_str()),
+                ("token", refresh.as_str()),
+            ]),
+            _ => return unsupported,
+        };
+        let revoked = request
+            .timeout(AUTH_TIMEOUT)
+            .send()
+            .await
+            .is_ok_and(|response| response.status().is_success());
+        json_response(StatusCode::OK, json!({ "revoked": revoked }))
+    }
+
+    async fn connector_refresh(&self, provider: &'static ConnectorProvider, req: Request<Incoming>) -> Response<Body> {
+        let (true, Some(app)) = (provider.refreshes, self.config.connectors.get(provider.id)) else {
+            return error(StatusCode::NOT_FOUND, "Not found");
+        };
+        let Some(refresh_token) = Self::connector_body(req)
+            .await
+            .and_then(|body| body["refreshToken"].as_str().map(str::to_owned))
+            .filter(|token| !token.is_empty())
+        else {
+            return error(StatusCode::BAD_REQUEST, "Invalid refresh request.");
+        };
+        let fields = [("grant_type", "refresh_token"), ("refresh_token", refresh_token.as_str())];
+        let reconnect = format!("Sign in to {} again in Settings → Connectors.", provider.label);
+        let Ok(response) = self.token_request(provider, app, &fields).send().await else {
+            return error(StatusCode::SERVICE_UNAVAILABLE, &format!("{} is unreachable. Try again.", provider.label));
+        };
+        let status = response.status();
+        let body = response.json::<Value>().await.unwrap_or(Value::Null);
+        if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
+            return error(StatusCode::SERVICE_UNAVAILABLE, &format!("{} is busy. Try again.", provider.label));
+        }
+        match connector_grant(provider, &body).filter(|_| status.is_success()) {
+            Some(tokens) => json_response(StatusCode::OK, tokens),
+            None => error(StatusCode::UNAUTHORIZED, &reconnect),
+        }
     }
 
     async fn identity(&self, headers: &HeaderMap) -> Result<Option<String>, Unavailable> {
@@ -1077,6 +1512,88 @@ fn error(status: StatusCode, message: &str) -> Response<Body> {
     json_response(status, json!({ "error": message }))
 }
 
+fn random_token() -> Option<String> {
+    use std::io::Read;
+    let mut bytes = [0u8; 32];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut bytes).ok()?;
+    Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn page(status: StatusCode, title: &str, message: &str) -> Response<Body> {
+    let html = format!(
+        "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Kesami</title>\
+<style>body{{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;color:#1D1D1F;background:#fff;\
+padding:40px 16px;max-width:680px;margin:auto;line-height:1.4}}h1{{font-size:28px;font-weight:600;letter-spacing:-0.02em;margin:0 0 8px}}\
+p{{color:#6E6E73;font-size:15px;margin:0}}</style><h1>{title}</h1><p>{message}</p>"
+    );
+    let mut response = Response::new(Body::new(Bytes::from(html)));
+    *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'"),
+    );
+    response
+}
+
+fn connected_page(provider: &ConnectorProvider) -> Response<Body> {
+    let message = if provider.id == "slack" {
+        "Kesami will post meeting notes to the channel you picked. You can close this tab and go back to Kesami.".to_owned()
+    } else {
+        format!("Go back to Kesami to finish setting up {}. You can close this tab.", provider.label)
+    };
+    page(StatusCode::OK, &format!("{} connected", provider.label), &message)
+}
+
+fn connector_route(method: &Method, path: &str, query: Option<&str>) -> Option<Route> {
+    let (id, action) = path.strip_prefix("/v1/connectors/")?.split_once('/')?;
+    let provider = connector_provider(id)?;
+    Some(match (method, action, query) {
+        (&Method::POST, "start", None) => Route::ConnectorStart(provider),
+        (&Method::GET, "callback", Some(_)) => Route::ConnectorCallback(provider),
+        (&Method::POST, "claim", None) => Route::ConnectorClaim(provider),
+        (&Method::POST, "refresh", None) => Route::ConnectorRefresh(provider),
+        (&Method::POST, "revoke", None) => Route::ConnectorRevoke(provider),
+        _ => return None,
+    })
+}
+
+fn connector_grant(provider: &ConnectorProvider, body: &Value) -> Option<Value> {
+    let text = |pointer: &str| {
+        body.pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    };
+    if provider.id == "slack" {
+        if body["ok"] != json!(true) {
+            return None;
+        }
+        let url = text("/incoming_webhook/url").filter(|url| url.starts_with(SLACK_WEBHOOK_PREFIX))?;
+        return Some(json!({
+            "webhookUrl": url,
+            "channel": text("/incoming_webhook/channel").unwrap_or_default(),
+            "workspace": text("/team/name").unwrap_or_default(),
+        }));
+    }
+    let account = match provider.id {
+        "notion" => text("/owner/user/person/email").or_else(|| text("/owner/user/name")),
+        "asana" => text("/data/email").or_else(|| text("/data/name")),
+        _ => None,
+    };
+    Some(json!({
+        "accessToken": text("/access_token")?,
+        "refreshToken": text("/refresh_token"),
+        "expiresIn": body["expires_in"].as_i64(),
+        "account": account,
+        "workspace": text("/workspace_name"),
+    }))
+}
+
 fn rejection(status: StatusCode, message: &str) -> Response<Body> {
     let mut response = error(status, message);
     response
@@ -1139,6 +1656,8 @@ async fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
+    include!("../../test/relay_capacity.rs");
+
     use super::*;
     use std::net::SocketAddr;
     use tokio::{
@@ -1440,6 +1959,7 @@ mod tests {
             openai_usage_file: None,
             summary_model: DEFAULT_SUMMARY_MODEL.into(),
             daily_ai_limit: DEFAULT_DAILY_AI_LIMIT,
+            connectors: HashMap::new(),
         }
     }
 
@@ -2115,5 +2635,343 @@ mod tests {
                 .status(),
             429
         );
+    }
+
+    const SLACK_HOOK: &str = "https://hooks.slack.com/services/T0001/B0001/private-hook";
+
+    fn fake_providers() -> Responder {
+        Arc::new(|seen: &Seen| {
+            if seen.uri.path().starts_with("/revoke/") {
+                return (StatusCode::OK, "{}".to_owned());
+            }
+            let id = seen.uri.path().trim_start_matches("/token/").to_owned();
+            let raw = String::from_utf8_lossy(&seen.body).into_owned();
+            let basic = seen
+                .headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_owned();
+            let secret = format!("{id}-secret");
+            let expected_basic = format!("Basic {}", BASE64.encode(format!("{id}-client:{secret}")));
+            if !raw.contains(&secret) && basic != expected_basic {
+                return (StatusCode::UNAUTHORIZED, json!({"error": "invalid_client"}).to_string());
+            }
+            if !raw.contains("good-code") && !raw.contains("refresh-ok") {
+                return match id.as_str() {
+                    "slack" => (StatusCode::OK, json!({"ok": false, "error": "invalid_code"}).to_string()),
+                    _ => (StatusCode::BAD_REQUEST, json!({"error": "invalid_grant"}).to_string()),
+                };
+            }
+            let granted = match id.as_str() {
+                "slack" => json!({
+                    "ok": true,
+                    "access_token": "xoxb-private-bot-token",
+                    "team": {"id": "T0001", "name": "Acme"},
+                    "incoming_webhook": {"channel": "#recaps", "channel_id": "C0001", "url": SLACK_HOOK}
+                }),
+                "notion" => json!({
+                    "access_token": "notion-access",
+                    "token_type": "bearer",
+                    "refresh_token": "notion-refresh",
+                    "bot_id": "bot-1",
+                    "workspace_name": "Acme",
+                    "owner": {"type": "user", "user": {"name": "Riyam", "person": {"email": "riyam@example.com"}}}
+                }),
+                "asana" => json!({
+                    "access_token": "asana-access",
+                    "expires_in": 3600,
+                    "refresh_token": "asana-refresh",
+                    "data": {"gid": "1", "name": "Riyam", "email": "riyam@example.com"}
+                }),
+                "clickup" => json!({"access_token": "clickup-access"}),
+                _ => json!({"access_token": format!("{id}-access"), "refresh_token": format!("{id}-refresh"), "expires_in": 3600}),
+            };
+            (StatusCode::OK, granted.to_string())
+        })
+    }
+
+    async fn connector_fixture(ids: &[&'static str]) -> (Fixture, Log) {
+        let (origin, log) = fake_http(fake_providers()).await;
+        let ids = ids.to_vec();
+        let app = Fixture::with(signed_in(), gemini_ok(), move |config| {
+            for id in ids {
+                config.connectors.insert(
+                    id,
+                    ConnectorApp {
+                        client_id: format!("{id}-client"),
+                        client_secret: format!("{id}-secret"),
+                        redirect_uri: format!("https://relay.example/v1/connectors/{id}/callback"),
+                        token_url: format!("{origin}/token/{id}"),
+                        revoke_url: Some(format!("{origin}/revoke/{id}")),
+                    },
+                );
+            }
+        })
+        .await;
+        (app, log)
+    }
+
+    impl Fixture {
+        async fn connector_start(&self, id: &str) -> (HashMap<String, String>, String) {
+            let response = self.http.post(self.url(&format!("/v1/connectors/{id}/start"))).send().await.unwrap();
+            assert_eq!(response.status(), 200);
+            let started: Value = response.json().await.unwrap();
+            assert!(!started.to_string().contains(&format!("{id}-secret")));
+            let auth = Url::parse(started["authUrl"].as_str().unwrap()).unwrap();
+            let mut pairs: HashMap<String, String> = auth.query_pairs().into_owned().collect();
+            assert_eq!(pairs["client_id"], format!("{id}-client"));
+            assert_eq!(pairs["redirect_uri"], format!("https://relay.example/v1/connectors/{id}/callback"));
+            pairs.insert("authorize".into(), format!("{}{}", auth.origin().ascii_serialization(), auth.path()));
+            let ticket = started["ticket"].as_str().unwrap().to_owned();
+            assert_ne!(ticket, pairs["state"]);
+            (pairs, ticket)
+        }
+
+        async fn connector_callback(&self, id: &str, query: &str) -> (StatusCode, String) {
+            let response = self
+                .http
+                .get(self.url(&format!("/v1/connectors/{id}/callback?{query}")))
+                .send()
+                .await
+                .unwrap();
+            (response.status(), response.text().await.unwrap())
+        }
+
+        async fn connector_post(&self, id: &str, action: &str, body: Value) -> (StatusCode, Value) {
+            let response = self
+                .http
+                .post(self.url(&format!("/v1/connectors/{id}/{action}")))
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            (response.status(), response.json().await.unwrap_or(Value::Null))
+        }
+
+        async fn connector_claim(&self, id: &str, ticket: &str) -> (StatusCode, Value) {
+            self.connector_post(id, "claim", json!({ "ticket": ticket })).await
+        }
+
+        async fn sign_in(&self, id: &str) -> Value {
+            let (pairs, ticket) = self.connector_start(id).await;
+            let (status, _) = self.connector_callback(id, &format!("code=good-code&state={}", pairs["state"])).await;
+            assert_eq!(status, 200);
+            let (status, granted) = self.connector_claim(id, &ticket).await;
+            assert_eq!(status, 200);
+            granted
+        }
+    }
+
+    fn form_of(seen: &Seen) -> HashMap<String, String> {
+        let mut url = Url::parse("http://localhost/").unwrap();
+        url.set_query(Some(&String::from_utf8_lossy(&seen.body)));
+        url.query_pairs().into_owned().collect()
+    }
+
+    fn json_of(seen: &Seen) -> Value {
+        serde_json::from_slice(&seen.body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn slack_one_click_hands_the_webhook_to_the_ticket_holder_once() {
+        let (app, slack) = connector_fixture(&["slack"]).await;
+        let (pairs, ticket) = app.connector_start("slack").await;
+        assert_eq!(pairs["authorize"], "https://slack.com/oauth/v2/authorize");
+        assert_eq!(pairs["scope"], "incoming-webhook");
+        let state = pairs["state"].clone();
+        assert_eq!(app.connector_claim("slack", &ticket).await.0, 202);
+
+        let (status, html) = app.connector_callback("slack", &format!("code=good-code&state={state}")).await;
+        assert_eq!(status, 200);
+        assert!(html.contains("Slack connected"));
+        assert!(!html.contains("hooks.slack.com") && !html.contains("xoxb"));
+        let exchanges = slack.all();
+        assert_eq!(exchanges.len(), 1);
+        let form = form_of(&exchanges[0]);
+        assert_eq!(form["code"], "good-code");
+        assert_eq!(form["redirect_uri"], "https://relay.example/v1/connectors/slack/callback");
+        assert!(!form.contains_key("grant_type"));
+
+        assert_eq!(app.connector_claim("slack", "someone-elses-ticket").await.0, 404);
+        assert_eq!(app.connector_claim("notion", &ticket).await.0, 404);
+        assert_eq!(app.connector_callback("slack", &format!("code=good-code&state={state}")).await.0, 200);
+        assert_eq!(slack.all().len(), 1, "a refreshed callback page does not spend the code twice");
+
+        let (status, granted) = app.connector_claim("slack", &ticket).await;
+        assert_eq!(status, 200);
+        assert_eq!(granted, json!({"webhookUrl": SLACK_HOOK, "channel": "#recaps", "workspace": "Acme"}));
+        assert_eq!(app.connector_claim("slack", &ticket).await.0, 404);
+        assert_eq!(app.connector_callback("slack", &format!("code=good-code&state={state}")).await.0, 400);
+        assert_eq!(slack.all().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancellations_and_rejected_codes_reach_the_app_as_errors() {
+        let (app, provider) = connector_fixture(&["slack", "linear"]).await;
+        let (pairs, ticket) = app.connector_start("slack").await;
+        let (status, html) = app.connector_callback("slack", &format!("error=access_denied&state={}", pairs["state"])).await;
+        assert_eq!(status, 400);
+        assert!(html.contains("cancelled"));
+        let (status, outcome) = app.connector_claim("slack", &ticket).await;
+        assert_eq!(status, 400);
+        assert_eq!(outcome["error"], "Slack connection was cancelled.");
+
+        let (pairs, ticket) = app.connector_start("linear").await;
+        assert_eq!(app.connector_callback("linear", &format!("code=stolen-code&state={}", pairs["state"])).await.0, 400);
+        let (status, outcome) = app.connector_claim("linear", &ticket).await;
+        assert_eq!(status, 400);
+        assert_eq!(outcome["error"], CONNECTOR_FAILED);
+
+        let (pairs, _) = app.connector_start("linear").await;
+        assert_eq!(app.connector_callback("slack", &format!("code=good-code&state={}", pairs["state"])).await.0, 400);
+        assert_eq!(app.connector_callback("linear", "code=good-code&state=forged-state").await.0, 400);
+        assert_eq!(provider.all().len(), 1, "unknown or cross-provider states never reach a provider");
+    }
+
+    #[tokio::test]
+    async fn connectors_stay_off_until_the_server_has_their_apps() {
+        let app = Fixture::start().await;
+        let listed: Value = app.http.get(app.url("/v1/connectors")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(listed, json!({"providers": []}));
+        let response = app.http.post(app.url("/v1/connectors/notion/start")).send().await.unwrap();
+        assert_eq!(response.status(), 503);
+        assert!(response.text().await.unwrap().contains("Paste a token"));
+        assert_eq!(app.connector_callback("notion", "code=good-code&state=anything").await.0, 404);
+        assert_eq!(app.http.post(app.url("/v1/connectors/github/start")).send().await.unwrap().status(), 404);
+
+        let (app, _) = connector_fixture(&["clickup", "slack"]).await;
+        let listed: Value = app.http.get(app.url("/v1/connectors")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(listed, json!({"providers": ["slack", "clickup"]}));
+
+        let base = [
+            ("KESAMI_SUPABASE_URL", "https://project.supabase.co"),
+            ("KESAMI_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test"),
+            ("KESAMI_SARVAM_API_KEY", "private-provider-key"),
+            ("KESAMI_SLACK_CLIENT_ID", "123.456"),
+            ("KESAMI_SLACK_CLIENT_SECRET", "slack-secret"),
+            ("KESAMI_NOTION_CLIENT_ID", "notion-id"),
+            ("KESAMI_NOTION_CLIENT_SECRET", "notion-secret"),
+            ("KESAMI_JIRA_CLIENT_ID", "jira-id-without-secret"),
+        ];
+        let load = |public: &str| {
+            let vars: HashMap<&str, &str> = base.iter().copied().chain([("KESAMI_RELAY_PUBLIC_URL", public)]).collect();
+            Config::from_env(|name| vars.get(name).map(|value| value.to_string())).unwrap().connectors
+        };
+        let apps = load("https://app.kesami.online");
+        let mut ids: Vec<_> = apps.keys().copied().collect();
+        ids.sort();
+        assert_eq!(ids, ["notion", "slack"]);
+        assert_eq!(apps["notion"].redirect_uri, "https://app.kesami.online/v1/connectors/notion/callback");
+        assert_eq!(apps["notion"].token_url, "https://api.notion.com/v1/oauth/token");
+        assert!(load("http://app.kesami.online").is_empty());
+        assert!(load("https://app.kesami.online/some/path").is_empty());
+        assert!(load("").is_empty());
+    }
+
+    #[tokio::test]
+    async fn notion_sign_in_uses_basic_auth_and_refreshes_through_the_relay() {
+        let (app, notion) = connector_fixture(&["notion", "slack"]).await;
+        let (pairs, _) = app.connector_start("notion").await;
+        assert_eq!(pairs["authorize"], "https://api.notion.com/v1/oauth/authorize");
+        assert_eq!(pairs["owner"], "user");
+        assert_eq!(pairs["response_type"], "code");
+
+        let granted = app.sign_in("notion").await;
+        assert_eq!(
+            granted,
+            json!({"accessToken": "notion-access", "refreshToken": "notion-refresh", "expiresIn": null, "account": "riyam@example.com", "workspace": "Acme"})
+        );
+        let exchange = notion.all().pop().unwrap();
+        assert_eq!(
+            exchange.headers["authorization"],
+            format!("Basic {}", BASE64.encode("notion-client:notion-secret"))
+        );
+        assert_eq!(exchange.headers["notion-version"], NOTION_VERSION);
+        let body = json_of(&exchange);
+        assert_eq!(body, json!({"code": "good-code", "grant_type": "authorization_code", "redirect_uri": "https://relay.example/v1/connectors/notion/callback"}));
+
+        let (status, refreshed) = app.connector_post("notion", "refresh", json!({"refreshToken": "refresh-ok"})).await;
+        assert_eq!(status, 200);
+        assert_eq!(refreshed["accessToken"], "notion-access");
+        assert_eq!(refreshed["refreshToken"], "notion-refresh");
+        assert_eq!(json_of(&notion.all().pop().unwrap()), json!({"grant_type": "refresh_token", "refresh_token": "refresh-ok"}));
+
+        let (status, failed) = app.connector_post("notion", "refresh", json!({"refreshToken": "revoked"})).await;
+        assert_eq!(status, 401);
+        assert!(failed["error"].as_str().unwrap().contains("Sign in to Notion again"));
+        assert_eq!(app.connector_post("notion", "refresh", json!({})).await.0, 400);
+        assert_eq!(app.connector_post("slack", "refresh", json!({"refreshToken": "refresh-ok"})).await.0, 404);
+    }
+
+    #[tokio::test]
+    async fn token_requests_match_each_providers_documented_shape() {
+        let (app, log) = connector_fixture(&["linear", "asana", "jira", "clickup"]).await;
+
+        let (pairs, _) = app.connector_start("linear").await;
+        assert_eq!(pairs["authorize"], "https://linear.app/oauth/authorize");
+        assert_eq!(pairs["scope"], "read,issues:create");
+        assert_eq!(app.sign_in("linear").await["accessToken"], "linear-access");
+        let form = form_of(&log.all().pop().unwrap());
+        assert_eq!(form["grant_type"], "authorization_code");
+        assert_eq!(form["client_secret"], "linear-secret");
+        assert_eq!(form["redirect_uri"], "https://relay.example/v1/connectors/linear/callback");
+
+        let (pairs, _) = app.connector_start("asana").await;
+        assert_eq!(pairs["authorize"], "https://app.asana.com/-/oauth_authorize");
+        assert_eq!(pairs["scope"], "tasks:write projects:read projects:write teams:read workspaces:read users:read");
+        let granted = app.sign_in("asana").await;
+        assert_eq!(granted["account"], "riyam@example.com");
+        assert_eq!(granted["expiresIn"], 3600);
+        let seen = log.all().pop().unwrap();
+        assert_eq!(seen.headers["content-type"], "application/x-www-form-urlencoded");
+        assert_eq!(form_of(&seen)["client_id"], "asana-client");
+
+        let (pairs, _) = app.connector_start("jira").await;
+        assert_eq!(pairs["authorize"], "https://auth.atlassian.com/authorize");
+        assert_eq!(pairs["audience"], "api.atlassian.com");
+        assert!(pairs["scope"].split(' ').any(|scope| scope == "offline_access"));
+        assert_eq!(app.sign_in("jira").await["refreshToken"], "jira-refresh");
+        let body = json_of(&log.all().pop().unwrap());
+        assert_eq!(body["grant_type"], "authorization_code");
+        assert_eq!(body["client_secret"], "jira-secret");
+
+        let (pairs, _) = app.connector_start("clickup").await;
+        assert_eq!(pairs["authorize"], "https://app.clickup.com/api");
+        let granted = app.sign_in("clickup").await;
+        assert_eq!(granted["accessToken"], "clickup-access");
+        assert_eq!(granted["refreshToken"], Value::Null);
+        let body = json_of(&log.all().pop().unwrap());
+        assert_eq!(body, json!({"code": "good-code", "client_id": "clickup-client", "client_secret": "clickup-secret"}));
+    }
+
+    #[tokio::test]
+    async fn disconnecting_revokes_with_providers_that_support_it() {
+        let (app, log) = connector_fixture(&["notion", "linear", "asana", "jira"]).await;
+        let revoke = |id: &'static str, body: Value| {
+            let app = &app;
+            async move { app.connector_post(id, "revoke", body).await }
+        };
+
+        assert_eq!(revoke("notion", json!({"accessToken": "notion-a", "refreshToken": "notion-r"})).await, (StatusCode::OK, json!({"revoked": true})));
+        let seen = log.all().pop().unwrap();
+        assert_eq!(seen.uri.path(), "/revoke/notion");
+        assert_eq!(seen.headers["authorization"], format!("Basic {}", BASE64.encode("notion-client:notion-secret")));
+        assert_eq!(json_of(&seen), json!({"token": "notion-a"}));
+
+        assert_eq!(revoke("linear", json!({"accessToken": "linear-a", "refreshToken": "linear-r"})).await.1, json!({"revoked": true}));
+        let form = form_of(&log.all().pop().unwrap());
+        assert_eq!(form["token"], "linear-r");
+        assert_eq!(form["token_type_hint"], "refresh_token");
+
+        assert_eq!(revoke("asana", json!({"accessToken": "asana-a", "refreshToken": "asana-r"})).await.1, json!({"revoked": true}));
+        let form = form_of(&log.all().pop().unwrap());
+        assert_eq!((form["token"].as_str(), form["client_secret"].as_str()), ("asana-r", "asana-secret"));
+
+        let before = log.all().len();
+        assert_eq!(revoke("asana", json!({"accessToken": "asana-a"})).await.1, json!({"revoked": false}), "Asana revokes refresh tokens only");
+        assert_eq!(revoke("jira", json!({"accessToken": "jira-a", "refreshToken": "jira-r"})).await.1, json!({"revoked": false}));
+        assert_eq!(log.all().len(), before, "providers without a revoke endpoint are never called");
+        assert_eq!(app.connector_post("clickup", "revoke", json!({"accessToken": "x"})).await.0, 404);
     }
 }

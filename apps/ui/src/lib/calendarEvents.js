@@ -2,6 +2,49 @@ export const EVENT_MATCH_LEAD_MS = 300000;
 export const EVENT_MATCH_GRACE_MS = 300000;
 export const REMINDER_LEAD_MS = 60000;
 
+export const AGENDA_HORIZON_DAYS = 6;
+
+export function calendarAgendaRange(nowMs = Date.now(), days = AGENDA_HORIZON_DAYS) {
+    const start = new Date(nowMs);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + days);
+
+    return calendarFetchRangeBetween(start.getTime(), end.getTime(), nowMs);
+}
+
+export function calendarFetchRangeBetween(startMs, endMs, nowMs = Date.now()) {
+    return {
+        minutesBack: Math.max(15, Math.ceil((nowMs - startMs) / 60000)),
+        minutesAhead: Math.max(15, Math.ceil((endMs - nowMs) / 60000)),
+        startMs,
+        endMs,
+    };
+}
+
+export const CALENDAR_CACHE_MS = 60000;
+
+export function createCalendarCache(ttlMs = CALENDAR_CACHE_MS, clock = Date.now) {
+    const entries = new Map();
+    return {
+        get(key) {
+            const entry = entries.get(key);
+            if (!entry) return null;
+            if (clock() - entry.at >= ttlMs) {
+                entries.delete(key);
+                return null;
+            }
+            return entry.value;
+        },
+        set(key, value) {
+            entries.set(key, { at: clock(), value });
+        },
+        clear() {
+            entries.clear();
+        },
+    };
+}
+
 function withBounds(events) {
     return (Array.isArray(events) ? events : [])
         .map(event => ({ ...event, startMs: Date.parse(event?.start), endMs: Date.parse(event?.end) }))
@@ -66,6 +109,7 @@ export function calendarEventMetadata(event) {
         links: Array.isArray(event.links) ? event.links : [],
         eventUrl: event.eventUrl ?? null,
         organizer: event.organizer ?? null,
+        seriesId: event.seriesId ?? null,
         attendees: (Array.isArray(event.attendees) ? event.attendees : []).map(person => ({
             name: person?.name ?? null,
             email: person?.email ?? null,
@@ -77,6 +121,49 @@ export function attendeeNames(source) {
     const list = Array.isArray(source?.attendees) ? source.attendees : [];
     const names = list.map(person => String(person?.name ?? '').trim() || String(person?.email ?? '').trim()).filter(Boolean);
     return Array.from(new Set(names));
+}
+
+const CADENCE_WORDS = /\b(?:daily|weekly|bi-?weekly|fortnightly|monthly|quarterly|yearly|annual|recurring)\b/gi;
+const EDGE_SEPARATORS = /^[\s|:·•–—-]+|[\s|:·•–—-]+$/g;
+
+export function suggestFolderName(title) {
+    const original = String(title ?? '').replace(/\s+/g, ' ').trim();
+    const cleaned = original
+        .replace(/\([^)]*\d[^)]*\)/g, ' ')
+        .replace(/\b\d{1,4}[/.-]\d{1,2}(?:[/.-]\d{1,4})?\b/g, ' ')
+        .replace(/#\s*\d+\b/g, ' ')
+        .replace(CADENCE_WORDS, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(EDGE_SEPARATORS, '')
+        .trim();
+    const name = (cleaned || original).slice(0, 60).trim();
+    return name ? name[0].toUpperCase() + name.slice(1) : '';
+}
+
+export function suggestedFolder(title, folders) {
+    const list = Array.isArray(folders) ? folders : [];
+    const name = suggestFolderName(title).toLowerCase();
+    const text = String(title ?? '').toLowerCase();
+    const folderName = folder => String(folder?.name ?? '').trim().toLowerCase();
+    return (
+        list.find(folder => name && folderName(folder) === name) ||
+        list.find(folder => folderName(folder).length >= 3 && text.includes(folderName(folder))) ||
+        null
+    );
+}
+
+export function eventFolderId(event, rules) {
+    if (event?.id == null) return null;
+    const provider = event.provider || 'calendar';
+    const events = rules?.events || {};
+    const key = `${provider}:${event.id}`;
+    if (Object.prototype.hasOwnProperty.call(events, key)) return events[key] || null;
+    return seriesFolderId(event, rules);
+}
+
+export function seriesFolderId(event, rules) {
+    if (!event?.seriesId) return null;
+    return rules?.series?.[`${event.provider || 'calendar'}:${event.seriesId}`] || null;
 }
 
 export function reminderKey(event) {

@@ -31,7 +31,7 @@ import {
     Undo2,
     Upload,
     WandSparkles,
-    Youtube,
+    SquarePlay,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Button } from '@/components/ui/button';
@@ -497,7 +497,7 @@ function ImportDialog({ open, onClose, project, studio }) {
                 <Tabs value={tab} onValueChange={setTab}>
                     <TabsList className="w-full"><TabsTrigger value="rss" className="flex-1">RSS</TabsTrigger><TabsTrigger value="youtube" className="flex-1">Owned YouTube</TabsTrigger></TabsList>
                     <TabsContent value="rss" className="space-y-3"><div className="flex gap-2"><Input value={rssUrl} onChange={event => setRssUrl(event.target.value)} placeholder="https://example.com/feed.xml" /><Button onClick={inspect} disabled={!rssUrl || studio.isBusy}>Load</Button></div>{feed && <div><h3 className="font-semibold">{feed.title}</h3><div className="mt-2 space-y-2">{feed.episodes.map(episode => <div key={episode.id} className="flex items-center gap-3 rounded-lg border p-3"><div className="min-w-0 flex-1"><p className="truncate text-callout font-medium">{episode.title}</p><p className="truncate text-footnote text-muted-foreground">{episode.publishedAt}</p></div><Button size="sm" onClick={async () => { await studio.callBridge('importRss', project.id, feed, episode); onClose(); }}>Import</Button></div>)}</div></div>}</TabsContent>
-                    <TabsContent value="youtube" className="space-y-3">{!studio.settings.youtubeConnected ? <p className="text-callout text-muted-foreground">Connect YouTube in the Publish tab first.</p> : <Button onClick={loadYouTube}><Youtube /> Load my videos</Button>}{youtube && <div className="space-y-2">{youtube.videos.map(video => <div key={video.id} className="flex items-center gap-3 rounded-lg border p-3"><div className="min-w-0 flex-1"><p className="truncate text-callout font-medium">{video.snippet?.title}</p><p className="text-footnote text-muted-foreground">Captions require edit permission; source video is not downloaded.</p></div><Button size="sm" onClick={async () => { await studio.callBridge('importYouTube', project.id, video); onClose(); }}>Import captions</Button></div>)}</div>}</TabsContent>
+                    <TabsContent value="youtube" className="space-y-3">{!studio.settings.youtubeConnected ? <p className="text-callout text-muted-foreground">Connect YouTube in the Publish tab first.</p> : <Button onClick={loadYouTube}><SquarePlay /> Load my videos</Button>}{youtube && <div className="space-y-2">{youtube.videos.map(video => <div key={video.id} className="flex items-center gap-3 rounded-lg border p-3"><div className="min-w-0 flex-1"><p className="truncate text-callout font-medium">{video.snippet?.title}</p><p className="text-footnote text-muted-foreground">Captions require edit permission; source video is not downloaded.</p></div><Button size="sm" onClick={async () => { await studio.callBridge('importYouTube', project.id, video); onClose(); }}>Import captions</Button></div>)}</div>}</TabsContent>
                 </Tabs>
             </DialogContent>
         </Dialog>
@@ -511,7 +511,7 @@ function PublishPanel({ project, studio }) {
     return (
         <div className="grid gap-4 lg:grid-cols-2">
             <section className="rounded-xl border bg-card p-4">
-                <div className="flex items-center gap-2"><Youtube className="size-5 text-destructive" /><h3 className="text-headline font-semibold">YouTube / YouTube Music</h3></div>
+                <div className="flex items-center gap-2"><SquarePlay className="size-5 text-destructive" /><h3 className="text-headline font-semibold">YouTube / YouTube Music</h3></div>
                 <p className="mt-2 text-callout text-muted-foreground">Uploads are private and open in YouTube Studio for final review. Google Podcasts has been replaced by YouTube’s podcast experience.</p>
                 <Label htmlFor="youtube-client" className="mt-4 block">Google OAuth client ID</Label>
                 <Input id="youtube-client" className="mt-2" value={clientId} onChange={event => setClientId(event.target.value)} placeholder="Configured by the packaged app, or paste your own" />

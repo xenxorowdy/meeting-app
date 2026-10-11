@@ -23,12 +23,20 @@ function stored(storage, key) {
 }
 
 export function getBackendConnection() {
-    const desktop = globalThis.kesamiConnection?.get?.();
+    const bridge = globalThis.kesamiConnection;
+    const desktop = bridge?.get?.();
     const candidate = desktop?.url || stored('localStorage', URL_KEY) || import.meta.env?.VITE_BACKEND_URL || DEFAULT_BACKEND_URL;
     // Invalid configuration must not silently redirect private meeting data to a different server.
     const url = normalizeBackendUrl(candidate);
-    const token = desktop?.token || (desktop ? '' : stored('sessionStorage', TOKEN_KEY));
+    const token = desktop?.token || (bridge ? '' : stored('sessionStorage', TOKEN_KEY));
     return { url, token, remote: !LOOPBACK_HOSTS.has(new URL(url).hostname) };
+}
+
+export function whenConnectionReady() {
+    return Promise.resolve(globalThis.kesamiConnection?.ready?.()).then(
+        () => undefined,
+        () => undefined
+    );
 }
 
 export const getBackendUrl = () => getBackendConnection().url;

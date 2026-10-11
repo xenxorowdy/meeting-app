@@ -6,7 +6,7 @@ const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 
 let signingIn = false;
 
-async function start(options) {
+async function start(options, onReturn = () => {}) {
     if (signingIn) throw new Error('Google sign-in is already in progress.');
     const supabase = options?.provider === 'supabase';
     const clientId = typeof options === 'string' ? options : options?.clientId;
@@ -48,11 +48,17 @@ async function start(options) {
                 response.setHeader('Content-Type', 'text/html; charset=utf-8');
                 clearTimeout(callbackTimer);
                 response.once('finish', () => {
+                    try { onReturn(); } catch { /* The browser link remains available. */ }
                     if (incoming.searchParams.get('error')) reject(new Error('Google sign-in was cancelled or denied.'));
                     else if (!incoming.searchParams.get('code')) reject(new Error('Google did not return an authorization code.'));
                     else resolve(incoming.searchParams.get('code'));
                 });
-                response.end('<!doctype html><title>Return to Kesami</title><p>Return to Kesami to finish signing in.</p>');
+                const cancelled = incoming.searchParams.has('error');
+                const missingCode = !incoming.searchParams.get('code');
+                response.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+                response.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Return to Kesami</title><style>
+                    :root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:light-dark(#f8f7f5,#22211f);color:light-dark(#292723,#f5f4f1);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:440px;padding:40px}h1{font-size:30px;line-height:1.2}a{display:inline-block;margin-top:16px;padding:12px 24px;background:#bd462e;color:#fff;border-radius:12px;text-decoration:none;font-weight:600}a:hover{background:#a83c26}a:focus-visible{outline:3px solid currentColor;outline-offset:4px}small{display:block;margin-top:24px;opacity:.8}
+                    </style></head><body><main><strong>KESAMI</strong><h1>${cancelled ? 'Sign-in was cancelled' : missingCode ? 'Sign-in could not continue' : 'Return to Kesami'}</h1><p>${cancelled || missingCode ? 'Open Kesami to try signing in again.' : 'Continue in Kesami to finish signing in. If the app hasn’t appeared, use the button below.'}</p><a href="kesami://open">Open Kesami</a><small>Your browser may ask you to confirm opening Kesami. You can close this tab after returning to the app.</small></main></body></html>`);
             });
         });
         // Install a rejection handler before opening the browser, which can fail
@@ -83,8 +89,8 @@ async function start(options) {
     }
 }
 
-function registerHandlers(ipc = ipcMain) {
-    ipc.handle('google-sign-in:start', (_event, options) => start(options));
+function registerHandlers(ipc = ipcMain, { onReturn } = {}) {
+    ipc.handle('google-sign-in:start', (_event, options) => start(options, onReturn));
 }
 
 module.exports = { registerHandlers };

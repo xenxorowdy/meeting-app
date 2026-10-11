@@ -90,7 +90,7 @@ function SendToSection({ meeting, isOpen }) {
                                         : delivery?.ok || delivery?.alreadySent
                                           ? 'Send again'
                                           : connector.kind === 'tasks'
-                                            ? 'Create tasks'
+                                            ? 'Create tasks & commitments'
                                             : 'Send'}
                                 </Button>
                             </div>

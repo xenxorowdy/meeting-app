@@ -9,7 +9,7 @@ const { secureWindow } = require('./rendererSecurity');
 const COLLAPSED = { width: 288, height: 52 };
 const EXPANDED = { width: 460, height: 500 };
 // Six pixels around the card leave room for its small wobble without clipping.
-const PROMPT = { width: 212, height: 252 };
+const PROMPT = { width: 140, height: 164 };
 const SCREEN_MARGIN = 20;
 const COMMANDS = new Set(['toggle-mic', 'toggle-system', 'toggle-pause', 'stop']);
 const PROMPT_COMMANDS = new Set(['start-call', 'dismiss-call']);
