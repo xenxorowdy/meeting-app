@@ -2,7 +2,7 @@ import { PricingView } from './PricingView';
 import { AccountSecurity } from './AccountSecurity';
 import { PlanBilling } from './PlanBilling';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, ArrowUpRight, ChevronLeft, ChevronRight, CalendarDays, Clock3, ExternalLink, FileText, Folder, Home, LayoutGrid, Library, List, ListChecks, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, RefreshCw, Search, Settings, Sparkles, Star, Sun, Trash2, UserRound, X } from 'lucide-react';
+import { ArrowUp, ChevronLeft, ChevronRight, Clock3, ExternalLink, FileText, Folder, Home, LayoutGrid, Library, List, ListChecks, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, RefreshCw, Search, Settings, Sparkles, Star, Sun, Trash2, UserRound, X } from 'lucide-react';
 import { Button, Card, Dropdown, Header, Input, Label, Separator } from '@heroui/react';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
@@ -308,7 +308,7 @@ export function DesignWorkspace({
     const googleCalendar = calendar.providers.find(provider => provider.provider === 'google');
     const canSchedule = Boolean(googleCalendar?.connected || googleCalendar?.configured);
     const calendarConnected = calendar.providers.some(provider => provider.connected);
-    const showAgenda = calendarConnected || calendar.providers.some(provider => provider.configured) || calendar.events.length > 0;
+    const showAgenda = calendarConnected || calendar.events.length > 0;
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }
     });
@@ -614,22 +614,6 @@ export function DesignWorkspace({
                                             </div>
                                         ))}
                                         </div>
-                                        {!calendarConnected && !calendar.events.length && (
-                                            <div className="ks-empty-card">
-                                                <CalendarDays className="ks-empty-icon" aria-hidden="true" />
-                                                <h3>{calendarConnected ? 'Nothing scheduled today' : 'Bring your calendar into view'}</h3>
-                                                <p>
-                                                    {calendarConnected
-                                                        ? 'Start a meeting whenever you’re ready.'
-                                                        : 'Connect a calendar to see your upcoming meetings here.'}
-                                                </p>
-                                                {!calendarConnected && (
-                                                    <button className="ks-text-button" onClick={() => onSettings('calendar')}>
-                                                        Calendar settings <ArrowUpRight aria-hidden="true" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
                                     </section>}
                                     <div className="ks-section-label ks-recent-heading">
                                         <h2>Recent meetings</h2>

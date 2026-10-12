@@ -6139,7 +6139,7 @@ html, body { overflow-x: clip; }
 }
 .ks-app .ks-sidebar-nav > button.is-active svg { color: var(--color-accent); }
 .ks-app .ks-folder-heading { padding: 26px 12px 8px; }
-.ks-app .ks-sidebar-footer { padding: 12px 4px 0; }
+.ks-app .ks-sidebar-footer { padding: 12px 4px 12px; }
 .ks-app .ks-profile { padding: 8px; }
 .ks-app .ks-main { background: var(--color-paper); }
 .ks-app .ks-main-toolbar {
