@@ -82,6 +82,9 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Enable long paths for checkout
+        run: git config --global core.longpaths true
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
