@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
+import { Button as HeroButton } from '@heroui/react';
 import { cva } from 'class-variance-authority';
 
 import { cn } from '@/utils/cn';
@@ -36,9 +37,58 @@ const buttonVariants = cva(
     }
 );
 
-const Button = React.forwardRef(({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : 'button';
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+const heroVariants = {
+    default: 'primary',
+    destructive: 'danger',
+    tinted: 'secondary',
+    'destructive-tinted': 'danger-soft',
+    outline: 'outline',
+    secondary: 'tertiary',
+    ghost: 'ghost',
+    plain: 'ghost',
+    link: 'ghost',
+};
+
+const heroSizes = {
+    xs: 'sm',
+    sm: 'sm',
+    default: 'md',
+    lg: 'lg',
+    icon: 'md',
+    iconSm: 'sm',
+    iconXs: 'sm',
+};
+
+const heroReset =
+    'static isolation-auto w-auto transform-none select-auto [--button-bg:transparent] [--button-bg-hover:var(--button-bg)] [--button-bg-pressed:var(--button-bg-hover)] [--button-fg:currentColor] [&_svg]:m-0';
+
+const passthroughAttributes = ['title', 'tabIndex', 'role', 'aria-hidden', 'draggable'];
+
+const Button = React.forwardRef(({ className, variant, size, asChild = false, disabled, ...props }, ref) => {
+    if (asChild) {
+        return <Slot className={cn(buttonVariants({ variant, size, className }))} ref={ref} disabled={disabled} {...props} />;
+    }
+
+    const extra = {};
+    for (const name of passthroughAttributes) {
+        if (props[name] !== undefined) {
+            extra[name] = props[name];
+            delete props[name];
+        }
+    }
+    const render = Object.keys(extra).length ? domProps => <button {...domProps} {...extra} /> : undefined;
+
+    return (
+        <HeroButton
+            ref={ref}
+            variant={heroVariants[variant] ?? 'primary'}
+            size={heroSizes[size] ?? 'md'}
+            isDisabled={disabled}
+            className={cn(heroReset, buttonVariants({ variant, size, className }))}
+            render={render}
+            {...props}
+        />
+    );
 });
 Button.displayName = 'Button';
 

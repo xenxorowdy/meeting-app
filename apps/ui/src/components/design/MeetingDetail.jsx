@@ -22,6 +22,7 @@ import { ResizableChatPanel } from '@/components/ResizableChatPanel';
 import { MeetingCommitments } from '@/components/MeetingCommitments';
 import { MeetingActions } from '@/components/MeetingActions';
 import { SummarySharing } from '@/components/SummarySharing';
+import { SummaryGenerationControl } from '@/components/SummaryGenerationControl';
 
 const RecordingPlayer = lazy(() => import('@/components/RecordingPlayer').then(module => ({ default: module.RecordingPlayer })));
 const SummaryEditor = lazy(() => import('@/components/SummaryEditor').then(module => ({ default: module.SummaryEditor })));
@@ -469,18 +470,23 @@ export function MeetingDetail({
                                 <article className="ks-brief">
                                     <div className="ks-brief-kicker">
                                         <SummaryTemplatePicker model={templateModel} disabled={session.isProcessing || session.isGeneratingSummary} />
-                                        {meeting?.summaryMarkdown && <span>{readingMinutes(meeting.summaryMarkdown)} min read</span>}
+                                        <div className="ks-brief-summary-controls">
+                                            {meeting?.summaryMarkdown && <span>{readingMinutes(meeting.summaryMarkdown)} min read</span>}
+                                            <SummaryGenerationControl key={meeting?.id} meeting={meeting} isConnected={isConnected}
+                                                isProcessing={session.isProcessing || recording} isGenerating={session.isGeneratingSummary}
+                                                onGenerate={onRegenerateSummary} />
+                                        </div>
                                     </div>
                                     {templateModel.selected.id !== 'enhanced' ? <SummaryTemplateContent template={templateModel.selected} meeting={meeting} /> : <>
                                     <div className="ks-brief-lead">
                                         <MarkdownText
                                             markdown={
                                                 summaryText ||
-                                                (session.isProcessing
-                                                    ? 'Preparing your meeting summary…'
-                                                    : session.autoSummarize === false
-                                                      ? 'Auto-summarize is off. Turn on “Summarize when a recording ends” in Settings to generate a recap.'
-                                                      : 'No summary is available for this meeting yet.')
+                                                (session.isGeneratingSummary
+                                                    ? 'Generating your meeting notes…'
+                                                    : session.isProcessing
+                                                      ? 'Saving your transcript…'
+                                                      : 'Choose Generate to create notes from this transcript. Summaries are generated only when you request them.')
                                             }
                                         />
                                     </div>

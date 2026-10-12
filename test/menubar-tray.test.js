@@ -7,6 +7,7 @@ const handlers = new Map();
 const shown = [];
 const opened = [];
 let trays = [];
+const fallbackCards = [];
 
 class FakeTray {
     constructor(image) {
@@ -62,7 +63,8 @@ class FakeNotification {
     }
 
     on(name, listener) {
-        this.listeners.set(name, listener);
+        const previous = this.listeners.get(name);
+        this.listeners.set(name, previous ? (...args) => { previous(...args); listener(...args); } : listener);
         return this;
     }
 
@@ -81,6 +83,10 @@ const fakeImage = {
 
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
+    if (request === './reminderWindow' && parent.filename.endsWith('/menubar.js')) return {
+        show(options) { const card = { options, destroyed: false, isDestroyed() { return this.destroyed; }, destroy() { this.destroyed = true; } }; fallbackCards.push(card); return card; },
+        destroy() { for (const card of fallbackCards) card.destroy(); },
+    };
     if (request === 'electron') {
         return {
             Tray: FakeTray,
@@ -615,16 +621,15 @@ test('a notification macOS refuses is remembered instead of failing silently', a
     menubar.destroy();
 });
 
-test('Test notification reports when macOS blocks notifications', async () => {
+test('Test notification opens a reminder card when macOS blocks notifications', async () => {
     const { main } = autoRecordHarness();
     const handler = handlers.get(menubar._testing.TEST_NOTIFICATION_CHANNEL);
     const pending = handler({ sender: main.webContents });
     shown.at(-1).listeners.get('failed')({}, 'UNErrorDomain error 1');
     const result = await pending;
-    assert.equal(result.shown, false);
-    assert.equal(result.blocked, true);
-    assert.match(result.reason, /UNErrorDomain error 1/);
-    assert.match(result.reason, /System Settings/);
+    assert.equal(result.shown, true);
+    assert.equal(result.delivery, 'fallback');
+    assert.equal(fallbackCards.at(-1).destroyed, false);
     menubar.destroy();
 });
 
@@ -637,4 +642,40 @@ test('Test notification confirms when macOS shows it', async () => {
     assert.equal(result.shown, true);
     assert.equal(result.confirmed, true);
     menubar.destroy();
+});
+
+test('failed reminders open one fallback and retain Record and Join actions', async () => {
+    const { sent } = autoRecordHarness({ joinUrl: 'https://meet.google.com/synthetic' });
+    await menubar._testing.poll();
+    const before = fallbackCards.length;
+    shown[0].listeners.get('failed')({}, 'UNErrorDomain error 1');
+    shown[0].listeners.get('failed')({}, 'UNErrorDomain error 1');
+    assert.equal(fallbackCards.length, before + 1);
+    fallbackCards.at(-1).options.onRecord();
+    assert.equal(sent.at(-1).type, 'record');
+    assert.equal(opened.length, 0);
+    fallbackCards.at(-1).options.onJoin();
+    assert.equal(opened.at(-1), 'https://meet.google.com/synthetic');
+});
+
+test('fallback cancellation cancels auto recording; failed native close does not', async () => {
+    const { event, sent } = autoRecordHarness();
+    await menubar._testing.poll();
+    shown[0].listeners.get('failed')({}, 'UNErrorDomain error 1');
+    shown[0].listeners.get('close')();
+    assert.equal([...menubar._testing.state().autoRecords.values()][0].state, 'armed');
+    fallbackCards.at(-1).options.onCancel();
+    await menubar._testing.render(Date.parse(event.start) + 250);
+    assert.equal(sent.length, 0);
+});
+
+test('unconfirmed native delivery falls back, and late native confirmation removes the duplicate', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    autoRecordHarness();
+    await menubar._testing.poll();
+    t.mock.timers.tick(menubar._testing.TEST_NOTIFICATION_WAIT_MS);
+    const card = fallbackCards.at(-1);
+    assert.equal(card.destroyed, false);
+    shown[0].listeners.get('show')();
+    assert.equal(card.destroyed, true);
 });

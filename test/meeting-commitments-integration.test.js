@@ -21,8 +21,8 @@ test('commitments require grounded review and survive reload, completion and reg
     await new Promise(resolve => probe.close(resolve));
     const library = path.join(root, 'library');
     // Batch mode without a recording cannot call STT; posted synthetic turns
-    // exercise completion even with automatic AI summaries disabled.
-    await fs.writeFile(path.join(root, 'settings.json'), JSON.stringify({ transcriptionProvider: 'sarvam', autoSummarize: false }));
+    // exercise completion with an older workspace's auto-summary flag enabled.
+    await fs.writeFile(path.join(root, 'settings.json'), JSON.stringify({ transcriptionProvider: 'sarvam', autoSummarize: true }));
     const transcript = [
         ['Riyam', "I'll send the proposal tomorrow."],
         ['Riyam', "I'll check this with engineering."],
@@ -41,7 +41,9 @@ test('commitments require grounded review and survive reload, completion and reg
         await fs.writeFile(path.join(library, m.id, 'meeting.json'), JSON.stringify(m));
     }
     const fake = path.join(root, 'fake-claude');
+    const generations = path.join(root, 'generations.log');
     await fs.writeFile(fake, `#!${process.execPath}
+require('node:fs').appendFileSync(${JSON.stringify(generations)}, 'generation\\n');
 process.stdin.resume();
 process.stdin.on('end', () => process.stdout.write(JSON.stringify({structured_output:{
 executiveSummary:'Synthetic recap.',sections:[],keyDecisions:[],followUpEmail:{subject:'',body:''},memoryFacts:[],
@@ -116,6 +118,8 @@ actionItems:[{task:'Send the proposal',owner:'Riyam',deadline:'Monday',priority:
     await api('/api/meetings/synthetic', { actionItems: [{ ...task, completed: true }] }, 'PATCH');
     const regenerated = await api('/api/meetings/synthetic/summarize', { regenerate: true });
     assert.equal(regenerated.status, 200, JSON.stringify(regenerated.data));
+    const generationsBeforeStop = await fs.readFile(generations, 'utf8');
+    assert.equal((await api('/api/settings')).data.settings.autoSummarize, false, 'older settings are reported as manual-only');
     saved = (await api('/api/meetings/synthetic')).data.meeting;
     assert.equal(saved.actionItems.length, 1);
     assert.deepEqual(saved.actionItems[0], { ...task, completed: true }, 'AI regeneration cannot replace a reviewed task or its provenance');
@@ -140,7 +144,8 @@ actionItems:[{task:'Send the proposal',owner:'Riyam',deadline:'Monday',priority:
     const finished = await api('/api/meetings/stop', { transcript: [{ ...transcript[0], speaker: 'You' }] });
     assert.equal(finished.status, 200, JSON.stringify(finished.data));
     const finalMeeting = finished.data.meeting;
-    assert.equal(finalMeeting.summaryMarkdown, '', 'auto-summarize off suppresses automatic summary generation');
+    assert.equal(finalMeeting.summaryMarkdown, '', 'a legacy auto-summary setting cannot trigger automatic notes');
+    assert.equal(await fs.readFile(generations, 'utf8'), generationsBeforeStop, 'completion makes no model call');
     assert.equal(finalMeeting.metadata.meetingCommitments.candidates[0].classification, 'explicit_commitment');
     assert.equal(finalMeeting.metadata.meetingCommitments.candidates[0].person, 'You');
     assert.equal(finalMeeting.metadata.meetingCommitments.candidates[0].dueDate, 'tomorrow');
@@ -156,4 +161,23 @@ actionItems:[{task:'Send the proposal',owner:'Riyam',deadline:'Monday',priority:
     assert.equal(current.metadata.meetingCommitments.candidates[0].status, 'confirmed');
     const retryStop = await api('/api/meetings/stop', {});
     assert.equal(retryStop.data.meeting.actionItems.length, 1, 'idempotent stop returns the current reviewed record');
+    assert.equal(await fs.readFile(generations, 'utf8'), generationsBeforeStop, 'repeated stop makes no model call');
+    const generated = await api(`${finalRoute}/summarize`, { regenerate: false });
+    assert.equal(generated.status, 200, JSON.stringify(generated.data));
+    assert.ok(generated.data.summary.rawMarkdown.includes('Synthetic recap.'), 'explicit Generate creates notes');
+    const afterGenerate = await fs.readFile(generations, 'utf8');
+    assert.equal(afterGenerate.split('\n').length, generationsBeforeStop.split('\n').length + 1);
+    assert.equal((await api(finalRoute)).data.meeting.summaryMarkdown, generated.data.summary.rawMarkdown, 'generated notes are persisted');
+    const replaced = await api(`${finalRoute}/summarize`, { regenerate: true });
+    assert.equal(replaced.status, 200, JSON.stringify(replaced.data));
+    assert.equal((await fs.readFile(generations, 'utf8')).split('\n').length, afterGenerate.split('\n').length + 1, 'Regenerate makes one new model call');
+    const beforeDefaultStop = await fs.readFile(generations, 'utf8');
+    backend.kill('SIGTERM'); await once(backend, 'exit');
+    await fs.writeFile(path.join(root, 'settings.json'), JSON.stringify({ transcriptionProvider: 'sarvam' }));
+    await start();
+    await api('/api/meetings/start', { title: 'No auto-summary setting' });
+    const defaultFinished = await api('/api/meetings/stop', { transcript: [{ ...transcript[0], speaker: 'You' }] });
+    assert.equal(defaultFinished.status, 200, JSON.stringify(defaultFinished.data));
+    assert.equal(defaultFinished.data.meeting.summaryMarkdown, '', 'missing settings also default to manual summaries');
+    assert.equal(await fs.readFile(generations, 'utf8'), beforeDefaultStop, 'default completion makes no model call');
 });

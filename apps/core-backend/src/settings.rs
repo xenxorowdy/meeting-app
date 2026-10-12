@@ -181,6 +181,8 @@ impl SettingsStore {
     /// this is served to any local process that asks.
     pub async fn public_value(&self) -> Value {
         let mut out = self.settings.read().await.clone();
+        // Retain the public field for older clients, but summaries are manual.
+        out.insert("autoSummarize".into(), Value::Bool(false));
         let credentials = self.credentials.read().await;
         out.insert(
             "geminiApiKeySet".into(),

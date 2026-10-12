@@ -4,13 +4,15 @@
  * pre-emit critique: P4 H4 E4 S4 R5 V4
  */
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpRight, Check, Copy, FileCheck2, History, ListChecks, Lock, Maximize2, Minimize2, Plus, Search, Sparkles, Square, Trash2, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Check, Copy, FileCheck2, History, ListChecks, Lock, Maximize2, Minimize2, Plus, Search, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { MarkdownText } from '@/components/MarkdownText';
 import { useMeetingChat } from '@/hooks/useMeetingChat';
 import { apiRequest, normalizeMeeting } from '@/lib/backend';
 import { citationTarget, citationTime, copyAnswerText, citationDate, readableExcerpt, scopeKey } from '@/lib/chat';
 import { copyToClipboard } from '@/lib/clipboard';
+import { Button, TextArea } from '@heroui/react';
+import { ChatConversation, ChatLoader, ChatMessage, ChatProgress } from '@/components/ui/chat';
 
 const NO_CITATIONS = [];
 
@@ -32,10 +34,10 @@ function ResponseActions({ message, question, disabled, onFollowUp }) {
     const context = question ? `\n\nRegarding: ${Array.from(question).slice(0, 600).join('')}` : '';
     return (
         <div className="ks-chat-response-actions">
-            <button type="button" onClick={copy} className="ks-chat-copy" aria-label="Copy response">
+            <Button type="button" variant="ghost" onPress={copy} className="ks-chat-copy" aria-label="Copy response">
                 {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
                 {copyState === 'copied' ? 'Copied' : 'Copy response'}
-            </button>
+            </Button>
             <span className={copyState === 'failed' ? 'ks-chat-copy-status' : 'sr-only'} role="status">
                 {copyState === 'failed'
                     ? 'Couldn’t copy. Select the response to copy it manually.'
@@ -43,17 +45,16 @@ function ResponseActions({ message, question, disabled, onFollowUp }) {
                       ? 'Response copied.'
                       : ''}
             </span>
-            <p className="ks-chat-followup-label">Explore this answer</p>
-            <div className="ks-chat-followups">
+            <div className="ks-chat-followups" role="group" aria-label="Explore this answer">
                 {[
                     ['Make it shorter', 'Give me a concise answer in three bullets.'],
                     ['Explain more', 'Explain the answer in more detail using the meeting evidence.'],
                     ['Next steps', 'What next steps, owners, and deadlines were discussed? Flag anything unspecified.'],
                 ].map(([label, prompt]) => (
-                    <button key={label} type="button" disabled={disabled} onClick={() => onFollowUp(prompt + context)}>
+                    <Button key={label} type="button" variant="tertiary" isDisabled={disabled} onPress={() => onFollowUp(prompt + context)}>
                         {label}
                         <ArrowUpRight size={12} />
-                    </button>
+                    </Button>
                 ))}
             </div>
         </div>
@@ -152,11 +153,8 @@ function ConversationHistory({ threads, currentId, disabled, hasMore, onOpen, on
 export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeting, isLive = false, scopeControl = null, filterControl = null, draft = null, onDraftConsumed = null, onClose = null, onUpgrade = null, isExpanded = false, onToggleExpand = null }) {
     const chat = useMeetingChat(scope, isConnected);
     const [sourceError, setSourceError] = useState(null);
-    const log = useRef(null);
+    const conversation = useRef(null);
     const composer = useRef(null);
-    const followLatest = useRef(true);
-    const previousLog = useRef({ messages: [], height: 0 });
-    const [hasNewResponse, setHasNewResponse] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
@@ -164,28 +162,13 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
     // Where keyboard focus lands once the history list closes; the list unmounts, so focus must be placed explicitly.
     const historyReturn = useRef(null);
     const composerHintId = useId();
-    const jumpToLatest = () => {
-        followLatest.current = true;
-        setHasNewResponse(false);
-        if (log.current) log.current.scrollTop = log.current.scrollHeight;
-    };
+    const jumpToLatest = () => conversation.current?.jumpToLatest();
     const prepareQuestion = question => {
         chat.setQuestion(question);
         composer.current?.focus();
     };
     const locked = chat.requiresPro;
     const actionsDisabled = !isConnected || chat.busy || chat.loading || locked;
-    useEffect(() => {
-        const element = log.current;
-        if (!element) return;
-        const previous = previousLog.current;
-        const prepended = previous.messages.length > 0 && chat.messages.length > previous.messages.length &&
-            chat.messages.at(-1) === previous.messages.at(-1) && chat.messages[0] !== previous.messages[0];
-        if (prepended) element.scrollTop += element.scrollHeight - previous.height;
-        else if (followLatest.current || chat.busy) jumpToLatest();
-        else if (chat.messages.length > previous.messages.length) setHasNewResponse(true);
-        previousLog.current = { messages: chat.messages, height: element.scrollHeight };
-    }, [chat.messages, chat.busy]);
     useEffect(() => {
         const textarea = composer.current;
         if (!textarea) return;
@@ -207,8 +190,6 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
         setShowHistory(false);
     };
     useEffect(() => {
-        followLatest.current = true;
-        setHasNewResponse(false);
         setSourceError(null);
         setConfirmDelete(false);
     }, [scopeKey(scope), chat.thread?.id]);
@@ -262,25 +243,27 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                 </div>
                 {scopeControl}
                 <div className="ks-chat-head-actions" role="group" aria-label="Conversation controls">
-                    <button
+                    <Button
                         ref={historyButton}
                         type="button"
                         className="ks-icon-button"
-                        onClick={() => (showHistory ? closeHistory() : setShowHistory(true))}
-                        disabled={deleting}
+                        variant="ghost"
+                        isIconOnly
+                        onPress={() => (showHistory ? closeHistory() : setShowHistory(true))}
+                        isDisabled={deleting}
                         aria-label="Conversation history"
                         aria-pressed={showHistory}
                         title="Conversation history"
                     >
                         <History />
-                    </button>
-                    <button type="button" className="ks-icon-button" onClick={() => { chat.newThread(); if (showHistory) closeHistory(composer); else composer.current?.focus(); }} disabled={deleting} aria-label="New conversation" title="New conversation">
+                    </Button>
+                    <Button type="button" variant="ghost" isIconOnly className="ks-icon-button" onPress={() => { chat.newThread(); if (showHistory) closeHistory(composer); else composer.current?.focus(); }} isDisabled={deleting} aria-label="New conversation" title="New conversation">
                         <Plus />
-                    </button>
+                    </Button>
                     {chat.thread && (
-                        <button type="button" className="ks-icon-button" onClick={() => setConfirmDelete(true)} disabled={chat.busy || deleting} aria-label="Delete conversation" title="Delete conversation">
+                        <Button type="button" variant="ghost" isIconOnly className="ks-icon-button" onPress={() => setConfirmDelete(true)} isDisabled={chat.busy || deleting} aria-label="Delete conversation" title="Delete conversation">
                             <Trash2 />
-                        </button>
+                        </Button>
                     )}
                     {onToggleExpand && <button type="button" className="ks-icon-button" onClick={onToggleExpand} aria-label={isExpanded ? 'Restore AI panel' : 'Expand AI panel'} title={isExpanded ? 'Restore panel' : 'Expand panel'} aria-pressed={isExpanded}>{isExpanded ? <Minimize2 /> : <Maximize2 />}</button>}
                     {onClose && <button type="button" className="ks-icon-button ks-chat-header-close" onClick={onClose} aria-label="Close Ask AI" title="Close Ask AI"><X /></button>}
@@ -307,11 +290,9 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                 />
             ) : (
                 <>
-                    <div ref={log} className="ks-chat-log" role="log" aria-label="Conversation messages" aria-live="polite" aria-relevant="additions" onScroll={event => {
-                        const element = event.currentTarget;
-                        followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 64;
-                        if (followLatest.current) setHasNewResponse(false);
-                    }}>
+                    <ChatConversation ref={conversation} messages={chat.messages} isPending={chat.busy}
+                        resetKey={`${scopeKey(scope)}:${chat.thread?.id || 'new'}`}>
+                        <ChatConversation.Content>
                         {chat.before && (
                             <button type="button" className="ks-text-button" disabled={chat.loading} onClick={chat.loadEarlier}>
                                 Load earlier messages
@@ -326,7 +307,7 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                                 {onUpgrade && <button type="button" className="ks-button ks-primary" onClick={onUpgrade}>See plans</button>}
                             </div>
                         )}
-                        {!chat.messages.length && !chat.loading && !locked && (
+                        {!chat.messages.length && !chat.loading && !chat.busy && !locked && (
                             <div className="ks-chat-empty">
                                 <h3>{isLive ? 'Stay with the conversation' : singleMeeting ? 'How can I help?' : 'Ask across your meetings'}</h3>
                                 <p>{isLive ? 'Catch up, find a decision, or check next steps while the meeting continues.' : 'Ask about decisions, follow-ups, or anything that was said. Answers link back to their source.'}</p>
@@ -337,27 +318,29 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                                 <ul className="ks-chat-starters" aria-label="Suggested questions">
                                     {starters.map(([label, prompt, Icon]) => (
                                         <li key={prompt}>
-                                            <button type="button" disabled={actionsDisabled} onClick={() => chat.send(prompt)}>
+                                            <Button type="button" variant="tertiary" isDisabled={actionsDisabled} onPress={() => chat.send(prompt)}>
                                                 <Icon aria-hidden="true" /><span><strong>{label}</strong><small>{prompt}</small></span><ArrowUpRight aria-hidden="true" />
-                                            </button>
+                                            </Button>
                                         </li>
                                     ))}
                                 </ul>
                             </div>
                         )}
-                        {chat.messages.map((message, i) => (
-                            <div
-                                key={`${message.requestId}-${message.role}-${i}`}
-                                className={`ks-chat-row ${message.role === 'user' ? 'ks-chat-row-user' : ''}`}
-                            >
-                                <div className={`ks-chat-bubble ${message.role === 'user' ? 'ks-chat-user' : 'ks-chat-assistant'}`}>
+                        {chat.messages.map((message, i) => {
+                            const Message = message.role === 'user' ? ChatMessage.User : ChatMessage.Assistant;
+                            const Container = message.role === 'user' ? ChatMessage.Bubble : ChatMessage.Body;
+                            return (
+                            <Message key={message.id || `${message.requestId || i}-${message.role}`}>
+                                <Container>
                                     {message.role !== 'user' && <span className="ks-chat-ai-label"><Sparkles aria-hidden="true" /> Kesami AI</span>}
-                                    <MarkdownText
-                                        markdown={message.content}
-                                        className="ks-chat-markdown"
-                                        citations={message.role === 'assistant' ? message.citations : NO_CITATIONS}
-                                        onOpenCitation={openSource}
-                                    />
+                                    <ChatMessage.Content>
+                                        <MarkdownText
+                                            markdown={message.content}
+                                            className="ks-chat-markdown"
+                                            citations={message.role === 'assistant' ? message.citations : NO_CITATIONS}
+                                            onOpenCitation={openSource}
+                                        />
+                                    </ChatMessage.Content>
                                     {message.coverage?.eligibleMeetings > 0 && (
                                         <p className="ks-chat-coverage">
                                             {message.retrievalMode === 'structured'
@@ -397,31 +380,31 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                                         </details>
                                     )}
                                     {message.role === 'assistant' && message.content?.trim() && (
-                                        <ResponseActions
-                                            message={message}
-                                            question={chat.messages.slice(0, i).findLast(item => item.role === 'user')?.content}
-                                            disabled={actionsDisabled || !!chat.question.trim()}
-                                            onFollowUp={prepareQuestion}
-                                        />
+                                        <ChatMessage.Actions>
+                                            <ResponseActions
+                                                message={message}
+                                                question={chat.messages.slice(0, i).findLast(item => item.role === 'user')?.content}
+                                                disabled={actionsDisabled || !!chat.question.trim()}
+                                                onFollowUp={prepareQuestion}
+                                            />
+                                        </ChatMessage.Actions>
                                     )}
-                                </div>
-                            </div>
-                        ))}
+                                </Container>
+                            </Message>
+                            );
+                        })}
                         {chat.busy && (
-                            <div className="ks-chat-row">
-                                <div className="ks-chat-bubble ks-chat-thinking" role="status">
+                            <ChatMessage.Assistant>
+                                <ChatMessage.Body>
                                     <span className="ks-chat-ai-label"><Sparkles aria-hidden="true" /> Kesami AI</span>
-                                    <span className="sr-only">Reading the passages that matter…</span>
-                                    <span className="ks-chat-skeleton" aria-hidden="true">
-                                        <span />
-                                        <span />
-                                        <span />
-                                    </span>
-                                </div>
-                            </div>
+                                    <ChatProgress phase={chat.requestPhase} />
+                                    <ChatLoader.Skeleton />
+                                </ChatMessage.Body>
+                            </ChatMessage.Assistant>
                         )}
-                    </div>
-                    {hasNewResponse && <button type="button" className="ks-chat-latest" onClick={jumpToLatest}><ArrowDown aria-hidden="true" />Latest response</button>}
+                        <ChatConversation.ScrollAnchor />
+                        </ChatConversation.Content>
+                    </ChatConversation>
                     {((chat.error && !locked) || sourceError) && (
                         <p className="ks-chat-error" role="alert">
                             {sourceError || chat.error}
@@ -436,12 +419,13 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                         className="ks-chat-composer"
                         onSubmit={event => {
                             event.preventDefault();
-                            followLatest.current = true;
+                            jumpToLatest();
                             chat.send();
                         }}
                     >
                         <div className="ks-chat-input-wrap">
-                        <textarea
+                        <TextArea
+                            variant="secondary"
                             ref={composer}
                             rows={1}
                             maxLength={4000}
@@ -451,27 +435,29 @@ export function MeetingChatPanel({ scope, scopeLabel, isConnected, onSelectMeeti
                             onKeyDown={event => {
                                 if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                                     event.preventDefault();
-                                    followLatest.current = true;
+                                    jumpToLatest();
                                     chat.send();
                                 }
                             }}
-                            placeholder={!isConnected ? 'Waiting to reconnect…' : locked ? 'Monthly free AI allowance used' : 'Ask about the meeting…'}
+                            placeholder={!isConnected ? 'Waiting to reconnect…' : locked ? 'Monthly free AI allowance used' : singleMeeting || isLive ? 'Ask about this meeting…' : 'Ask about your meetings…'}
                             aria-label="Meeting question"
                             disabled={!isConnected || chat.busy || chat.loading || locked}
                         />
                         {chat.busy ? (
-                            <button type="button" className="ks-chat-send" onClick={chat.cancel} aria-label="Cancel question">
+                            <Button type="button" variant="secondary" isIconOnly className="ks-chat-send" onPress={chat.cancel} aria-label="Cancel question">
                                 <Square />
-                            </button>
+                            </Button>
                         ) : (
-                            <button
+                            <Button
                                 type="submit"
+                                variant="primary"
+                                isIconOnly
                                 className="ks-chat-send"
-                                disabled={!chat.question.trim() || !isConnected || chat.loading || locked}
+                                isDisabled={!chat.question.trim() || !isConnected || chat.loading || locked}
                                 aria-label="Send question"
                             >
                                 <ArrowUp />
-                            </button>
+                            </Button>
                         )}
                         </div>
                         <div className="ks-chat-composer-hint" id={composerHintId}>

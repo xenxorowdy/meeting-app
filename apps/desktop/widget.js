@@ -8,8 +8,8 @@ const { secureWindow } = require('./rendererSecurity');
 // as a second outline, and a transparent margin would still swallow clicks meant for the app beneath.
 const COLLAPSED = { width: 288, height: 52 };
 const EXPANDED = { width: 460, height: 500 };
-// Six pixels around the card leave room for its small wobble without clipping.
-const PROMPT = { width: 140, height: 164 };
+// Four pixels around the card leave room for its small wobble without clipping.
+const PROMPT = { width: 128, height: 112 };
 const SCREEN_MARGIN = 20;
 const COMMANDS = new Set(['toggle-mic', 'toggle-system', 'toggle-pause', 'stop']);
 const PROMPT_COMMANDS = new Set(['start-call', 'dismiss-call']);

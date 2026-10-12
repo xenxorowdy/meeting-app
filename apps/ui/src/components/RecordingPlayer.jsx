@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FieldSelect } from '@/components/ui/field-select';
 import {
     Check,
     Film,
@@ -515,9 +516,7 @@ export function RecordingPlayer({ compact = false, meeting, citationFocus = null
                             >
                                 {muted ? <VolumeX /> : <Volume2 />}
                             </button>
-                            <select className="ks-playback-rate" aria-label="Playback speed" value={playbackRate} onChange={event => setPlaybackRate(Number(event.target.value))}>
-                                {PLAYBACK_RATES.map(rate => <option key={rate} value={rate}>{rate}×</option>)}
-                            </select>
+                            <FieldSelect className="ks-playback-rate" label="Playback speed" value={String(playbackRate)} onChange={value => setPlaybackRate(Number(value))} options={PLAYBACK_RATES.map(rate => ({ value: String(rate), label: `${rate}×` }))} />
                         </div>
                     </div>
                     {!compact && <details className="ks-speaker-details">

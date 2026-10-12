@@ -106,6 +106,21 @@ async function run() {
         }
     };
     const settle = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    const setDateTime = async (label, value) => {
+        const parts = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+        assert(parts, 'device-local date and time');
+        for (const [index, type] of ['year', 'month', 'day', 'hour', 'minute'].entries()) {
+            await evaluate(`document.querySelector('[data-date-field="${label}"] [data-type="${type}"]').focus()`);
+            for (const digit of String(Number(parts[index + 1]))) {
+                window.webContents.sendInputEvent({ type: 'keyDown', keyCode: digit });
+                window.webContents.sendInputEvent({ type: 'char', keyCode: digit });
+                window.webContents.sendInputEvent({ type: 'keyUp', keyCode: digit });
+            }
+            await settle();
+        }
+        await evaluate('document.activeElement.blur()');
+        await settle();
+    };
     const click = async text => {
         assert(
             await evaluate(
@@ -219,7 +234,7 @@ async function run() {
     assert(await evaluate("document.activeElement?.closest('.ks-folder-picker') !== null"), 'the folder picker takes focus');
     assert(await evaluate("document.querySelector('.ks-folder-picker').textContent.includes('New folder “Design System”')"), 'the picker suggests a folder name from the meeting title');
     await capture('02-agenda-folder-picker');
-    await evaluate("[...document.querySelectorAll('.ks-folder-picker-list button')].find(button => button.textContent.includes('Design Sync')).click()");
+    await evaluate("[...document.querySelectorAll('.ks-folder-picker-list [role^=\"menuitem\"]')].find(item => item.textContent.includes('Design Sync')).click()");
     await waitFor("document.querySelector('.ks-folder-picker-series')", 'choosing a folder for a recurring meeting offers to auto-add future ones');
     assert.deepEqual(
         await evaluate("window.fixtureCalls.filter(call => call.path === '/api/folders/rules' && call.method === 'POST').map(call => call.body)"),
@@ -228,7 +243,7 @@ async function run() {
     );
     await capture('02-agenda-folder-auto-add');
     await click('Auto-add');
-    await waitFor("!document.querySelector('.ks-folder-picker')", 'answering closes the picker');
+    await waitFor("!document.querySelector('.ks-folder-picker') && !document.querySelector('.ks-folder-picker-series')", 'answering closes the picker and series confirmation');
     assert.equal(await evaluate("window.fixtureCalls.filter(call => call.path === '/api/folders/rules' && call.method === 'POST').at(-1).body.applyToSeries"), true);
     assert(await evaluate("document.querySelector('[aria-label=\"Folder for Design System Weekly: Design Sync\"]') !== null"), 'the agenda row shows its folder');
     await evaluate("document.querySelector('[aria-label=\"Choose a folder for 1:1 with Alex\"]').click()");
@@ -302,6 +317,127 @@ async function run() {
     await settle();
     await click('All meetings');
     await captureResponsive('library', '.ks-home');
+    for (const theme of ['dark', 'light']) {
+        await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+        await evaluate("document.querySelector('[aria-label=\"Cards view\"]').click()");
+        await settle();
+        assert.equal(await evaluate("document.querySelector('[aria-label=\"Cards view\"]').getAttribute('aria-pressed')"), 'true', 'the chosen layout is announced');
+        assert.equal(await evaluate("localStorage.getItem('kesami.meeting-layout')"), 'cards', 'the layout preference is saved');
+        assert.equal(await evaluate("document.querySelectorAll('.ks-meeting-card').length"), 3, 'switching layout preserves the visible meetings');
+        for (const width of [1280, 620, 375, 320]) {
+            window.setContentSize(width, 900);
+            await settle();
+            assert(await evaluate("document.querySelector('.ks-home').scrollWidth <= document.querySelector('.ks-home').clientWidth"), `${theme} meeting cards fit ${width}px`);
+            assert(await evaluate(`(() => {
+                const cards = [...document.querySelectorAll('.ks-meeting-card')];
+                return cards.every(card => {
+                    const rect = card.getBoundingClientRect();
+                    const button = card.querySelector('.ks-meeting-card-body');
+                    return button.getAttribute('aria-label').startsWith('Open ')
+                        && card.querySelector('.ks-meeting-card-footer').getBoundingClientRect().bottom <= rect.bottom
+                        && card.scrollWidth <= card.clientWidth;
+                });
+            })()`), `${theme} cards keep opening controls and metadata within their surface at ${width}px`);
+            await capture(`meeting-cards-${theme}-${width}`);
+        }
+        window.setContentSize(1280, 824);
+        await evaluate("document.querySelector('.ks-card-more').click()");
+        await waitFor("document.querySelector('[role=\"menu\"]')", 'card options remain reachable');
+        assert(await evaluate("document.querySelector('[role=\"menu\"]').textContent.includes('Delete meeting')"));
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+        await waitFor("!document.querySelector('[role=\"menu\"]')", 'card options close with Escape');
+        await click('Home');
+        assert.equal(await evaluate("document.querySelector('[aria-label=\"Cards view\"]').getAttribute('aria-pressed')"), 'true', 'Home shares the library layout preference');
+        await click('All meetings');
+        await evaluate("document.querySelector('[aria-label=\"List view\"]').click()");
+        await settle();
+        assert.equal(await evaluate("document.querySelector('[aria-label=\"List view\"]').getAttribute('aria-pressed')"), 'true');
+    }
+    await evaluate("window.fixtureSetTheme('dark')");
+    if (process.argv.includes('--meeting-cards-only')) {
+        await evaluate("document.querySelector('[aria-label=\"Cards view\"]').click()");
+        await settle();
+        await evaluate("document.querySelector('.ks-meeting-card-body').focus()");
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+        await waitFor("document.querySelector('.ks-meeting-main')", 'a meeting opens from its card with the keyboard');
+        await evaluate("document.querySelector('[aria-label=\"Back to home\"]').click()");
+        await waitFor("document.querySelector('.ks-meetings-cards')", 'returning home preserves Cards view');
+        assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
+        console.log(`PASS: HeroUI meeting cards/list, shared saved layout, options menus, keyboard opening, dashboard/search/folder flow, both themes and 320–1280px layouts. Screenshots: ${output}`);
+        window.destroy();
+        app.quit();
+        return;
+    }
+    if (process.argv.includes('--manual-summary-only')) {
+        const generations = () => evaluate("window.fixtureCalls.filter(call => call.path.endsWith('/summarize') && call.method === 'POST').length");
+        const confirmGeneration = () => evaluate("[...document.querySelector('.ks-summary-regenerate-dialog').querySelectorAll('button')].find(button => button.textContent.trim() === 'Regenerate').click()");
+        await evaluate("document.querySelector('.ks-meeting-card-body').click()");
+        await waitFor("document.querySelector('#tab-summary')", 'completed meeting opens');
+        await click('Summary');
+        for (const theme of ['dark', 'light']) {
+            await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)}); window.fixturePatchMeeting(window.fixtureBase)`);
+            await settle();
+            const before = await generations();
+            assert.equal(await evaluate("document.querySelector('.ks-summary-generate').textContent.trim()"), 'Regenerate');
+            await evaluate("document.querySelector('.ks-template-picker summary').click()");
+            await click('Weekly Team Meeting');
+            assert.equal(await generations(), before, 'opening notes and selecting a layout never generates a summary');
+            await evaluate("document.querySelector('.ks-template-picker summary').click()");
+            await click('Enhanced notes');
+            await evaluate("document.querySelector('.ks-summary-generate').click()");
+            await waitFor("document.querySelector('.ks-summary-regenerate-dialog')", 'regeneration requires replacement confirmation');
+            for (const width of [1280, 375, 320]) {
+                window.setContentSize(width, 900);
+                await settle();
+                assert(await evaluate("(() => { const node = document.querySelector('.ks-summary-regenerate-dialog'); return node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().right <= innerWidth; })()"), `${theme} confirmation fits ${width}px`);
+                await capture(`manual-summary-confirm-${theme}-${width}`);
+            }
+            await click('Keep current notes');
+            assert.equal(await generations(), before, 'keeping notes makes no generation request');
+            await evaluate("window.fixtureDeferSummary = true; document.querySelector('.ks-summary-generate').click()");
+            await waitFor("document.querySelector('.ks-summary-regenerate-dialog')", 'regeneration confirmation opens again');
+            await confirmGeneration();
+            await waitFor("document.querySelector('[aria-label=\"Stop summary generation\"]')", 'generation exposes Cancel');
+            assert.equal(await generations(), before + 1);
+            assert(await evaluate("document.querySelector('.ks-summary-generate').disabled && document.querySelector('.ks-brief-lead').textContent.includes('Team aligned')"), 'current notes remain visible during generation');
+            await evaluate("document.querySelector('[aria-label=\"Stop summary generation\"]').click()");
+            await waitFor("!document.querySelector('[aria-label=\"Stop summary generation\"]') && !document.querySelector('.ks-summary-generate').disabled", 'cancel returns to the existing summary');
+            assert(await evaluate("window.fixtureMeeting.summaryMarkdown === window.fixtureBase.summaryMarkdown"), 'cancellation preserves notes');
+            await evaluate("window.fixturePatchMeeting({ summaryMarkdown: '', summarySections: [], actionItems: [], keyDecisions: [], emailDraft: '' }); window.fixtureSummaryFails = true; window.fixtureDeferSummary = false");
+            await settle();
+            assert.equal(await evaluate("document.querySelector('.ks-summary-generate').textContent.trim()"), 'Generate');
+            assert(await evaluate("document.querySelector('.ks-brief-lead').textContent.includes('only when you request')"));
+            await evaluate("document.querySelector('.ks-summary-generate').click()");
+            await waitFor("document.querySelector('.ks-summary-generation-error')", 'generation errors are actionable');
+            assert(await evaluate("!document.querySelector('.ks-summary-generate').disabled"), 'failed generation can be retried');
+            await evaluate("window.fixtureSummaryFails = false; window.fixtureDeferSummary = true");
+            const retryBefore = await generations();
+            await evaluate("(() => { const button = document.querySelector('.ks-summary-generate'); button.click(); button.click(); })()");
+            await waitFor("document.querySelector('[aria-label=\"Stop summary generation\"]')", 'retry shows progress');
+            assert.equal(await generations(), retryBefore + 1, 'rapid clicks dispatch only one generation request');
+            await capture(`manual-summary-generating-${theme}`);
+            await evaluate('window.fixtureCompleteSummary()');
+            await waitFor("document.querySelector('.ks-summary-generate').textContent.trim() === 'Regenerate'", 'successful generation switches to Regenerate');
+            assert(await evaluate("document.querySelector('.ks-brief-lead').textContent.includes('Manually generated recap.')"), 'generated notes appear without reopening the meeting');
+            assert(await evaluate("!document.querySelector('.ks-summary-generation-error')"), 'successful retry clears the error');
+            await capture(`manual-summary-complete-${theme}`);
+            await evaluate('window.fixtureSetConnected(false)');
+            await settle();
+            assert(await evaluate("document.querySelector('.ks-summary-generate').disabled"), 'offline generation is disabled');
+            await evaluate('window.fixtureSetConnected(true); window.fixturePatchMeeting({ transcript: [] })');
+            await settle();
+            assert(await evaluate("document.querySelector('.ks-summary-generate').disabled && document.querySelector('.ks-summary-generation-hint')"), 'no transcript explains why generation is unavailable');
+            await evaluate('window.fixturePatchMeeting(window.fixtureBase)');
+            await settle();
+            assert(await evaluate("document.querySelector('.ks-meeting-main').scrollWidth <= document.querySelector('.ks-meeting-main').clientWidth"), 'notes controls fit the narrow meeting view');
+            window.setContentSize(1280, 824);
+        }
+        assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
+        console.log(`PASS: manual Generate/Regenerate, no automatic calls on view/template changes, replacement confirmation, progress/cancel, errors/retry, duplicate clicks, offline/empty transcript, both themes and responsive controls. Screenshots: ${output}`);
+        window.destroy(); app.quit(); return;
+    }
     await click('List recent todos');
     await waitFor("document.querySelector('[aria-label=\"Meeting question\"]')?.value.includes('List recent action items')", 'library shortcut drafts a grounded question');
 
@@ -310,6 +446,74 @@ async function run() {
     await click('Home');
     await click('Schedule meeting');
     assert(await evaluate('window.fixtureScheduleOpened'), 'schedule action still opens the scheduling flow');
+    await waitFor("document.querySelector('[data-date-field=Starts]')", 'new meeting uses the date picker');
+    await evaluate("document.querySelector('[aria-label=\"Choose starts\"]').click()");
+    await waitFor("document.querySelector('.ks-date-time-popover [role=grid]')", 'calendar opens inside the meeting dialog');
+    await capture('02-new-meeting-date-picker');
+    await evaluate("document.querySelector('.ks-date-time-popover [role=button][data-selected=true]').click()");
+    await waitFor("!document.querySelector('.ks-date-time-popover')", 'selecting a day closes the calendar');
+    assert(await evaluate("document.querySelector('[data-date-field=Starts]') !== null"), 'choosing a day preserves the meeting dialog');
+    await evaluate("document.querySelector('[data-date-field=Starts] [data-type=day]').focus()");
+    for (let count = 0; count < 3; count++) {
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+        await settle();
+    }
+    assert(await evaluate("[...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Create meeting').disabled"), 'incomplete dates cannot submit the previous value');
+    await setDateTime('Starts', '2026-10-13T10:00');
+    await evaluate(`(() => { const input = document.querySelector('#meeting-title'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Date picker fixture'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await click('Create meeting');
+    await waitFor('window.fixtureMeetingCreated', 'scheduling succeeds against the synthetic API');
+    assert.equal(await evaluate("window.fixtureCalls.find(call => call.path === '/api/calendar/events' && call.method === 'POST').body.start"), new Date('2026-10-13T10:00').toISOString(), 'scheduling preserves device-local time conversion');
+    if (process.argv.includes('--date-fields-only')) {
+        await evaluate("document.querySelector('.ks-meeting-card-body').click()");
+        await settle();
+        await click('Actions');
+        await waitFor("document.querySelector('.ks-action[data-action-kind=calendar] > .ks-button')", 'calendar action loads');
+        await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] > .ks-button').click()");
+        await settle();
+        await setDateTime('Action start', '2026-10-13T10:00');
+        await setDateTime('Action end', '2026-10-13T09:30');
+        assert(await evaluate("document.querySelector('[data-date-field=\"Action end\"]').textContent.includes('on or after the start')"), 'invalid end time explains the required range');
+        await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] [aria-label=\"Confirm reviewed action\"]').click()");
+        assert(await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] button[type=submit]').disabled"), 'end before start cannot submit');
+        await setDateTime('Action end', '2026-10-13T10:30');
+        assert(await evaluate("!document.querySelector('.ks-action[data-action-kind=calendar] [aria-label=\"Confirm reviewed action\"]').checked"), 'editing dates clears confirmation');
+        for (const theme of ['light', 'dark']) {
+            await evaluate(`window.fixtureSetTheme(${JSON.stringify(theme)})`);
+            await settle();
+            for (const width of [1280, 375]) {
+                window.setContentSize(width, 900);
+                await settle();
+                await evaluate("document.querySelector('[aria-label=\"Choose action end\"]').scrollIntoView({ block: 'center' })");
+                await settle();
+                await evaluate("document.querySelector('[aria-label=\"Choose action end\"]').click()");
+                await waitFor("document.querySelector('.ks-date-time-popover [role=grid]')", 'action calendar opens');
+                assert(await evaluate("[...document.querySelectorAll('.ks-date-time-popover .calendar__cell')].some(cell => cell.textContent.trim() === '12' && cell.dataset.disabled === 'true')"), 'calendar prevents selecting days before the start');
+                await capture(`date-fields-${theme}-${width}`);
+                assert(await evaluate(`(() => {
+                    const bounds = document.querySelector('.ks-date-time-popover').getBoundingClientRect();
+                    return bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight;
+                })()`), `${theme} action calendar fits ${width}px`);
+                window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+                window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+                await waitFor("!document.querySelector('.ks-date-time-popover')", 'Escape dismisses the calendar');
+            }
+        }
+        await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] [aria-label=\"Confirm reviewed action\"]').click()");
+        await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] button[type=submit]').click()");
+        await waitFor("document.querySelector('.ks-action[data-action-kind=calendar][data-action-status=succeeded]')", 'reviewed calendar action is saved');
+        const payload = await evaluate("window.fixtureCalls.find(call => call.path.endsWith('/actions/calendar-action') && call.method === 'POST').body");
+        assert.equal(payload.start, new Date('2026-10-13T10:00').toISOString());
+        assert.equal(payload.end, new Date('2026-10-13T10:30').toISOString());
+        assert(payload.confirmed);
+        assert.equal(payload.providerRevision, 'fixture-google-target');
+        assert(!errors.some(message => /ReferenceError|TypeError|Minified React error/.test(message)));
+        console.log(`PASS: meeting/calendar date pickers, incomplete and invalid dates, confirmation reset, local timezone, popovers in both themes at desktop/mobile widths. Screenshots: ${output}`);
+        window.destroy();
+        app.quit();
+        return;
+    }
     await evaluate("document.querySelector('[aria-label=\"Workspace tools\"]').click()");
     await settle();
     await evaluate("document.querySelector('[aria-label=\"Noise cancellation\"]').click()");
@@ -353,9 +557,12 @@ async function run() {
     );
     await capture('02-chat-empty');
     await evaluate("document.querySelector('.ks-memory-filters').open = true");
+    await evaluate("document.querySelector('[aria-label=\"Memory entity type\"]').click()");
+    await waitFor("document.querySelector('[role=option]')", 'entity options open');
+    await evaluate("[...document.querySelectorAll('[role=option]')].find(option => option.textContent.trim() === 'Company').click()");
+    await settle();
     await evaluate(`(() => {
         const set = (label, value) => { const input = document.querySelector('[aria-label="' + label + '"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); };
-        const kind = document.querySelector('[aria-label="Memory entity type"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(kind, 'company'); kind.dispatchEvent(new Event('change', { bubbles: true }));
         set('Memory entity name', 'Acme'); set('Memory start date', '2026-10-01'); set('Memory end date', '2026-09-01');
     })()`);
     await settle();
@@ -694,6 +901,10 @@ async function run() {
     await waitFor("document.querySelectorAll('.ks-action').length === 6 && document.querySelectorAll('.ks-share-option').length === 2", 'all action types and summary destinations load');
     assert.equal(await evaluate("window.fixtureCalls.filter(c => c.method === 'POST' && c.path.includes('/actions/')).length"), 0, 'viewing suggestions executes nothing');
     const actionField = async (kind, label, value) => {
+        if (label === 'Action start' || label === 'Action end') {
+            await setDateTime(label, value);
+            return;
+        }
         await evaluate(`(() => { const input = document.querySelector('.ks-action[data-action-kind=${kind}] [aria-label="${label}"]'); Object.getOwnPropertyDescriptor(input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
         await settle();
     };
@@ -811,7 +1022,13 @@ async function run() {
     await evaluate('window.fixtureActionPermission = true');
     await reviewAction('calendar');
     await actionField('calendar', 'Action start', '2026-10-13T10:00');
+    await actionField('calendar', 'Action end', '2026-10-13T09:30');
+    assert(await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] button[type=submit]').disabled"), 'invalid calendar end is blocked');
     await actionField('calendar', 'Action end', '2026-10-13T10:30');
+    await evaluate("document.querySelector('.ks-action[data-action-kind=calendar] [aria-label=\"Confirm reviewed action\"]').click()");
+    await actionField('calendar', 'Action start', '2026-10-13T10:05');
+    assert(await evaluate("!document.querySelector('.ks-action[data-action-kind=calendar] [aria-label=\"Confirm reviewed action\"]').checked"), 'date edits clear confirmation');
+    await actionField('calendar', 'Action start', '2026-10-13T10:00');
     await actionField('calendar', 'Action recipients', 'john@example.com');
     assert(await evaluate("document.querySelector('.ks-action[data-action-kind=calendar]').textContent.includes('alex@example.com')"), 'calendar account is reviewed');
     await confirmAction('calendar', 'failed');
@@ -826,6 +1043,8 @@ async function run() {
     assert.equal(eventCall.body.providerRevision, 'fixture-google-target');
     assert.deepEqual(eventCall.body.recipients, ['john@example.com']);
     assert(Number.isFinite(Date.parse(eventCall.body.start))); assert(eventCall.body.confirmed);
+    assert.equal(eventCall.body.start, new Date('2026-10-13T10:00').toISOString());
+    assert.equal(eventCall.body.end, new Date('2026-10-13T10:30').toISOString());
     await evaluate('window.fixtureActionUnknown = true');
     await reviewAction('jira');
     assert(await evaluate("document.querySelector('.ks-action[data-action-kind=jira]').textContent.includes('example.atlassian.net') && document.querySelector('.ks-action[data-action-kind=jira]').textContent.includes('Project: API')"), 'Jira destination is reviewed');

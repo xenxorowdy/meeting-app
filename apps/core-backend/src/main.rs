@@ -1514,9 +1514,6 @@ impl AppState {
         let mut session = self.session.lock().await;
         session.current = Some(meeting.clone());
         session.state = SessionState::Summarizing;
-        // The lock is dropped for the (slow) summarize call below, so the
-        // tier decided at meeting start is read out here.
-        let meeting_tier = session.meeting_tier.clone();
         drop(session);
         self.emit(
             "state_change",
@@ -1524,53 +1521,16 @@ impl AppState {
         )
         .await;
 
-        // `autoSummarize: false` means "keep everything on device" — so do not
-        // send the transcript anywhere, and do not fabricate notes either.
-        // A free workspace can spend one of its shared monthly AI uses here.
-        let mut free_auto_key = None;
-        let summary = if self.settings.get_bool("autoSummarize").await == Some(false) {
-            MeetingSummary {
-                summary_markdown: String::new(),
-                provider: "disabled".into(),
-                ..Default::default()
-            }
-        } else if meeting_tier != "pro" {
-            let key = format!("summary:auto:{}", meeting.id);
-            match self.billing.reserve_free_ai_use(key.clone()).await {
-                Ok(true) => {
-                    let summary = self.summarize_into(&mut meeting).await;
-                    if summary.summary_markdown.is_empty() {
-                        self.billing.release_free_ai_use(key).await;
-                    } else {
-                        free_auto_key = Some(key);
-                    }
-                    summary
-                }
-                Ok(false) => MeetingSummary {
-                    provider: "unavailable".into(),
-                    warning: Some(plans::free_ai_limit_message()),
-                    ..Default::default()
-                },
-                Err(_) => MeetingSummary {
-                    provider: "unavailable".into(),
-                    warning: Some("AI usage storage is unavailable. Please try again.".into()),
-                    ..Default::default()
-                },
-            }
-        } else {
-            self.summarize_into(&mut meeting).await
+        // Completion saves the transcript; summaries require the explicit
+        // /summarize request. Ignore legacy autoSummarize values and leave AI
+        // usage untouched. Keep the existing completion events for clients.
+        let summary = MeetingSummary {
+            provider: "disabled".into(),
+            ..Default::default()
         };
 
         commitments::detect(&mut meeting);
-        let mut meeting = match self.store.put(meeting).await {
-            Ok(meeting) => meeting,
-            Err(error) => {
-                if let Some(key) = free_auto_key {
-                    self.billing.release_free_ai_use(key).await;
-                }
-                return Err(error.to_string());
-            }
-        };
+        let mut meeting = self.store.put(meeting).await.map_err(|e| e.to_string())?;
         if self
             .store
             .adopt_recording(&mut meeting)

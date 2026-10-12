@@ -208,7 +208,7 @@ export function SettingsModal({
                       : '';
             setNotificationTest({
                 status: problem ? 'error' : 'ok',
-                message: `${result.confirmed ? 'macOS showed the notification.' : 'Sent. If nothing appeared, allow notifications for Kesami in System Settings.'}${problem}`,
+                message: `${result.delivery === 'fallback' ? 'Opened a Kesami reminder card. Calendar reminders use this card when macOS notifications are unavailable.' : result.confirmed ? 'macOS accepted the notification. Check your notification banner or Notification Center.' : 'Sent. If nothing appeared, allow notifications for Kesami in System Settings.'}${problem}`,
             });
         } catch (cause) {
             setNotificationTest({ status: 'error', message: cause?.message || 'The notification couldn’t be sent.' });
@@ -590,15 +590,10 @@ export function SettingsModal({
                                     </SettingRow>
                                 )}
                                 <SettingRow
-                                    id="auto-summarize"
-                                    label="Summarize when a recording ends"
-                                    description="Creates a summary and action items from your transcript when the meeting ends."
+                                    label="Meeting summaries"
+                                    description="After recording, open Summary and choose Generate. Use Regenerate to replace existing notes."
                                 >
-                                    <Switch
-                                        id="auto-summarize"
-                                        checked={Boolean(formData.autoSummarize)}
-                                        onCheckedChange={checked => setFormData({ ...formData, autoSummarize: checked })}
-                                    />
+                                    <span className="text-callout text-muted-foreground">On request</span>
                                 </SettingRow>
                             </SettingGroup>
                         </TabsContent>

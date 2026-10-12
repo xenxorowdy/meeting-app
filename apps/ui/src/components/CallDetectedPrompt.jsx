@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Card } from '@heroui/react';
 import { LogoMark } from '@/components/brand/Logo';
+import { Button } from '@/components/ui/button';
 import { CALL_PROMPT_WOBBLE_DELAY_MS } from '@/lib/callPrompt';
 
 const SOURCE_LABELS = { 'google-meet': 'Google Meet call detected', zoom: 'Zoom call detected', microphone: 'Microphone use detected' };
@@ -48,18 +50,18 @@ export function CallDetectedPrompt({ prompt, theme, shell }) {
 
     return (
         <div className="ks-app ksw-call-shell" data-theme={theme}>
-            <section ref={cardRef} className={`ksw-call-card${wobbling ? ' is-wobbling' : ''}`} aria-labelledby="ksw-call-title" aria-describedby="ksw-call-source" aria-busy={starting} onAnimationEnd={() => setWobbling(false)} onMouseEnter={() => setWobbling(false)} onFocusCapture={() => setWobbling(false)}>
-                <header className="ksw-call-grip">
-                    <LogoMark size={38} />
-                    <h1 id="ksw-call-title">Take notes</h1>
-                </header>
+            <Card ref={cardRef} variant="default" className={`ksw-call-card${wobbling ? ' is-wobbling' : ''}`} aria-labelledby="ksw-call-title" aria-describedby="ksw-call-source" aria-busy={starting} onAnimationEnd={() => setWobbling(false)} onMouseEnter={() => setWobbling(false)} onFocusCapture={() => setWobbling(false)}>
+                <Card.Header className="ksw-call-grip">
+                    <LogoMark size={22} />
+                    <Card.Title id="ksw-call-title">Take notes</Card.Title>
+                </Card.Header>
                 <span id="ksw-call-source" className="sr-only">{SOURCE_LABELS[prompt.source] || 'Call detected'}. Start audio recording in Kesami.</span>
                 {error && <p className="ksw-call-error" role="alert">{error}</p>}
-                <div className="ksw-call-buttons">
-                    <button type="button" className="ksw-call-start" onClick={start} disabled={starting}>{starting ? 'Starting…' : error ? 'Retry' : 'Start'}</button>
-                    <button type="button" className="ksw-call-dismiss" onClick={() => shell?.sendCommand('dismiss-call', prompt.id)} disabled={starting}>Not now</button>
-                </div>
-            </section>
+                <Card.Footer className="ksw-call-buttons">
+                    <Button size="sm" className="ksw-call-start" onPress={start} disabled={starting}>{starting ? 'Starting…' : error ? 'Retry' : 'Start'}</Button>
+                    <Button size="sm" variant="ghost" className="ksw-call-dismiss" onPress={() => shell?.sendCommand('dismiss-call', prompt.id)} disabled={starting}>Not now</Button>
+                </Card.Footer>
+            </Card>
         </div>
     );
 }

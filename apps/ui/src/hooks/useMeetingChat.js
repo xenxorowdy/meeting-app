@@ -8,6 +8,7 @@ export function useMeetingChat(scope, isConnected) {
     const [messages, setMessages] = useState([]);
     const [question, setQuestion] = useState('');
     const [busy, setBusy] = useState(false);
+    const [requestPhase, setRequestPhase] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [requiresPro, setRequiresPro] = useState(false);
@@ -46,6 +47,7 @@ export function useMeetingChat(scope, isConnected) {
         if (pending?.threadId) apiRequest(`/api/chat/threads/${pending.threadId}/requests/${pending.requestId}/cancel`, { method: 'POST' }).catch(() => {});
         if (pending?.question) { setQuestion(pending.question); retryRef.current = null; }
         setBusy(false);
+        setRequestPhase(null);
     }, []);
 
     const openThread = useCallback(async selected => {
@@ -103,6 +105,7 @@ export function useMeetingChat(scope, isConnected) {
         const pending = { controller, requestId, question: text, threadId: threadRef.current?.id };
         active.current = pending;
         setBusy(true); setError(null);
+        setRequestPhase(threadRef.current ? 'waiting-for-answer' : 'creating-conversation');
         try {
             let selected = threadRef.current;
             if (!selected) {
@@ -114,6 +117,7 @@ export function useMeetingChat(scope, isConnected) {
             retryRef.current = { question: text, requestId };
             setMessages(previous => previous.some(m => m.role === 'user' && m.requestId === requestId) ? previous : [...previous, { role: 'user', content: text, requestId }]);
             setQuestion('');
+            setRequestPhase('waiting-for-answer');
             const response = await apiRequest(`/api/chat/threads/${selected.id}/messages`, {
                 method: 'POST', body: { question: text, requestId }, signal: controller.signal,
             });
@@ -125,7 +129,7 @@ export function useMeetingChat(scope, isConnected) {
             if (run !== generation.current) return;
             setQuestion(text); fail(cause);
         } finally {
-            if (run === generation.current) { active.current = null; setBusy(false); }
+            if (run === generation.current) { active.current = null; setBusy(false); setRequestPhase(null); }
         }
     }, [question, isConnected, loading, refreshThreads, fail]);
 
@@ -158,6 +162,6 @@ export function useMeetingChat(scope, isConnected) {
         catch (cause) { fail(cause); }
     };
 
-    return { threads, thread, messages, question, setQuestion, busy, loading, error, requiresPro, index,
+    return { threads, thread, messages, question, setQuestion, busy, requestPhase, loading, error, requiresPro, index,
         send, cancel, openThread, newThread, deleteThread, before, loadEarlier, nextOffset, loadMoreThreads };
 }

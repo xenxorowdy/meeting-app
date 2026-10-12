@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { FieldSelect } from '@/components/ui/field-select';
 import { Check, ChevronRight, Folder, FolderPlus, MessageCircle, Search } from 'lucide-react';
 import { apiRequest } from '@/lib/backend';
 import { cn } from '@/utils/cn';
@@ -138,9 +139,13 @@ export function WorkspaceView({ meetings = [], isLoading, isConnected, onReload,
                                             <span className="block truncate text-callout font-medium">{meeting.title}</span>
                                             <span className="block truncate text-footnote text-muted-foreground">{shortDate(meeting.startedAt)} · {meeting.durationSeconds ? `${Math.max(1, Math.round(meeting.durationSeconds / 60))} min` : 'No duration'}</span>
                                         </button>
-                                        <select value={meetingFolderId(meeting)} onChange={event => moveMeeting(meeting, event.target.value)} onClick={event => event.stopPropagation()} className="max-w-28 rounded-md border bg-background px-2 py-1 text-footnote text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100" aria-label={`Move ${meeting.title} to folder`}>
-                                            {folderOptions.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-                                        </select>
+                                        <FieldSelect
+                                            label={`Move ${meeting.title} to folder`}
+                                            value={meetingFolderId(meeting)}
+                                            onChange={value => moveMeeting(meeting, value)}
+                                            options={folderOptions.map(folder => ({ value: folder.id, label: folder.name }))}
+                                            className="max-w-28 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                        />
                                         <Button variant="ghost" size="xs" onClick={() => askMeeting(meeting)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Ask about ${meeting.title}`}>
                                             <MessageCircle className="size-3.5" />
                                             Ask

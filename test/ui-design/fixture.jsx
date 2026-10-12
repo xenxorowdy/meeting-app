@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { DesignWorkspace } from '../../apps/ui/src/components/design/DesignWorkspace';
 import { SignInView } from '../../apps/ui/src/components/design/SignInView';
 import { TooltipProvider } from '../../apps/ui/src/components/ui/tooltip';
+import { NewMeetingModal } from '../../apps/ui/src/components/NewMeetingModal';
 import '../../apps/ui/src/design.css';
 
 const noop = () => {};
@@ -157,6 +158,19 @@ window.fetch = async (url, options = {}) => {
         ] }));
     }
     if (path === `/api/chat/sources/${base.id}`) return new Response(JSON.stringify({ meeting: base }));
+    if (path === `/api/meetings/${base.id}/summarize/cancel`) {
+        window.fixtureResolveSummary?.(new Response(JSON.stringify({ error: 'Summary generation stopped.' }), { status: 409 }));
+        return new Response(JSON.stringify({ success: true, cancelled: true }));
+    }
+    if (path === `/api/meetings/${base.id}/summarize`) {
+        if (window.fixtureSummaryFails) return new Response(JSON.stringify({ error: 'Synthetic summary service unavailable' }), { status: 503 });
+        const response = () => new Response(JSON.stringify({ success: true, summary: { rawMarkdown: 'Manually generated recap.', sections: [], actionItems: [], keyDecisions: [], emailDraft: '' } }));
+        if (window.fixtureDeferSummary) return new Promise(resolve => {
+            window.fixtureResolveSummary = resolve;
+            window.fixtureCompleteSummary = () => resolve(response());
+        });
+        return response();
+    }
     if (path === '/api/auth/config') {
         if (window.fixtureAuthOffline) throw new Error('Engine unavailable');
         return new Response(JSON.stringify(window.fixtureCloud
@@ -181,6 +195,7 @@ window.fetch = async (url, options = {}) => {
 };
 
 function Fixture({ theme }) {
+    const [newMeetingOpen, setNewMeetingOpen] = useState(false);
     const [view, setView] = useState('home');
     const [empty, setEmpty] = useState(false);
     window.fixtureSetEmpty = setEmpty;
@@ -197,6 +212,9 @@ function Fixture({ theme }) {
     window.fixtureSpeakerEdits = window.fixtureSpeakerEdits || [];
     const [recording, setRecording] = useState(false);
     const [paused, setPaused] = useState(false);
+    const [generatingSummary, setGeneratingSummary] = useState(false);
+    const [connected, setConnected] = useState(true);
+    window.fixtureSetConnected = setConnected;
     useEffect(() => {
         const canvas = document.createElement('canvas');
         canvas.width = 1280;
@@ -245,10 +263,10 @@ function Fixture({ theme }) {
         );
     }
     return (
-        <DesignWorkspace
+        <><DesignWorkspace
             theme={theme}
             onToggleTheme={() => window.fixtureSetTheme(theme === 'dark' ? 'light' : 'dark')}
-            onNewMeeting={() => { window.fixtureScheduleOpened = true; }}
+            onNewMeeting={() => { window.fixtureScheduleOpened = true; setNewMeetingOpen(true); }}
             noiseSuppression={noise}
             onUpdateSettings={async settings => { setNoise(settings.noiseSuppression); return { ok: true, persisted: true }; }}
             activeTab={view}
@@ -307,6 +325,7 @@ function Fixture({ theme }) {
                 isRecording: recording && !paused,
                 isPaused: paused,
                 isProcessing: false,
+                isGeneratingSummary: generatingSummary,
                 durationSeconds: 14,
                 audioLevels: { mic: 72, system: 48 },
                 onStart: () => {
@@ -324,7 +343,7 @@ function Fixture({ theme }) {
                 onToggleMic: noop,
                 onToggleSystem: noop,
             }}
-            isConnected
+            isConnected={connected}
             connection="online"
             onSettings={tab => {
                 window.settingsOpened = true;
@@ -332,6 +351,21 @@ function Fixture({ theme }) {
             }}
             onSelectMeeting={(selected, target) => { window.fixtureSourceTarget = target; setView('live'); }}
             onUpdate={updates => setMeeting(value => ({ ...value, ...updates }))}
+            onRegenerateSummary={async id => {
+                if (generatingSummary) {
+                    await window.fetch(`http://127.0.0.1:48900/api/meetings/${id}/summarize/cancel`, { method: 'POST' });
+                    return { ok: false, cancelled: true };
+                }
+                setGeneratingSummary(true);
+                try {
+                    const response = await window.fetch(`http://127.0.0.1:48900/api/meetings/${id}/summarize`, { method: 'POST', body: JSON.stringify({ regenerate: true }) });
+                    const data = await response.json();
+                    if (!response.ok) return response.status === 409 ? { ok: false, cancelled: true } : { ok: false, message: data.error };
+                    setMeeting(value => ({ ...value, summaryMarkdown: data.summary.rawMarkdown, summarySections: data.summary.sections,
+                        actionItems: data.summary.actionItems, keyDecisions: data.summary.keyDecisions, emailDraft: data.summary.emailDraft }));
+                    return { ok: true };
+                } finally { setGeneratingSummary(false); }
+            }}
             onUpdateCommitments={async (id, body = {}) => {
                 const response = await window.fetch(`http://127.0.0.1:48900/api/meetings/${base.id}/commitments${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(body) });
                 const data = await response.json();
@@ -365,6 +399,8 @@ function Fixture({ theme }) {
             onSignOut={() => setEntered(false)}
             license={{ tier: 'free' }}
         />
+        <NewMeetingModal isOpen={newMeetingOpen} onClose={() => setNewMeetingOpen(false)} providers={[{ provider: 'google', connected: true }]} onCreated={() => { window.fixtureMeetingCreated = true; }} />
+        </>
     );
 }
 

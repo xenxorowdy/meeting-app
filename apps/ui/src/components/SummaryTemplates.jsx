@@ -59,7 +59,7 @@ export function SummaryTemplatePicker({ model, disabled }) {
     return <details className="ks-template-picker" onKeyDown={event => { if (event.key === 'Escape') event.currentTarget.removeAttribute('open'); }}>
         <summary><Sparkles aria-hidden="true" />{model.selected.name}<ChevronDown aria-hidden="true" /></summary>
         <div className="ks-template-menu">
-            <p>Layouts for existing notes · saved on this computer</p>
+            {/* <p>Layouts for existing notes · saved on this computer</p>*/}
             <label className="ks-template-search"><Search aria-hidden="true" /><input aria-label="Search templates" placeholder="Templates" value={query} onChange={event => setQuery(event.target.value)} /></label>
             {model.templates.filter(item => item.name.toLowerCase().includes(query.toLowerCase())).map(item => <button type="button" key={item.id} disabled={disabled || pending} aria-pressed={model.selected.id === item.id} onClick={event => void select(item, event.currentTarget.closest('details'))}><span>{item.name}</span>{model.selected.id === item.id && <Check aria-hidden="true" />}</button>)}
             {!model.templates.some(item => item.name.toLowerCase().includes(query.toLowerCase())) && <p>No matching templates.</p>}

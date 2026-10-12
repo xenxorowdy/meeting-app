@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Chip } from '@heroui/react';
 import { cva } from 'class-variance-authority';
 
 import { cn } from '@/utils/cn';
@@ -24,8 +25,29 @@ const badgeVariants = cva(
     }
 );
 
-function Badge({ className, variant, ...props }) {
-    return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
-}
+const chipVariants = {
+    default: { color: 'accent', variant: 'primary' },
+    secondary: { color: 'default', variant: 'secondary' },
+    tinted: { color: 'accent', variant: 'soft' },
+    destructive: { color: 'danger', variant: 'soft' },
+    success: { color: 'success', variant: 'soft' },
+    warning: { color: 'warning', variant: 'soft' },
+    muted: { color: 'default', variant: 'secondary' },
+    outline: { color: 'default', variant: 'tertiary' },
+};
+
+const chipReset = 'w-auto shrink text-[length:inherit] leading-[inherit]';
+
+const Badge = React.forwardRef(({ className, variant, children, ...props }, ref) => (
+    <Chip
+        ref={ref}
+        {...(chipVariants[variant] ?? chipVariants.default)}
+        className={cn(chipReset, badgeVariants({ variant }), className)}
+        {...props}
+    >
+        <>{children}</>
+    </Chip>
+));
+Badge.displayName = 'Badge';
 
 export { Badge, badgeVariants };

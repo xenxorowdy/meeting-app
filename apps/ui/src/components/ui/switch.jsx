@@ -1,26 +1,40 @@
-'use client';
-
 import * as React from 'react';
-import * as SwitchPrimitives from '@radix-ui/react-switch';
+import { Switch as HeroSwitch } from '@heroui/react';
 
 import { cn } from '@/utils/cn';
 
-const Switch = React.forwardRef(({ className, ...props }, ref) => (
-    <SwitchPrimitives.Root
-        className={cn(
-            'peer inline-flex h-[31px] w-[51px] shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-out focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input',
-            className
-        )}
+const Switch = React.forwardRef(({ className, checked, defaultChecked, onCheckedChange, disabled, required, ...props }, ref) => (
+    <HeroSwitch
+        inputRef={ref}
+        isSelected={checked}
+        defaultSelected={defaultChecked}
+        onChange={onCheckedChange}
+        isDisabled={disabled}
+        isRequired={required}
+        className="inline-flex shrink-0 gap-0"
         {...props}
-        ref={ref}
     >
-        <SwitchPrimitives.Thumb
-            className={cn(
-                'pointer-events-none block h-[27px] w-[27px] rounded-full bg-background shadow-knob ring-0 transition-transform duration-200 ease-out data-[state=checked]:translate-x-[20px] data-[state=unchecked]:translate-x-0'
-            )}
-        />
-    </SwitchPrimitives.Root>
+        {({ isSelected }) => {
+            const state = isSelected ? 'checked' : 'unchecked';
+            return (
+                <HeroSwitch.Content className="gap-0">
+                    <HeroSwitch.Control
+                        data-state={state}
+                        className={cn(
+                            'peer inline-flex h-[31px] w-[51px] shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-out data-[state=checked]:bg-primary data-[state=unchecked]:bg-input',
+                            className
+                        )}
+                    >
+                        <HeroSwitch.Thumb
+                            data-state={state}
+                            className="pointer-events-none ms-0 block h-[27px] w-[27px] rounded-full bg-background shadow-knob ring-0 transition-transform duration-200 ease-out data-[state=checked]:translate-x-[20px] data-[state=unchecked]:translate-x-0"
+                        />
+                    </HeroSwitch.Control>
+                </HeroSwitch.Content>
+            );
+        }}
+    </HeroSwitch>
 ));
-Switch.displayName = SwitchPrimitives.Root.displayName;
+Switch.displayName = 'Switch';
 
 export { Switch };

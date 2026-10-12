@@ -3,6 +3,7 @@ const http = require('node:http');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { env } = require('./legacy');
+const reminderWindow = require('./reminderWindow');
 
 const BACKEND_HOST = process.env.CORE_BACKEND_HOST || '127.0.0.1';
 const BACKEND_PORT = Number(process.env.CORE_BACKEND_PORT || 48900);
@@ -57,6 +58,9 @@ let rebuildQueued = false;
 let pendingCommand = null;
 let notified = new Map();
 let notificationFailure = null;
+const activeNotifications = new Set();
+const notificationTimers = new Set();
+const failedNotifications = new WeakSet();
 let helpersPromise = null;
 let activateMain = null;
 let mainWindowFor = () => null;
@@ -201,31 +205,49 @@ function takePendingCommand(nowMs = Date.now()) {
     return command;
 }
 
-function present(notification) {
+function present(notification, fallback) {
+    activeNotifications.add(notification);
+    let fallbackShown = false;
+    let nativeShown = false;
+    let fallbackWindow = null;
+    const showFallback = () => {
+        if (nativeShown || fallbackShown || !fallback) return;
+        fallbackShown = true;
+        fallbackWindow = reminderWindow.show(fallback);
+    };
+    const timer = setTimeout(showFallback, TEST_NOTIFICATION_WAIT_MS);
+    notificationTimers.add(timer);
+    const clear = () => { clearTimeout(timer); notificationTimers.delete(timer); };
     notification.on('show', () => {
+        nativeShown = true;
+        if (fallbackWindow && !fallbackWindow.isDestroyed()) fallbackWindow.destroy();
+        clear();
         notificationFailure = null;
     });
     notification.on('failed', (_event, error) => {
         if (!notificationFailure) console.log(`[Kesami] macOS did not show a meeting notification: ${error}`);
         notificationFailure = String(error || 'macOS refused the notification');
+        failedNotifications.add(notification);
+        clear();
+        showFallback();
     });
+    notification.on('close', () => { clear(); activeNotifications.delete(notification); });
     notification.show();
     return notification;
 }
 
 function notify(event, lib, key) {
-    if (!Notification.isSupported()) return null;
     const invited = Array.isArray(event.attendees) ? event.attendees.length : 0;
     const link = lib.calendarEventLink(event);
     const auto = autoRecords.get(key)?.state === 'armed';
     const next = auto ? 'Recording starts automatically.' : 'Click to choose how to record it.';
     const body = `Starts in 1 minute${invited > 0 ? ` · ${invited} invited` : ''}. ${next}`;
-    const notification = new Notification({
+    const notification = Notification.isSupported() ? new Notification({
         title: event.title || 'Meeting starting',
         body,
         ...(link ? { actions: [{ type: 'button', text: 'Join' }] } : {}),
         ...(auto ? { closeButtonText: 'Don’t Record' } : {}),
-    });
+    }) : null;
     const metadata = lib.calendarEventMetadata(event);
     // Clicking the notification or Join is someone choosing to be in the meeting now, so record straight away
     // (and open the call for Join) instead of waiting for the start time.
@@ -238,31 +260,38 @@ function notify(event, lib, key) {
         if (link) void shell.openExternal(link);
         recordNow();
     };
-    notification.on('click', recordNow);
-    notification.on('action', join);
-    notification.on('close', () => {
+    const cancel = () => {
         const entry = autoRecords.get(key);
         if (entry?.state === 'armed') entry.state = 'cancelled';
-    });
-    return present(notification);
+    };
+    const fallback = { title: event.title || 'Meeting starting', body, onRecord: recordNow, onJoin: link ? join : null, onCancel: auto ? cancel : null };
+    if (!notification) return reminderWindow.show(fallback);
+    notification.on('click', recordNow);
+    notification.on('action', join);
+    // Delivery failure must not cancel an armed recording as a side effect.
+    notification.on('close', () => { if (!failedNotifications.has(notification)) cancel(); });
+    return present(notification, fallback);
 }
 
 function notifyStarted(event, lib, autoStarted) {
-    if (!Notification.isSupported()) return null;
     const link = lib.calendarEventLink(event);
-    const notification = new Notification({
+    const notification = Notification.isSupported() ? new Notification({
         title: event.title || 'Meeting started',
         body: autoStarted ? 'Started now. Kesami is recording it.' : 'Started now. Click to record it.',
         ...(link ? { actions: [{ type: 'button', text: 'Join' }] } : {}),
-    });
+    }) : null;
     const metadata = lib.calendarEventMetadata(event);
     const record = () => deliver({ type: 'record', event: metadata });
-    notification.on('click', () => (autoStarted ? activateMain?.() : record()));
-    notification.on('action', () => {
+    const open = () => (autoStarted ? activateMain?.() : record());
+    const join = () => {
         if (link) void shell.openExternal(link);
         if (!autoStarted) record();
-    });
-    return present(notification);
+    };
+    const fallback = { title: event.title || 'Meeting started', body: autoStarted ? 'Started now. Kesami is recording it.' : 'Started now. Click to record it.', onRecord: open, onJoin: link ? join : null };
+    if (!notification) return reminderWindow.show(fallback);
+    notification.on('click', open);
+    notification.on('action', join);
+    return present(notification, fallback);
 }
 
 function runStartNotices(lib, nowMs) {
@@ -518,7 +547,11 @@ function registerHandlers(ipc = ipcMain) {
                 clearTimeout(timer);
                 resolve({ ...result, backendOnline, calendarState });
             };
-            const timer = setTimeout(() => finish({ shown: true, confirmed: false }), TEST_NOTIFICATION_WAIT_MS);
+            const showTestFallback = () => {
+                reminderWindow.show({ title: 'Kesami reminders are on', body: 'Calendar reminders will appear in a Kesami card when macOS notifications are unavailable.', onRecord: () => activateMain?.() });
+                finish({ shown: true, confirmed: false, delivery: 'fallback' });
+            };
+            const timer = setTimeout(showTestFallback, TEST_NOTIFICATION_WAIT_MS);
             const notification = new Notification({
                 title: 'Kesami notifications are on',
                 body: 'Meeting reminders and call prompts will appear like this.',
@@ -529,11 +562,7 @@ function registerHandlers(ipc = ipcMain) {
             });
             notification.on('failed', (_event, error) => {
                 notificationFailure = String(error || 'macOS refused the notification');
-                finish({
-                    shown: false,
-                    blocked: true,
-                    reason: `macOS blocked the notification (${notificationFailure}). Turn on notifications for Kesami in System Settings → Notifications. If Kesami isn’t listed there, this build isn’t signed and macOS won’t show its notifications.`,
-                });
+                showTestFallback();
             });
             notification.show();
         });
@@ -547,6 +576,10 @@ function registerHandlers(ipc = ipcMain) {
 }
 
 function destroy() {
+    for (const timer of notificationTimers) clearTimeout(timer);
+    notificationTimers.clear();
+    activeNotifications.clear();
+    reminderWindow.destroy();
     clearTimeout(tickTimer);
     clearInterval(pollTimer);
     clearTimeout(retryTimer);

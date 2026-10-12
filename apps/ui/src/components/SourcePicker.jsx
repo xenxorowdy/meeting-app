@@ -194,7 +194,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                         className={cn(
                             'flex w-full items-center gap-4 rounded-2xl border px-5 py-4 text-left transition-all duration-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
                             isAudio
-                                ? 'border-primary/40 bg-gradient-to-br from-primary/[0.14] to-primary/[0.06] shadow-[0_0_24px_hsl(var(--primary)/0.08)]'
+                                ? 'border-primary/40 bg-gradient-to-br from-primary/[0.14] to-primary/[0.06] shadow-[0_0_24px_hsl(var(--app-primary)/0.08)]'
                                 : 'border-border bg-foreground/[0.025] hover:bg-foreground/[0.04]'
                         )}
                     >
@@ -202,7 +202,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                             className={cn(
                                 'flex size-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-200',
                                 isAudio
-                                    ? 'scale-105 bg-primary text-primary-foreground shadow-[0_6px_16px_hsl(var(--primary)/0.45)]'
+                                    ? 'scale-105 bg-primary text-primary-foreground shadow-[0_6px_16px_hsl(var(--app-primary)/0.45)]'
                                     : 'bg-foreground/[0.06] text-muted-foreground'
                             )}
                         >
@@ -239,7 +239,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                                   className={cn(
                                     'flex size-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-200',
                                     isScreen
-                                        ? 'scale-105 bg-primary text-primary-foreground shadow-[0_6px_16px_hsl(var(--primary)/0.45)]'
+                                        ? 'scale-105 bg-primary text-primary-foreground shadow-[0_6px_16px_hsl(var(--app-primary)/0.45)]'
                                         : 'bg-foreground/[0.06] text-muted-foreground'
                                 )}
                             >
@@ -280,7 +280,7 @@ export function SourcePicker({ isOpen, onClose, onConfirm, batchUpload = false }
                         <Button
                             onClick={() => (isAudio ? onConfirm(null, 'audio') : onConfirm(selectedId, 'screen'))}
                             disabled={isScreen && !selectedId}
-                            className="rounded-xl font-semibold shadow-[0_4px_16px_hsl(var(--primary)/0.4)] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:shadow-[0_6px_20px_hsl(var(--primary)/0.55)]"
+                            className="rounded-xl font-semibold shadow-[0_4px_16px_hsl(var(--app-primary)/0.4)] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:shadow-[0_6px_20px_hsl(var(--app-primary)/0.55)]"
                         >
                             {isAudio ? 'Start recording' : 'Record screen'}
                         </Button>

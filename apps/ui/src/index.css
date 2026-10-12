@@ -1,116 +1,163 @@
 @import "tailwindcss";
+@import "@heroui/styles";
 @config "../tailwind.config.js";
+
+@theme inline {
+    --color-accent: hsl(var(--app-accent));
+    --color-accent-foreground: hsl(var(--app-accent-foreground));
+    --color-muted: hsl(var(--app-muted));
+    --color-segment: hsl(var(--app-segment));
+}
+
+:root,
+.dark,
+[data-theme] {
+    --background: hsl(var(--app-background));
+    --foreground: hsl(var(--app-foreground));
+    --surface: hsl(var(--app-card));
+    --surface-foreground: hsl(var(--app-card-foreground));
+    --surface-secondary: hsl(var(--app-secondary));
+    --surface-secondary-foreground: hsl(var(--app-secondary-foreground));
+    --surface-tertiary: hsl(var(--app-accent));
+    --surface-tertiary-foreground: hsl(var(--app-accent-foreground));
+    --overlay: hsl(var(--app-popover));
+    --overlay-foreground: hsl(var(--app-popover-foreground));
+    --muted: hsl(var(--app-muted-foreground));
+    --default: hsl(var(--app-secondary));
+    --default-foreground: hsl(var(--app-secondary-foreground));
+    --accent: hsl(var(--app-primary));
+    --accent-foreground: hsl(var(--app-primary-foreground));
+    --success: hsl(var(--app-success));
+    --success-foreground: hsl(var(--app-success-foreground));
+    --warning: hsl(var(--app-warning));
+    --warning-foreground: hsl(var(--app-warning-foreground));
+    --danger: hsl(var(--app-destructive));
+    --danger-foreground: hsl(var(--app-destructive-foreground));
+    --field-background: hsl(var(--app-background));
+    --field-foreground: hsl(var(--app-foreground));
+    --field-placeholder: hsl(var(--app-muted-foreground));
+    --field-border: hsl(var(--app-input));
+    --border: hsl(var(--app-border));
+    --separator: hsl(var(--app-border));
+    --focus: hsl(var(--app-ring));
+    --link: hsl(var(--app-primary));
+    --segment: hsl(var(--app-elevated));
+    --segment-foreground: hsl(var(--app-foreground));
+    --backdrop: hsl(var(--app-scrim) / var(--app-scrim-opacity));
+    --radius: 8px;
+    --field-radius: var(--app-radius);
+}
 
 @layer base {
     :root {
-        --background: 60 9% 96%;
-        --foreground: 220 6% 13%;
+        --app-background: 60 9% 96%;
+        --app-foreground: 220 6% 13%;
 
-        --card: 0 0% 100%;
-        --card-foreground: 220 6% 13%;
+        --app-card: 0 0% 100%;
+        --app-card-foreground: 220 6% 13%;
 
-        --popover: 0 0% 100%;
-        --popover-foreground: 220 6% 13%;
+        --app-popover: 0 0% 100%;
+        --app-popover-foreground: 220 6% 13%;
 
-        --primary: 8 85.1% 50%;
-        --primary-foreground: 0 0% 8%;
+        --app-primary: 8 85.1% 50%;
+        --app-primary-foreground: 0 0% 8%;
 
-        --secondary: 60 5% 93%;
-        --secondary-foreground: 220 6% 13%;
+        --app-secondary: 60 5% 93%;
+        --app-secondary-foreground: 220 6% 13%;
 
-        --muted: 60 5% 93%;
-        --muted-foreground: 228 4% 41%;
+        --app-muted: 60 5% 93%;
+        --app-muted-foreground: 228 4% 41%;
 
-        --accent: 60 5% 93%;
-        --accent-foreground: 220 6% 13%;
+        --app-accent: 60 5% 93%;
+        --app-accent-foreground: 220 6% 13%;
 
-        --destructive: 3 64% 48%;
-        --destructive-foreground: 0 0% 100%;
+        --app-destructive: 3 64% 48%;
+        --app-destructive-foreground: 0 0% 100%;
 
-        --success: 145 66% 30%;
-        --success-foreground: 0 0% 100%;
+        --app-success: 145 66% 30%;
+        --app-success-foreground: 0 0% 100%;
 
-        --warning: 39 100% 27%;
-        --warning-foreground: 0 0% 100%;
+        --app-warning: 39 100% 27%;
+        --app-warning-foreground: 0 0% 100%;
 
-        --border: 51 8% 84%;
-        --input: 51 8% 78%;
-        --ring: 8 85.1% 50%;
+        --app-border: 51 8% 84%;
+        --app-input: 51 8% 78%;
+        --app-ring: 8 85.1% 50%;
 
-        --elevated: 0 0% 100%;
-        --segment: 51 8% 88%;
+        --app-elevated: 0 0% 100%;
+        --app-segment: 51 8% 88%;
 
-        --speaker-1: 224 76% 48%;
-        --speaker-2: 166 92% 22%;
-        --speaker-3: 263 70% 50%;
-        --speaker-4: 32 86% 31%;
-        --material: 0 0% 100%;
-        --material-opacity: 0.86;
-        --scrim: 220 6% 13%;
-        --scrim-opacity: 0.16;
+        --app-speaker-1: 224 76% 48%;
+        --app-speaker-2: 166 92% 22%;
+        --app-speaker-3: 263 70% 50%;
+        --app-speaker-4: 32 86% 31%;
+        --app-material: 0 0% 100%;
+        --app-material-opacity: 0.86;
+        --app-scrim: 220 6% 13%;
+        --app-scrim-opacity: 0.16;
 
-        --radius: 10px;
+        --app-radius: 10px;
     }
 
     .dark {
-        --background: 240 3% 6%;
-        --foreground: 240 5% 91%;
+        --app-background: 240 3% 6%;
+        --app-foreground: 240 5% 91%;
 
-        --card: 240 4% 9%;
-        --card-foreground: 240 5% 91%;
+        --app-card: 240 4% 9%;
+        --app-card-foreground: 240 5% 91%;
 
-        --popover: 240 4% 9%;
-        --popover-foreground: 240 5% 91%;
+        --app-popover: 240 4% 9%;
+        --app-popover-foreground: 240 5% 91%;
 
-        --primary: 8 85.1% 50%;
-        --primary-foreground: 0 0% 8%;
+        --app-primary: 8 85.1% 50%;
+        --app-primary-foreground: 0 0% 8%;
 
-        --secondary: 240 5% 12%;
-        --secondary-foreground: 240 5% 91%;
+        --app-secondary: 240 5% 12%;
+        --app-secondary-foreground: 240 5% 91%;
 
-        --muted: 240 5% 12%;
-        --muted-foreground: 240 5% 57%;
+        --app-muted: 240 5% 12%;
+        --app-muted-foreground: 240 5% 57%;
 
-        --accent: 240 5% 12%;
-        --accent-foreground: 240 5% 91%;
+        --app-accent: 240 5% 12%;
+        --app-accent-foreground: 240 5% 91%;
 
-        --destructive: 3 100% 69%;
-        --destructive-foreground: 0 0% 8%;
+        --app-destructive: 3 100% 69%;
+        --app-destructive-foreground: 0 0% 8%;
 
-        --success: 135 64% 51%;
-        --success-foreground: 0 0% 8%;
+        --app-success: 135 64% 51%;
+        --app-success-foreground: 0 0% 8%;
 
-        --warning: 36 100% 52%;
-        --warning-foreground: 0 0% 8%;
+        --app-warning: 36 100% 52%;
+        --app-warning-foreground: 0 0% 8%;
 
-        --border: 240 5% 17%;
-        --input: 240 5% 22%;
-        --ring: 217 100% 68%;
+        --app-border: 240 5% 17%;
+        --app-input: 240 5% 22%;
+        --app-ring: 217 100% 68%;
 
-        --elevated: 240 5% 12%;
-        --segment: 240 5% 17%;
+        --app-elevated: 240 5% 12%;
+        --app-segment: 240 5% 17%;
 
-        --speaker-1: 217 100% 68%;
-        --speaker-2: 158 64% 67%;
-        --speaker-3: 255 92% 85%;
-        --speaker-4: 45 96% 64%;
-        --material: 240 4% 9%;
-        --material-opacity: 0.76;
-        --scrim: 0 0% 0%;
-        --scrim-opacity: 0.5;
+        --app-speaker-1: 217 100% 68%;
+        --app-speaker-2: 158 64% 67%;
+        --app-speaker-3: 255 92% 85%;
+        --app-speaker-4: 45 96% 64%;
+        --app-material: 240 4% 9%;
+        --app-material-opacity: 0.76;
+        --app-scrim: 0 0% 0%;
+        --app-scrim-opacity: 0.5;
     }
 
     @media (prefers-contrast: more) {
         :root {
-            --muted-foreground: 228 6% 28%;
-            --border: 228 6% 45%;
-            --material-opacity: 0.98;
+            --app-muted-foreground: 228 6% 28%;
+            --app-border: 228 6% 45%;
+            --app-material-opacity: 0.98;
         }
 
         .dark {
-            --muted-foreground: 240 5% 84%;
-            --border: 240 4% 42%;
-            --material-opacity: 0.96;
+            --app-muted-foreground: 240 5% 84%;
+            --app-border: 240 4% 42%;
+            --app-material-opacity: 0.96;
         }
     }
 
@@ -135,11 +182,11 @@
     }
 
     ::selection {
-        background-color: hsl(var(--primary) / 0.28);
+        background-color: hsl(var(--app-primary) / 0.28);
     }
 
     :focus-visible {
-        outline: 2px solid hsl(var(--ring));
+        outline: 2px solid hsl(var(--app-ring));
         outline-offset: 2px;
     }
 
@@ -155,21 +202,21 @@
 
 @layer components {
     .material-chrome {
-        background-color: hsl(var(--card));
+        background-color: hsl(var(--app-card));
     }
 
     .material-sheet {
-        background-color: hsl(var(--elevated) / 0.94);
+        background-color: hsl(var(--app-elevated) / 0.94);
         backdrop-filter: blur(40px) saturate(180%);
         -webkit-backdrop-filter: blur(40px) saturate(180%);
     }
 
     .hairline-bottom {
-        box-shadow: inset 0 -1px 0 0 hsl(var(--border));
+        box-shadow: inset 0 -1px 0 0 hsl(var(--app-border));
     }
 
     .hairline-top {
-        box-shadow: inset 0 1px 0 0 hsl(var(--border));
+        box-shadow: inset 0 1px 0 0 hsl(var(--app-border));
     }
 
     .scroll-edge {
@@ -322,12 +369,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--border));
+    background-color: hsl(var(--app-border));
     border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground));
+    background-color: hsl(var(--app-muted-foreground));
 }
 
 @media (prefers-reduced-motion: reduce) {

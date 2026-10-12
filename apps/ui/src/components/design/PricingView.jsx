@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { FieldSelect } from '@/components/ui/field-select';
 import { ArrowRight, Building2, Check, HardDrive, Star } from 'lucide-react';
 import { confirmRazorpayPayment, createProCheckout, fetchPlans, fetchSubscription, formatPlanPrice, openRazorpayCheckout, pickPlanPrice, prepareRazorpayCheckout, waitForPro } from '@/lib/plans.js';
 
@@ -167,9 +168,7 @@ export function PricingView({ account, currentTier = 'free', canSignIn = true, o
                 <span className="ks-tag">{tag}</span>
                 <h2>{plan.name}</h2>
                 <div className="ks-plan-price">{formatPlanPrice(price)}{price?.amountMinor > 0 && <small> / {price.interval || 'month'}</small>}</div>
-                {plan.id === 'pro' && availablePrices.length > 1 && !isCurrent && <select aria-label="Pro billing currency" value={price?.currency || ''} onChange={event => setCurrency(event.target.value)}>
-                    {availablePrices.map(item => <option key={item.currency} value={item.currency}>{item.currency}</option>)}
-                </select>}
+                {plan.id === 'pro' && availablePrices.length > 1 && !isCurrent && <FieldSelect label="Pro billing currency" value={price?.currency || ''} onChange={setCurrency} options={availablePrices.map(item => ({ value: item.currency, label: item.currency }))} />}
                 <p>{plan.description}</p>
                 <ul>{plan.features.map(feature => <li key={feature}><Check aria-hidden="true" />{feature}</li>)}</ul>
                 {action}

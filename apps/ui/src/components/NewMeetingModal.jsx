@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
 
 const DURATIONS = [
     { value: '15', label: '15 minutes' },
@@ -33,6 +34,7 @@ function toRfc3339(localValue) {
 export function NewMeetingModal({ isOpen, onClose, providers, onCreated, onOpenCalendarSettings }) {
     const [title, setTitle] = useState('');
     const [startsAt, setStartsAt] = useState(nextHalfHour);
+    const [startValid, setStartValid] = useState(true);
     const [duration, setDuration] = useState('30');
     const [guests, setGuests] = useState('');
     const [addConference, setAddConference] = useState(true);
@@ -59,7 +61,7 @@ export function NewMeetingModal({ isOpen, onClose, providers, onCreated, onOpenC
             setError('Give the meeting a title.');
             return;
         }
-        if (!start) {
+        if (!start || !startValid) {
             setError('Pick a valid start time.');
             return;
         }
@@ -117,17 +119,16 @@ export function NewMeetingModal({ isOpen, onClose, providers, onCreated, onOpenC
                         />
                     </div>
 
-                    <div className="flex gap-4">
-                        <div className="flex-1 space-y-2">
-                            <Label htmlFor="meeting-start" className="text-body font-medium">
-                                Starts
-                            </Label>
-                            <Input
+                    <div className="flex flex-wrap gap-4">
+                        <div className="min-w-0 flex-[1_1_240px] space-y-2">
+                            <DateTimePicker
                                 id="meeting-start"
-                                type="datetime-local"
+                                label="Starts"
                                 value={startsAt}
+                                required
+                                onValidityChange={setStartValid}
                                 disabled={!canCreate}
-                                onChange={event => setStartsAt(event.target.value)}
+                                onChange={setStartsAt}
                             />
                         </div>
                         <div className="w-44 space-y-2">
@@ -181,7 +182,7 @@ export function NewMeetingModal({ isOpen, onClose, providers, onCreated, onOpenC
                         Cancel
                     </Button>
                     {canCreate || !onOpenCalendarSettings ? (
-                        <Button onClick={submit} disabled={!canCreate || pending}>
+                        <Button onClick={submit} disabled={!canCreate || pending || !startValid}>
                             {pending ? 'Creating…' : 'Create meeting'}
                         </Button>
                     ) : (

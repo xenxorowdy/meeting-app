@@ -50,6 +50,9 @@ the operating system, and the services it talks to.
   development builds with a local key, it goes straight to Sarvam.
 - Meeting text is sent to the AI service only when a summary is generated or a
   question is asked in Ask AI.
+- Recording completion saves the transcript without generating a summary. Open
+  Summary and choose Generate or Regenerate to request notes explicitly; older
+  `autoSummarize` settings no longer enable automatic summaries.
 - Accounts do not create isolated meeting libraries: everyone using one backend
   shares its library.
 

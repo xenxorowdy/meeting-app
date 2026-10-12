@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { FieldSelect } from '@/components/ui/field-select';
 import { memoryScope } from '@/lib/chat';
 
 const EMPTY = { kind: 'person', name: '', from: '', to: '' };
+
+const ENTITY_KINDS = [{ value: 'person', label: 'Person' }, { value: 'company', label: 'Company' }, { value: 'topic', label: 'Topic' }, { value: 'project', label: 'Project' }];
 
 export function MemoryFilters({ onApply, disabled }) {
     const [draft, setDraft] = useState(EMPTY);
@@ -21,9 +24,7 @@ export function MemoryFilters({ onApply, disabled }) {
         <details className="ks-memory-filters">
             <summary>Filter meetings{applied ? ' · active' : ''}</summary>
             <form onSubmit={apply}>
-                <label>Entity type<select aria-label="Memory entity type" value={draft.kind} disabled={disabled} onChange={event => change('kind', event.target.value)}>
-                    <option value="person">Person</option><option value="company">Company</option><option value="topic">Topic</option><option value="project">Project</option>
-                </select></label>
+                <label>Entity type<FieldSelect label="Memory entity type" value={draft.kind} disabled={disabled} onChange={value => change('kind', value)} options={ENTITY_KINDS} /></label>
                 <label>Name<input aria-label="Memory entity name" placeholder="Exact name, e.g. Acme" maxLength={300} value={draft.name} disabled={disabled} onChange={event => change('name', event.target.value)} /></label>
                 <label>From<input aria-label="Memory start date" type="date" value={draft.from} disabled={disabled} onChange={event => change('from', event.target.value)} /></label>
                 <label>To<input aria-label="Memory end date" type="date" value={draft.to} disabled={disabled} onChange={event => change('to', event.target.value)} /></label>

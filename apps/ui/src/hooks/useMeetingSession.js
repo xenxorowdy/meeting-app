@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = {
     sarvamMode: 'transcribe',
     sarvamNumSpeakers: null,
     sarvamDiarizeAfterMeeting: true,
-    autoSummarize: true,
+    autoSummarize: false,
     echoSuppression: true,
     noiseSuppression: true,
     // Read-only: the backend reports whether a key is stored, never the key.

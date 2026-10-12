@@ -1,29 +1,52 @@
-'use client';
 import * as React from 'react';
-import * as ToggleGroupPrimitive from '@radix-ui/react-toggle-group';
+import { ToggleButton, ToggleButtonGroup } from '@heroui/react';
 
 import { cn } from '@/utils/cn';
-import { toggleVariants } from '@/components/ui/toggle';
+import { renderToggle, toggleVariants } from '@/components/ui/toggle';
 
 const ToggleGroupContext = React.createContext({
     size: 'default',
     variant: 'default',
 });
 
-const ToggleGroup = React.forwardRef(({ className, variant, size, children, ...props }, ref) => (
-    <ToggleGroupPrimitive.Root ref={ref} className={cn('flex items-center justify-center gap-1', className)} {...props}>
-        <ToggleGroupContext.Provider value={{ variant, size }}>{children}</ToggleGroupContext.Provider>
-    </ToggleGroupPrimitive.Root>
-));
+const toKeys = (value, multiple) => {
+    if (value === undefined) return undefined;
+    if (multiple) return value || [];
+    return value === null || value === '' ? [] : [value];
+};
 
-ToggleGroup.displayName = ToggleGroupPrimitive.Root.displayName;
+const ToggleGroup = React.forwardRef(({ className, variant, size, type = 'single', value, defaultValue, onValueChange, disabled, children, ...props }, ref) => {
+    const multiple = type === 'multiple';
+    return (
+        <ToggleButtonGroup
+            ref={ref}
+            isDetached
+            selectionMode={multiple ? 'multiple' : 'single'}
+            selectedKeys={toKeys(value, multiple)}
+            defaultSelectedKeys={toKeys(defaultValue, multiple)}
+            onSelectionChange={keys => {
+                const next = [...keys].map(String);
+                onValueChange?.(multiple ? next : (next[0] ?? ''));
+            }}
+            isDisabled={disabled}
+            className={cn('flex items-center justify-center gap-1', className)}
+            {...props}
+        >
+            <ToggleGroupContext.Provider value={{ variant, size }}>{children}</ToggleGroupContext.Provider>
+        </ToggleButtonGroup>
+    );
+});
+ToggleGroup.displayName = 'ToggleGroup';
 
-const ToggleGroupItem = React.forwardRef(({ className, children, variant, size, ...props }, ref) => {
+const ToggleGroupItem = React.forwardRef(({ className, children, variant, size, value, disabled, ...props }, ref) => {
     const context = React.useContext(ToggleGroupContext);
 
     return (
-        <ToggleGroupPrimitive.Item
+        <ToggleButton
             ref={ref}
+            id={value}
+            isDisabled={disabled}
+            render={renderToggle}
             className={cn(
                 toggleVariants({
                     variant: context.variant || variant,
@@ -34,10 +57,9 @@ const ToggleGroupItem = React.forwardRef(({ className, children, variant, size, 
             {...props}
         >
             {children}
-        </ToggleGroupPrimitive.Item>
+        </ToggleButton>
     );
 });
-
-ToggleGroupItem.displayName = ToggleGroupPrimitive.Item.displayName;
+ToggleGroupItem.displayName = 'ToggleGroupItem';
 
 export { ToggleGroup, ToggleGroupItem };

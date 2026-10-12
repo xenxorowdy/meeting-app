@@ -550,7 +550,6 @@ function ConnectedApp({ onSignOut, theme, setTheme, preferences, openSettingsOnE
                     isPaused,
                     isProcessing,
                     stopFailed,
-                    autoSummarize: settings.autoSummarize !== false,
                     isGeneratingSummary,
                     durationSeconds,
                     subscribeAudioLevels,

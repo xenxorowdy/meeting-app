@@ -1113,9 +1113,7 @@
     font-weight: 600;
     letter-spacing: 1.8px;
 }
-.ks-meeting-card:focus-within {
-    border-color: var(--ks-accent-line);
-}
+
 .ks-meeting-card:hover {
     box-shadow: 0 4px 16px var(--ks-shadow-soft);
 }
@@ -1143,6 +1141,7 @@
     width: 28px;
     height: 28px;
     margin-bottom: 14px;
+    margin-top: 12px;
     color: var(--ks-accent-text);
 }
 .ks-home-heading {
@@ -1523,22 +1522,22 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 14px 16px;
-    border-color: hsl(var(--border));
+    border-color: hsl(var(--app-border));
     border-radius: 14px;
-    background: hsl(var(--popover));
-    color: hsl(var(--popover-foreground));
+    background: hsl(var(--app-popover));
+    color: hsl(var(--app-popover-foreground));
     box-shadow: 0 14px 38px rgb(0 0 0 / 0.2);
     font-family: var(--font-body);
 }
-.ks-source-preview strong { display: block; overflow: hidden; color: hsl(var(--popover-foreground)); font-size: 13px; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.ks-source-preview-time { display: block; color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4; }
+.ks-source-preview strong { display: block; overflow: hidden; color: hsl(var(--app-popover-foreground)); font-size: 13px; font-weight: 600; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.ks-source-preview-time { display: block; color: hsl(var(--app-muted-foreground)); font-size: 11px; line-height: 1.4; }
 .ks-source-preview p {
     margin: 3px 0 0;
     padding: 9px 11px;
-    border-left: 2px solid hsl(var(--primary));
+    border-left: 2px solid hsl(var(--app-primary));
     border-radius: 0 8px 8px 0;
-    background: hsl(var(--secondary) / 0.55);
-    color: hsl(var(--popover-foreground));
+    background: hsl(var(--app-secondary) / 0.55);
+    color: hsl(var(--app-popover-foreground));
     font-size: 12px;
     line-height: 1.6;
     white-space: pre-wrap;
@@ -1547,8 +1546,8 @@
     overflow: auto;
 }
 .ks-source-preview-details { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 2px 0 0; }
-.ks-source-preview-details dt { color: hsl(var(--muted-foreground)); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
-.ks-source-preview-details dd { margin: 0; color: hsl(var(--popover-foreground)); font-size: 12px; }
+.ks-source-preview-details dt { color: hsl(var(--app-muted-foreground)); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.ks-source-preview-details dd { margin: 0; color: hsl(var(--app-popover-foreground)); font-size: 12px; }
 .ks-chat-coverage {
     margin-top: 8px;
     font-size: 11px;
@@ -1807,9 +1806,9 @@
     height: 12px;
 }
 .ks-agenda-row:hover,
-.ks-meeting-card:hover {
+/*.ks-meeting-card:hover {
     border-color: var(--ks-line-strong);
-}
+}*/
 .ks-meetings-list {
     display: grid;
     gap: 12px;
@@ -1818,9 +1817,8 @@
     position: relative;
     display: flex;
     background: var(--ks-surface);
-    border: 1px solid var(--ks-line);
-    border-radius: 14px;
-    transition: border-color 160ms var(--ks-ease), box-shadow 160ms var(--ks-ease);
+    border-radius: 18px;
+    transition: box-shadow 160ms var(--ks-ease);
     min-width: 0;
 }
 .ks-meeting-card-body {
@@ -1938,7 +1936,7 @@
 .ks-meeting-card:hover .ks-card-more,
 .ks-card-more:focus-visible,
 .ks-card-more[aria-expanded='true'] {
-    opacity: 1;
+    opacity: 0.9;
 }
 .ks-menu-dismiss {
     position: fixed;
@@ -5548,26 +5546,21 @@
 }
 
 /* Idle call prompt: the small transparent inset contains the content-only wobble. */
-.ksw-call-shell { width: 100%; height: 100%; padding: 5px; background: transparent; user-select: none; }
-.ksw-call-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 10px 6px 6px; border: 1px solid #e04a0c; border-radius: 20px; background: #ff5f1f; color: #1c1c1a; box-shadow: inset 0 0 0 3px rgb(255 255 255 / 18%); transform-origin: center; }
-.ksw-call-grip { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; -webkit-app-region: drag; }
-.ksw-call-grip svg { width: 22px; height: 22px; flex: none; }
-.ksw-call-grip svg > rect:first-child { fill: #fff; }
-.ksw-call-grip svg > rect:not(:first-child) { fill: #ff5f1f; }
-.ksw-call-grip h1 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
-.ksw-call-buttons { display: flex; flex-direction: column; gap: 3px; width: 100%; -webkit-app-region: no-drag; }
-.ksw-call-buttons button { width: 100%; min-height: 26px; border: 0; border-radius: 999px; font-size: 13px; font-weight: 500; line-height: 1.1; cursor: pointer; -webkit-app-region: no-drag; }
-.ksw-call-buttons button:focus-visible { outline: 2px solid #1c1c1a; outline-offset: 2px; }
-.ksw-call-buttons button:disabled { opacity: .65; cursor: default; }
-.ksw-call-start { background: #1c1c1a; color: #fff; }
-.ksw-call-start:hover:not(:disabled) { background: #3d3d3a; }
-.ksw-call-dismiss { background: rgb(255 255 255 / 22%); color: #1c1c1a; }
-.ksw-call-dismiss:hover:not(:disabled) { background: rgb(255 255 255 / 34%); }
-.ksw-call-error { max-height: 30px; overflow: auto; margin: 0; padding: 3px 5px; border-radius: 7px; background: #8b1809; color: #fff; font-size: 10px; line-height: 1.35; text-align: center; -webkit-app-region: no-drag; }
-.ksw-call-card:has(.ksw-call-error) { gap: 5px; }
-.ksw-call-card:has(.ksw-call-error) .ksw-call-grip { gap: 3px; }
-.ksw-call-card:has(.ksw-call-error) .ksw-call-grip svg { width: 16px; height: 16px; }
-.ksw-call-card.is-wobbling { animation: ksw-call-wobble 600ms ease-in-out; }
+.ksw-call-shell { width: 100%; height: 100%; padding: 4px; background: transparent; user-select: none; }
+.ksw-call-shell .ksw-call-card { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px; width: 100%; height: 100%; padding: 8px; border: 1px solid #e04a0c; border-radius: 14px; background: #ff5f1f; color: #1c1c1a; box-shadow: none; transform-origin: center; }
+.ksw-call-shell .ksw-call-grip { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px; padding: 0; -webkit-app-region: drag; }
+.ksw-call-shell .ksw-call-grip svg { width: 22px; height: 22px; flex: none; }
+.ksw-call-shell .ksw-call-grip svg > rect:first-child { fill: #fff; }
+.ksw-call-shell .ksw-call-grip svg > rect:not(:first-child) { fill: #ff5f1f; }
+.ksw-call-shell .ksw-call-grip h3 { margin: 0; color: #1c1c1a; font-size: 13px; font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
+.ksw-call-shell .ksw-call-buttons { display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 0; -webkit-app-region: no-drag; }
+.ksw-call-shell .ksw-call-buttons button { width: 100%; height: 24px; min-height: 24px; padding: 0; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 1; -webkit-app-region: no-drag; }
+.ksw-call-shell .ksw-call-start { background: #1c1c1a; color: #fff; }
+.ksw-call-shell .ksw-call-start:hover:not(:disabled) { background: #3d3d3a; }
+.ksw-call-shell .ksw-call-dismiss { background: rgb(255 255 255 / 22%); color: #1c1c1a; }
+.ksw-call-shell .ksw-call-dismiss:hover:not(:disabled) { background: rgb(255 255 255 / 34%); }
+.ksw-call-shell .ksw-call-error { max-height: 28px; overflow: auto; margin: 0; padding: 2px 5px; border-radius: 7px; background: #8b1809; color: #fff; font-size: 10px; line-height: 1.3; text-align: center; -webkit-app-region: no-drag; }
+.ksw-call-shell .ksw-call-card.is-wobbling { animation: ksw-call-wobble 600ms ease-in-out; }
 @keyframes ksw-call-wobble {
     0%, 100% { transform: translateX(0) rotate(0); }
     20% { transform: translateX(-2px) rotate(-1deg); }
@@ -5658,7 +5651,7 @@ html, body { overflow-x: clip; }
 .ks-app .ks-footer-utility { margin-bottom: var(--space-sm); }
 .ks-app .ks-workspace-tools { border-radius: var(--radius-control); background: var(--color-surface); border: var(--rule-width) solid var(--color-rule); }
 .ks-app .ks-workspace-tools button { min-height: 36px; border-radius: var(--radius-small); }
-.ks-app .ks-main { margin: var(--space-sm) var(--space-sm) var(--space-sm) 0; border: var(--rule-width) solid var(--color-rule); border-radius: var(--radius-panel); background: var(--color-surface); }
+/*.ks-app .ks-main { margin: var(--space-sm) var(--space-sm) var(--space-sm) 0; border: var(--rule-width) solid var(--color-rule); border-radius: var(--radius-panel); background: var(--color-surface); }*/
 .ks-app .ks-main-toolbar { height: 72px; padding-inline: var(--space-xl); background: var(--color-surface); border-bottom: 0; }
 .ks-app .ks-global-search { width: min(440px, 100%); background: var(--color-paper); border-radius: var(--radius-control); }
 .ks-app .ks-global-search input { font-size: var(--text-sm); }
@@ -5900,6 +5893,14 @@ html, body { overflow-x: clip; }
 .ks-app .ks-agenda-events { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
 .ks-app .ks-agenda-paging .ks-agenda-today { width: auto; padding: 0 var(--space-sm); border: 1px solid var(--color-rule); border-radius: var(--radius-small); background: var(--color-clear); color: var(--color-secondary); font-size: var(--text-xs); }
 .ks-app .ks-agenda-today:hover { background: var(--color-hover); }
+.ks-date-time-popover .calendar__header-cell { color: hsl(var(--app-muted-foreground)); }
+.ks-date-time-popover .calendar__cell[data-selected="true"] { background: hsl(var(--app-primary)); color: hsl(var(--app-primary-foreground)); }
+.ks-date-time-popover .calendar__cell[data-disabled="true"] { color: hsl(var(--app-muted-foreground)); }
+.ks-date-time-picker { min-width: 0; width: 100%; }
+.ks-date-time-picker .date-picker { width: 100%; gap: 8px; }
+.ks-date-time-picker .date-input-group__input { min-width: 0; font-size: 13px; }
+.ks-date-time-picker .date-input-group { border-radius: 12px; box-shadow: none; }
+.ks-date-time-popover { z-index: 100; max-width: calc(100vw - 24px); }
 .ks-app .ks-agenda-empty { padding: var(--space-xs) var(--space-sm); }
 .ks-app .ks-dashboard > .ks-recent-heading { margin: var(--space-xl) 0 var(--space-sm); }
 .ks-app .ks-meetings-list { gap: var(--space-sm); }
@@ -6081,4 +6082,523 @@ html, body { overflow-x: clip; }
 @media (max-width: 540px) {
     .ks-app .ks-dashboard .ks-agenda-card .ks-agenda-row { flex-wrap: wrap; }
     .ks-app .ks-dashboard .ks-agenda-card .ks-agenda-main { flex: 1 1 100%; }
+}
+
+.ks-app .ks-workspace.is-desktop .ks-sidebar-toggle {
+    position: fixed;
+    top: 8px;
+    left: 84px;
+    z-index: 60;
+    margin: 0;
+    -webkit-app-region: no-drag;
+}
+.ks-app .ks-workspace.is-desktop .ks-traffic-desktop { height: 48px; padding-top: 0; }
+.ks-app .ks-workspace.is-sidebar-collapsed.is-desktop .ks-main-toolbar { padding-left: 128px; }
+
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R4 V4 · Kesami rounded workbench revamp */
+/* Final visual layer: keeps the existing interaction contracts while giving every
+   authenticated surface one calm, rounded, reference-led component language. */
+.ks-app {
+    --ks-revamp-radius-sm: 12px;
+    --ks-revamp-radius-md: 18px;
+    --ks-revamp-radius-lg: 24px;
+    --ks-revamp-shadow: 0 16px 44px color-mix(in oklch, var(--color-ink) 8%, transparent);
+    --ks-revamp-shadow-soft: 0 6px 22px color-mix(in oklch, var(--color-ink) 6%, transparent);
+}
+.ks-app[data-theme='dark'] {
+    --ks-revamp-shadow: 0 18px 48px rgb(0 0 0 / .22);
+    --ks-revamp-shadow-soft: 0 8px 24px rgb(0 0 0 / .16);
+}
+.ks-app .ks-workspace { background: var(--color-paper); }
+.ks-app .ks-sidebar {
+    width: 232px;
+    padding: 16px 12px 12px;
+    border-right: 1px solid var(--color-rule);
+    background: var(--color-surface);
+}
+.ks-app .ks-traffic { height: 32px; padding: 0 4px; }
+.ks-app .ks-new-meeting { padding: 14px 4px 18px; }
+.ks-app .ks-new-meeting button {
+    min-height: 44px;
+    border-radius: 14px;
+    box-shadow: none;
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+.ks-app .ks-sidebar-nav { gap: 3px; }
+.ks-app .ks-sidebar-nav > button,
+.ks-app .ks-footer-utility button,
+.ks-app .ks-profile {
+    min-height: 40px;
+    border-radius: var(--ks-revamp-radius-sm);
+}
+.ks-app .ks-sidebar-nav > button { padding: 0 12px; }
+.ks-app .ks-sidebar-nav > button.is-active {
+    box-shadow: none;
+    background: var(--color-accent-soft);
+}
+.ks-app .ks-sidebar-nav > button.is-active svg { color: var(--color-accent); }
+.ks-app .ks-folder-heading { padding: 26px 12px 8px; }
+.ks-app .ks-sidebar-footer { padding: 12px 4px 0; }
+.ks-app .ks-profile { padding: 8px; }
+.ks-app .ks-main { background: var(--color-paper); }
+.ks-app .ks-main-toolbar {
+    height: 72px;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--color-rule);
+    background: color-mix(in oklch, var(--color-paper) 88%, transparent);
+    backdrop-filter: blur(16px);
+}
+.ks-app .ks-global-search {
+    max-width: 520px;
+    min-height: 42px;
+    padding: 0 14px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: var(--color-clear);
+}
+.ks-app .ks-global-search:is(:hover, :focus-within) {
+    border-color: var(--color-rule);
+    background: var(--color-surface);
+    box-shadow: var(--ks-revamp-shadow-soft);
+}
+.ks-app .ks-theme-toggle {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+}
+.ks-app .ks-home-scroll { background: var(--color-paper); }
+.ks-app .ks-home {
+    max-width: 1180px;
+    padding: clamp(28px, 4vw, 56px) clamp(20px, 4vw, 64px) 72px;
+}
+.ks-app .ks-home-heading {
+    margin-bottom: 36px;
+    padding: 0;
+}
+.ks-app .ks-home-eyebrow {
+    margin-bottom: 10px;
+    color: var(--color-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+.ks-app .ks-home-heading h1,
+.ks-app .ks-folder-title h1 {
+    color: var(--color-ink);
+    font-size: clamp(28px, 3vw, 42px);
+    font-weight: 620;
+    letter-spacing: -.045em;
+    line-height: 1.05;
+}
+.ks-app .ks-home-controls { gap: 8px; }
+.ks-app .ks-home-controls .ks-home-schedule {
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--color-rule);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-size: var(--text-sm);
+}
+.ks-app .ks-home-controls .ks-home-schedule:first-child {
+    border-color: var(--color-accent-line);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-text);
+}
+.ks-app .ks-agenda-card,
+.ks-app .ks-empty-card,
+.ks-app .ks-account-card,
+.ks-app .ks-meeting-panel,
+.ks-app .ks-replay,
+.ks-app .ks-chat {
+    border-radius: var(--ks-revamp-radius-lg);
+    box-shadow: var(--ks-revamp-shadow-soft);
+}
+.ks-app .ks-agenda-card { overflow: hidden; background: var(--color-surface); }
+.ks-app .ks-agenda-card .ks-agenda-day { padding: 20px 24px; }
+.ks-app .ks-dashboard .ks-agenda-card .ks-agenda-row { border-radius: var(--ks-revamp-radius-sm); }
+.ks-app .ks-dashboard .ks-agenda-card .ks-agenda-main { padding: 14px; }
+.ks-app .ks-recent-heading { margin-top: 44px; }
+.ks-app .ks-section-label h2,
+.ks-app .ks-agenda-heading h2 { font-size: 17px; font-weight: 620; letter-spacing: -.02em; }
+.ks-app .ks-view-all,
+.ks-app .ks-text-button { border-radius: 999px; }
+.ks-app .ks-meetings-list { gap: 10px; }
+.ks-app .ks-meeting-date-group {
+    padding: 18px 4px 6px;
+    color: var(--color-secondary);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+.ks-app .ks-meetings-list .ks-meeting-card {
+    min-height: 76px;
+    border: 1px solid var(--color-rule);
+    border-radius: var(--ks-revamp-radius-md);
+    background: var(--color-surface);
+    box-shadow: none;
+    transition: border-color var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+}
+.ks-app .ks-meetings-list .ks-meeting-card:hover {
+    border-color: var(--color-accent-line);
+    box-shadow: var(--ks-revamp-shadow-soft);
+    transform: translateY(-1px);
+}
+.ks-app .ks-meeting-card-body { min-height: 76px; padding: 14px 52px 14px 18px; }
+.ks-app .ks-row-icon { width: 40px; height: 40px; border-radius: 14px; background: var(--color-accent-soft); color: var(--color-accent-text); }
+.ks-app .ks-row-copy h3 { font-size: 14px; font-weight: 620; }
+.ks-app .ks-row-copy p { margin-top: 4px; color: var(--color-secondary); }
+.ks-app .ks-card-trailing { top: 18px; right: 12px; }
+.ks-app .ks-card-more { width: 36px; height: 36px; border-radius: 50%; }
+.ks-app .ks-card-menu {
+    width: 260px;
+    padding: 12px;
+    border: 1px solid var(--color-rule);
+    border-radius: var(--ks-revamp-radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--ks-revamp-shadow);
+}
+.ks-app .ks-card-menu label { gap: 8px; padding: 4px; color: var(--color-secondary); font-size: 10px; letter-spacing: .08em; }
+.ks-app .ks-card-menu select {
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--color-rule);
+    border-radius: 14px;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-size: 16px;
+    letter-spacing: 0;
+}
+.ks-app .ks-card-menu select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-color: var(--color-accent); }
+.ks-app .ks-delete-button { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ks-danger); font-size: 14px; }
+.ks-app .ks-delete-button:hover { background: var(--ks-danger-faint); }
+.ks-app .ks-library-ask {
+    min-height: 64px;
+    padding: 8px 10px 8px 18px;
+    border: 1px solid var(--color-rule);
+    border-radius: var(--ks-revamp-radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--ks-revamp-shadow-soft);
+}
+.ks-app .ks-library-ask input { font-size: 16px; }
+.ks-app .ks-library-ask button { min-height: 44px; padding: 0 16px; border-radius: 999px; }
+.ks-app .ks-empty-card { padding: clamp(28px, 5vw, 64px); background: var(--color-surface); }
+.ks-app .ks-empty-card .ks-empty-icon { width: 32px; height: 32px; color: var(--color-accent); }
+.ks-app .ks-empty-card h3 { font-size: 20px; letter-spacing: -.025em; }
+.ks-app .ks-empty-card p { max-width: 520px; }
+.ks-app .ks-ask-view { padding: clamp(20px, 3vw, 44px); background: var(--color-paper); }
+.ks-app .ks-ask-view { width: 100%; min-width: 0; flex: 1 1 auto; align-self: stretch; box-sizing: border-box; }
+.ks-app .ks-ask-view .ks-chat { width: 100%; min-width: 0; flex: 1 1 auto; }
+.ks-app .ks-ask-view .ks-chat {
+    max-width: 1120px;
+    margin: 0 auto;
+    border: 1px solid var(--color-rule);
+    background: var(--color-surface);
+    box-shadow: var(--ks-revamp-shadow-soft);
+}
+.ks-app .ks-ask-view .ks-chat-head {
+    min-height: 82px;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--color-rule);
+    background: var(--color-surface);
+}
+.ks-app .ks-chat-brand { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--color-accent-line); border-radius: 14px; background: var(--color-accent-soft); }
+.ks-app .ks-chat-head-icon { width: 22px; height: 22px; color: var(--color-accent-text); }
+.ks-app .ks-chat-head-text h2 { font-size: 20px; font-weight: 650; letter-spacing: -.03em; }
+.ks-app .ks-chat-head-text p { margin-top: 3px; font-size: 12px; }
+.ks-app .ks-chat-scope select { min-height: 40px; border-radius: 999px; background: var(--color-paper); }
+.ks-app .ks-chat-head-actions { gap: 4px; }
+.ks-app .ks-chat-head-actions .ks-icon-button { width: 38px; height: 38px; border-radius: 50%; }
+.ks-app .ks-memory-filters { padding: 12px 24px; background: var(--color-surface); }
+.ks-app .ks-memory-filters form { border-radius: var(--ks-revamp-radius-md); background: var(--color-paper); }
+.ks-app .ks-chat-log { max-width: 820px; width: 100%; margin: 0 auto; padding: 32px clamp(20px, 5vw, 72px); gap: 26px; }
+.ks-app .ks-chat-empty { max-width: 560px; padding: 32px 0; }
+.ks-app .ks-chat-empty h3 { font-size: 28px; letter-spacing: -.04em; }
+.ks-app .ks-chat-empty > p { font-size: 14px; }
+.ks-app .ks-chat-starters { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ks-app .ks-chat-starters button { min-height: 108px; padding: 14px; border-radius: var(--ks-revamp-radius-md); background: var(--color-paper); }
+.ks-app .ks-chat-starters button:hover:not(:disabled) { border-color: var(--color-accent-line); background: var(--color-accent-soft); transform: translateY(-2px); }
+.ks-app .ks-chat-bubble { border-radius: var(--ks-revamp-radius-md); }
+.ks-app .ks-chat-user { border-color: transparent; background: var(--color-accent-soft); }
+.ks-app .ks-chat-assistant { padding: 6px 0; }
+.ks-app .ks-chat-ai-label { color: var(--color-accent-text); }
+.ks-app .ks-chat-sources summary { padding: 8px 0; color: var(--color-secondary); }
+.ks-app .ks-chat-source { border-radius: var(--ks-revamp-radius-sm); background: var(--color-paper); }
+.ks-app .ks-chat-response-actions { padding-top: 16px; }
+.ks-app .ks-chat-composer { max-width: 900px; width: 100%; margin: 0 auto; padding: 16px 24px 24px; border-top: 0; }
+.ks-app .ks-chat-input-wrap { min-height: 62px; padding: 8px 10px 8px 18px; border: 1px solid var(--color-rule); border-radius: var(--ks-revamp-radius-lg); background: var(--color-paper); box-shadow: var(--ks-revamp-shadow-soft); }
+.ks-app .ks-chat-input-wrap:focus-within { border-color: var(--color-accent-line); box-shadow: 0 0 0 3px var(--color-accent-soft), var(--ks-revamp-shadow-soft); }
+.ks-app .ks-chat-composer textarea { font-size: 15px; }
+.ks-app .ks-chat-send { width: 44px; height: 44px; border-radius: 50%; background: var(--color-solid); color: var(--color-solid-ink); }
+.ks-app .ks-chat-composer-hint, .ks-app .ks-chat-disclaimer { padding-inline: 4px; }
+.ks-app .ks-chat-disclaimer { color: var(--color-secondary); }
+@media (max-width: 760px) {
+    .ks-app .ks-sidebar { width: 200px; }
+    .ks-app .ks-main-toolbar { padding-inline: 16px; }
+    .ks-app .ks-home-heading { align-items: flex-start; gap: 20px; }
+    .ks-app .ks-home-controls { width: 100%; }
+    .ks-app .ks-home-controls .ks-home-schedule { flex: 1; justify-content: center; }
+    .ks-app .ks-ask-view { padding: 12px; }
+    .ks-app .ks-ask-view .ks-chat-head { flex-wrap: wrap; padding: 16px; }
+    .ks-app .ks-chat-scope { order: 3; width: 100%; margin: 8px 0 0; }
+    .ks-app .ks-chat-scope select { flex: 1; }
+    .ks-app .ks-chat-starters { grid-template-columns: 1fr; }
+    .ks-app .ks-chat-starters button { min-height: 68px; }
+    .ks-app .ks-chat-composer { padding-inline: 12px; }
+}
+@media (max-width: 540px) {
+    .ks-app .ks-workspace .ks-sidebar { width: 100%; }
+    .ks-app .ks-main { width: auto; align-self: stretch; }
+    .ks-app .ks-ask-view { width: auto; align-self: stretch; }
+    .ks-app .ks-ask-view .ks-chat { width: 100%; max-width: none; }
+    .ks-app .ks-home { padding-inline: 16px; }
+    .ks-app .ks-main-toolbar { height: 62px; }
+    .ks-app .ks-global-search { min-width: 0; }
+    .ks-app .ks-home-heading h1, .ks-app .ks-folder-title h1 { font-size: 30px; }
+    .ks-app .ks-library-ask { flex-wrap: wrap; padding: 10px; }
+    .ks-app .ks-library-ask input { flex-basis: 100%; }
+    .ks-app .ks-library-ask button { width: 100%; justify-content: center; }
+    .ks-app .ks-card-menu { right: 8px; left: auto; width: min(260px, calc(100vw - 32px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ks-app .ks-meetings-list .ks-meeting-card { transition: none; }
+}
+
+.ks-app .ks-card-more { display: inline-flex; align-items: center; justify-content: center; border: 0; color: var(--color-secondary); cursor: pointer; }
+.ks-app .ks-card-more svg { width: 18px; height: 18px; }
+.ks-app .ks-card-more[data-pressed], .ks-app .ks-card-more[aria-expanded='true'] { opacity: 1; background: var(--ks-raised); }
+.ks-app .ks-card-popover { z-index: 60; min-width: 220px; max-height: min(360px, var(--available-height, 360px)); overflow-y: auto; border: 1px solid var(--color-rule); border-radius: var(--radius-control); background: var(--color-surface); box-shadow: var(--ks-revamp-shadow); }
+.ks-app .ks-card-popover header { padding: 6px 10px 4px; color: var(--color-secondary); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.ks-app .ks-card-popover .ks-menu-folder { width: 16px; height: 16px; flex: none; }
+.ks-app .ks-folder-picker { right: auto; z-index: 60; }
+.ks-app .ks-folder-picker-dialog { outline: none; }
+.ks-app .ks-folder-dropdown { padding: 6px; }
+.ks-app .ks-folder-dropdown .ks-folder-picker-list { max-height: 320px; margin: 4px 0 0; padding: 0; }
+.ks-app .ks-folder-dropdown header { padding: 6px 10px; color: var(--ks-secondary); font-size: 10px; font-weight: 500; }
+.ks-app .ks-folder-dropdown .menu-item { min-height: 38px; gap: 8px; padding: 8px 10px; border-radius: 10px; font-size: 12px; }
+.ks-app .ks-folder-dropdown .menu-item > svg { width: 16px; height: 16px; flex: none; }
+.ks-app .ks-folder-dropdown .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: inherit; }
+.ks-app .ks-folder-dropdown .ks-folder-picker-search { padding: 4px 10px 8px; }
+.ks-app .ks-folder-dropdown .ks-folder-picker-search input { height: 34px; box-shadow: none; border-radius: 8px; }
+.ks-app .ks-folder-dropdown .ks-folder-picker-search input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.ks-app .ks-folder-dropdown .ks-folder-picker-status { padding: 8px 10px; color: var(--ks-secondary); font-size: 12px; }
+.ks-app .ks-folder-picker-series { width: min(420px, calc(100vw - 32px)); border: 1px solid var(--ks-line); border-radius: 20px; background: var(--ks-surface); color: var(--ks-text); }
+.ks-app .ks-folder-picker-series .ks-folder-picker-title { display: flex; align-items: center; gap: 8px; padding-right: 24px; font-size: 17px; }
+.ks-app .ks-folder-picker-series .ks-folder-picker-actions button { border-radius: 12px; }
+.ks-app .ks-chat-scope-trigger { width: 180px; max-width: 100%; min-height: 32px; height: 32px; font-size: 12px; }
+
+/* Library and Ask: compact HeroUI surfaces with shared Kesami theme tokens. */
+.ks-app .ks-library-view { max-width: 1120px; padding: 32px clamp(16px, 3vw, 40px) 48px; }
+.ks-app .ks-library-view .ks-folder-title { display: flex; align-items: center; gap: 14px; margin: 0 0 28px; padding: 0; }
+.ks-app .ks-library-view .ks-folder-heading-icon { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border-radius: 14px; background: var(--ks-raised); color: var(--folder-color, var(--ks-accent-text)); }
+.ks-app .ks-folder-heading-icon svg { width: 21px; height: 21px; }
+.ks-app .ks-library-view .ks-folder-heading-copy { flex: 1; min-width: 0; }
+.ks-app .ks-library-view .ks-folder-title h1 { font-size: clamp(23px, 2.2vw, 30px); font-weight: 600; line-height: 1.25; letter-spacing: -.035em; }
+.ks-app .ks-library-view .ks-folder-title p { margin-top: 5px; color: var(--ks-secondary); font-size: 12px; }
+.ks-app .ks-library-view .ks-library-refresh { min-height: 36px; height: 36px; padding: 0 12px; gap: 7px; border-radius: 12px; background: transparent; border-color: var(--ks-line); box-shadow: none; font-size: 12px; }
+.ks-app .ks-library-refresh svg { width: 14px; height: 14px; }
+.ks-app .ks-library-view .ks-meetings-list { display: flex; flex-direction: column; gap: 8px; }
+.ks-app .ks-library-view .ks-meeting-date-group { margin: 0; padding: 22px 4px 7px; font-size: 10px; font-weight: 600; letter-spacing: .07em; color: var(--ks-secondary); }
+.ks-app .ks-library-view .ks-meeting-date-group:first-child { padding-top: 0; }
+.ks-app .ks-library-view .ks-meeting-card { min-height: 70px; border-radius: 16px; background: var(--ks-surface); border: 1px solid var(--ks-line); box-shadow: none; transition: background-color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out); }
+.ks-app .ks-library-view .ks-meeting-card:hover,
+.ks-app .ks-library-view .ks-meeting-card:focus-within { background: var(--ks-hover); border-color: var(--ks-line-strong); box-shadow: none; transform: none; }
+.ks-app .ks-library-view .ks-meeting-card-body { position: static; display: flex; justify-content: flex-start; width: 100%; min-height: 70px; height: auto; padding: 14px 52px 14px 16px; gap: 13px; color: var(--ks-text); border: 0; border-radius: inherit; background: transparent; box-shadow: none; text-align: left; transform: none; isolation: auto; }
+.ks-app .ks-library-view .ks-meeting-card-body:focus-visible { outline-offset: -3px; }
+.ks-app .ks-library-view .ks-row-icon { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 11px; background: var(--ks-raised); color: var(--ks-secondary); }
+.ks-app .ks-library-view .ks-row-icon svg { width: 17px; height: 17px; }
+.ks-app .ks-library-view .ks-row-copy { flex: 1; min-width: 0; }
+.ks-app .ks-library-view .ks-row-copy h3 { font-size: 14px; font-weight: 550; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ks-app .ks-library-view .ks-row-copy p { margin-top: 3px; font-size: 11px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ks-app .ks-library-view .ks-row-duration { margin-left: auto; padding: 0; flex-shrink: 0; font-size: 11px; color: var(--ks-secondary); white-space: nowrap; }
+.ks-app .ks-library-view .ks-card-trailing { top: 18px; right: 10px; }
+.ks-app .ks-library-view .ks-card-more { width: 32px; height: 32px; border-radius: 10px; }
+.ks-app .ks-library-view .ks-library-ask { position: static; display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; min-height: 58px; margin: 24px 0 0; padding: 9px 10px 9px 16px; border: 1px solid var(--ks-line); border-radius: 18px; background: var(--ks-surface); box-shadow: none; }
+.ks-app .ks-library-ask-icon { flex: 0 0 18px; width: 18px; height: 18px; color: var(--ks-accent-text); }
+.ks-app .ks-library-view .ks-library-ask input { flex: 1; width: auto; min-width: 0; height: 38px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ks-text); box-shadow: none; font-size: 13px; }
+.ks-app .ks-library-view .ks-library-ask input:focus-visible { outline: none; box-shadow: none; }
+.ks-app .ks-library-view .ks-library-ask:focus-within { border-color: var(--ks-accent-text); box-shadow: 0 0 0 2px var(--ks-accent-faint); }
+.ks-app .ks-library-view .ks-library-ask button { min-height: 36px; height: 36px; padding: 0 12px; gap: 7px; border: 0; border-radius: 12px; background: var(--ks-raised); color: var(--ks-secondary); font-size: 11px; }
+.ks-app .ks-library-view .ks-library-ask button:hover:not(:disabled) { background: var(--ks-hover); color: var(--ks-text); }
+.ks-app .ks-library-view .ks-library-ask .ks-library-ask-send { width: 36px; min-width: 36px; padding: 0; background: var(--ks-accent); color: var(--ks-accent-ink); }
+.ks-app .ks-library-view .ks-library-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 270px; margin-top: 24px; padding: 36px 24px; border: 1px dashed var(--ks-line-strong); border-radius: 22px; background: transparent; box-shadow: none; text-align: center; }
+.ks-app .ks-library-view .ks-library-empty > svg { width: 30px; height: 30px; margin: 0 0 4px; color: var(--ks-accent-text); }
+.ks-app .ks-library-view .ks-library-empty h3 { margin: 0; font-size: 19px; font-weight: 550; letter-spacing: -.025em; }
+.ks-app .ks-library-view .ks-library-empty p { max-width: 440px; margin: 0; font-size: 13px; line-height: 1.65; color: var(--ks-secondary); }
+.ks-app .ks-library-view .ks-library-empty .ks-button { min-height: 38px; height: 38px; margin: 6px 0 0; padding: 0 16px; border: 1px solid var(--ks-accent-line); border-radius: 12px; background: var(--ks-accent-faint); color: var(--ks-accent-text); font-size: 12px; }
+
+.ks-app .ks-ask-workspace { padding: 20px; min-width: 0; min-height: 0; }
+.ks-app .ks-ask-workspace .ks-chat { width: 100%; max-width: 1100px; min-height: 0; margin: 0 auto; border: 1px solid var(--ks-line); border-radius: 24px; background: var(--ks-surface); box-shadow: none; overflow: hidden; }
+.ks-app .ks-ask-workspace .ks-chat-head { min-height: 76px; padding: 18px 24px; gap: 12px; background: transparent; }
+.ks-app .ks-ask-workspace .ks-chat-brand { width: 38px; height: 38px; border: 0; border-radius: 12px; background: var(--ks-accent-faint); }
+.ks-app .ks-ask-workspace .ks-chat-head-icon { width: 20px; height: 20px; color: var(--ks-accent-text); }
+.ks-app .ks-ask-workspace .ks-chat-head-text h2 { font-size: 17px; font-weight: 600; letter-spacing: -.025em; }
+.ks-app .ks-ask-workspace .ks-chat-head-text p { font-size: 11px; color: var(--ks-secondary); }
+.ks-app .ks-ask-workspace .ks-chat-scope { gap: 8px; font-size: 11px; }
+.ks-app .ks-ask-workspace .ks-chat-scope-trigger { width: 180px; min-height: 36px; height: 36px; border: 1px solid var(--ks-line); border-radius: 12px; background: transparent; font-size: 12px; }
+.ks-app .ks-ask-workspace .ks-chat-head-actions { gap: 3px; }
+.ks-app .ks-ask-workspace .ks-chat-head-actions .ks-icon-button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 10px; color: var(--ks-secondary); background: transparent; box-shadow: none; }
+.ks-app .ks-ask-workspace .ks-chat-head-actions .ks-icon-button svg { width: 16px; height: 16px; }
+.ks-app .ks-ask-workspace .ks-memory-filters { padding: 12px 24px 4px; }
+.ks-app .ks-ask-workspace .ks-memory-filters summary { padding: 7px 12px; border-radius: 11px; font-size: 11px; }
+.ks-app .ks-ask-workspace .ks-chat-log { width: 100%; max-width: none; min-height: 0; margin: 0; padding: 24px; gap: 28px; }
+.ks-app .ks-ask-workspace .ks-chat-row { width: min(100%, 720px); margin-inline: auto; }
+.ks-app .ks-ask-workspace .ks-chat-assistant { max-width: 100%; padding: 0; color: var(--ks-text); }
+.ks-app .ks-ask-workspace .ks-chat-markdown { font-size: 14px; line-height: 1.8; }
+.ks-app .ks-ask-workspace .ks-chat-ai-label { margin-bottom: 10px; font-size: 11px; color: var(--ks-accent-text); }
+.ks-app .ks-ask-workspace .ks-chat-user { max-width: 85%; padding: 11px 16px; border-radius: 18px 18px 6px 18px; background: var(--ks-raised); border: 0; color: var(--ks-text); }
+.ks-app .ks-ask-workspace .ks-chat-citation { padding: 3px 7px; border-radius: 8px; background: var(--ks-raised); border-color: var(--ks-line); font-size: 10px; }
+.ks-app .ks-ask-workspace .ks-chat-coverage { margin-top: 10px; font-size: 10px; color: var(--ks-secondary); }
+.ks-app .ks-ask-workspace .ks-chat-sources { margin-top: 10px; }
+.ks-app .ks-ask-workspace .ks-chat-sources summary { display: list-item; width: fit-content; padding: 6px 0; font-size: 11px; }
+.ks-app .ks-ask-workspace .ks-chat-source { padding: 12px 14px; border-radius: 12px; background: var(--ks-bg); }
+.ks-app .ks-chat .ks-chat-response-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--ks-line); }
+.ks-app .ks-chat .ks-chat-copy { height: 30px; min-height: 30px; padding: 0 8px; border-radius: 8px; font-size: 11px; background: transparent; color: var(--ks-secondary); }
+.ks-app .ks-chat .ks-chat-followups { display: flex; flex-wrap: wrap; gap: 5px; margin-left: auto; }
+.ks-app .ks-chat .ks-chat-followups button { height: 30px; min-height: 30px; padding: 0 10px; border: 1px solid var(--ks-line); border-radius: 9px; background: transparent; color: var(--ks-secondary); font-size: 10px; }
+.ks-app .ks-ask-workspace .ks-chat-empty { max-width: 560px; width: 100%; padding: 24px 0; }
+.ks-app .ks-ask-workspace .ks-chat-empty h3 { font-size: 27px; }
+.ks-app .ks-ask-workspace .ks-chat-starters { grid-template-columns: minmax(0, 1fr); }
+.ks-app .ks-ask-workspace .ks-chat-starters button { height: auto; min-height: 66px; padding: 13px 16px; border-radius: 14px; background: transparent; white-space: normal; }
+.ks-app .ks-ask-workspace .ks-chat-composer { width: min(100%, 768px); max-width: none; padding: 12px 24px 16px; margin: 0 auto; background: transparent; }
+.ks-app .ks-ask-workspace .ks-chat-input-wrap { width: 100%; min-height: 58px; padding: 8px 10px 8px 16px; gap: 12px; border: 1px solid var(--ks-line-strong); border-radius: 18px; background: var(--ks-bg); box-shadow: none; outline: none; }
+.ks-app .ks-ask-workspace .ks-chat-input-wrap:focus-within { border-color: var(--ks-accent-text); outline: none; box-shadow: 0 0 0 2px var(--ks-accent-faint); }
+.ks-app .ks-ask-workspace .ks-chat-composer textarea { min-height: 36px; padding: 8px 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 20px; color: var(--ks-text); }
+.ks-app .ks-ask-workspace .ks-chat-send { width: 36px; min-width: 36px; height: 36px; padding: 0; margin: 0; border-radius: 12px; background: var(--ks-accent); color: var(--ks-accent-ink); }
+.ks-app .ks-ask-workspace .ks-chat-send:disabled { background: var(--ks-raised); color: var(--ks-secondary); }
+.ks-app .ks-ask-workspace .ks-chat-composer-hint { margin-top: 8px; font-size: 10px; }
+.ks-app .ks-ask-workspace .ks-chat-disclaimer { margin-top: 6px; font-size: 10px; color: var(--ks-secondary); }
+@media (max-width: 760px) {
+    .ks-app .ks-ask-workspace { padding: 12px; }
+    .ks-app .ks-ask-workspace .ks-chat-head { flex-wrap: wrap; padding: 16px; }
+    .ks-app .ks-ask-workspace .ks-chat-scope { flex: 1 1 100%; order: 3; margin: 0; }
+    .ks-app .ks-ask-workspace .ks-chat-scope-trigger { width: 100%; }
+    .ks-app .ks-ask-workspace .ks-chat-log { padding: 20px 16px; }
+    .ks-app .ks-ask-workspace .ks-memory-filters { padding-inline: 16px; }
+    .ks-app .ks-ask-workspace .ks-chat-composer { padding-inline: 16px; }
+}
+@media (max-width: 540px) {
+    .ks-app .ks-library-view .ks-folder-title { flex-wrap: wrap; gap: 10px; }
+    .ks-app .ks-library-view .ks-folder-title h1 { font-size: 22px; }
+    .ks-app .ks-library-view .ks-folder-heading-copy { flex-basis: calc(100% - 54px); }
+    .ks-app .ks-library-view .ks-library-refresh { margin-left: 54px; }
+    .ks-app .ks-library-view .ks-meeting-card-body { padding-inline: 12px 44px; gap: 10px; flex-wrap: wrap; }
+    .ks-app .ks-library-view .ks-row-copy { flex-basis: calc(100% - 44px); }
+    .ks-app .ks-library-view .ks-row-duration { margin-left: 44px; font-size: 10px; }
+    .ks-app .ks-library-view .ks-library-ask { flex-wrap: wrap; }
+    .ks-app .ks-library-view .ks-library-ask input { flex-basis: calc(100% - 30px); }
+    .ks-app .ks-library-view .ks-library-ask button { width: auto; margin-left: 28px; }
+    .ks-app .ks-library-view .ks-library-empty { padding: 28px 16px; min-height: 260px; }
+    .ks-app .ks-chat .ks-chat-followups { margin-left: 0; }
+    .ks-app .ks-ask-workspace .ks-chat-brand { display: none; }
+    .ks-app .ks-ask-workspace .ks-chat-head { gap: 8px; }
+    .ks-app .ks-ask-workspace .ks-chat-head-text { flex-basis: 80px; }
+    .ks-app .ks-ask-workspace .ks-chat-head-actions .ks-icon-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+}
+.ks-app .ks-field-select { min-height: 36px; height: 36px; padding: 0 10px; border: 1px solid var(--color-rule); border-radius: var(--radius-control); background: var(--color-paper); color: var(--color-ink); font-size: var(--text-sm); }
+.ks-app .ks-field-select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.ks-app .ks-playback-rate.ks-field-select { width: auto; min-width: 72px; height: 30px; min-height: 30px; font-size: 11px; background: transparent; }
+.ks-app .ks-memory-filters .ks-field-select, .ks-app .ks-action-form .ks-field-select { width: 100%; margin-top: 6px; }
+
+/* Open-source chat compositions; shared by workspace and meeting-side chat. */
+.ks-app .ks-chat .chat-conversation { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.ks-app .ks-chat .chat-conversation .ks-chat-log { overflow-anchor: none; scroll-behavior: auto; }
+.ks-app .ks-chat .chat-conversation [data-chat-message] { animation: none; }
+.ks-app .ks-chat .chat-conversation__content { display: flex; flex-direction: column; flex: 1 0 auto; gap: 28px; width: min(100%, 720px); min-width: 0; min-height: 100%; margin-inline: auto; }
+.ks-app .ks-chat .chat-conversation__scroll-anchor { flex: 0 0 1px; height: 1px; }
+.ks-app .ks-chat .chat-conversation__scroll-button { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 1; min-height: 34px; height: 34px; padding: 0 12px; gap: 6px; border: 1px solid var(--ks-line-strong); border-radius: 999px; background: var(--ks-raised); color: var(--ks-text); font-size: 11px; box-shadow: 0 4px 14px var(--ks-shadow-soft); }
+.ks-app .ks-chat .chat-conversation__scroll-button svg { width: 14px; height: 14px; }
+.ks-app .ks-chat .chat-message__body, .ks-app .ks-chat .chat-message__content, .ks-app .ks-chat .chat-message__actions { min-width: 0; overflow-wrap: anywhere; }
+.ks-app .ks-chat .chat-message__body { width: 100%; }
+.ks-app .ks-chat .chat-loader__skeleton { width: min(100%, 480px); padding-block: 18px 6px; }
+.ks-app .ks-chat .chat-loader__lines { display: flex; flex-direction: column; gap: 12px; }
+.ks-app .ks-chat .chat-loader__line { height: 10px; width: 100%; border-radius: 6px; background: var(--ks-line); }
+.ks-app .ks-chat .chat-loader__line:nth-child(2) { width: 88%; }
+.ks-app .ks-chat .chat-loader__line:nth-child(3) { width: 58%; }
+.ks-app .ks-chat .chat-progress { width: 100%; color: var(--ks-secondary); }
+.ks-app .ks-chat .chat-progress .disclosure__heading { margin: 0; }
+.ks-app .ks-chat .chat-progress__trigger { height: auto; min-height: 32px; max-width: 100%; padding: 4px 0; gap: 8px; background: transparent; color: var(--ks-secondary); font-size: 12px; font-weight: 400; white-space: normal; text-align: left; }
+.ks-app .ks-chat .chat-progress__trigger > svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--ks-accent-text); }
+.ks-app .ks-chat .chat-progress__steps { display: grid; gap: 16px; margin: 10px 0 0 7px; padding: 0 0 0 18px; border-left: 1px solid var(--ks-line-strong); list-style: none; font-size: 11px; }
+.ks-app .ks-chat .chat-progress__steps li { position: relative; }
+.ks-app .ks-chat .chat-progress__steps li::before { content: ''; position: absolute; left: -22px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--ks-accent-text); }
+.ks-app .ks-chat .chat-progress__steps strong { font-weight: 500; color: var(--ks-text); }
+.ks-app .ks-chat .chat-progress__steps p { margin: 4px 0 0; line-height: 1.6; }
+@media (prefers-reduced-motion: reduce) {
+    .ks-app .chat-loader__line, .ks-app .chat-loader__line::before { animation: none; }
+}
+:root[data-reduced-motion='true'] .ks-app .chat-loader__line,
+:root[data-reduced-motion='true'] .ks-app .chat-loader__line::before { animation: none; }
+.ks-app .ks-workspace.is-sidebar-collapsed.is-desktop .ks-main-toolbar { height: 48px; padding-top: 0; padding-bottom: 0; border-bottom: 0; }
+.ks-app .ks-workspace.is-sidebar-collapsed.is-desktop .ks-global-search { min-height: 36px; }
+.ks-app .ks-workspace.is-sidebar-collapsed.is-desktop .ks-theme-toggle { width: 36px; height: 36px; }
+
+/* HeroUI meeting cards share one content hierarchy in list and grid layouts. */
+.ks-app .ks-library-view .ks-recent-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.ks-app .ks-library-view .ks-recent-heading h2 { flex: 1; }
+.ks-app .ks-meeting-layout { display: inline-flex; flex: none; gap: 2px; padding: 3px; border: 1px solid var(--ks-line); border-radius: 12px; background: var(--ks-raised); }
+.ks-app .ks-meeting-layout button { display: inline-flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; height: 30px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent; color: var(--ks-secondary); box-shadow: none; font-size: 11px; font-weight: 500; }
+.ks-app .ks-meeting-layout button[aria-pressed='true'] { background: var(--ks-surface); color: var(--ks-text); }
+.ks-app .ks-meeting-layout button:hover { color: var(--ks-text); }
+.ks-app .ks-meeting-layout button:focus-visible { outline: 2px solid var(--ks-accent-text); outline-offset: 2px; }
+.ks-app .ks-meeting-layout svg { width: 14px; height: 14px; }
+.ks-app .ks-library-view .ks-meetings-list { gap: 12px; }
+.ks-app .ks-library-view .ks-meeting-date-group { padding: 16px 2px 0; letter-spacing: 0; font-size: 12px; font-weight: 500; }
+.ks-app .ks-library-view .ks-meeting-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 24px; min-width: 0; min-height: 112px; padding: 18px 54px 18px 18px; overflow: hidden; border-radius: 18px; background: var(--ks-surface); color: var(--ks-text); box-shadow: none; transition: none; }
+.ks-app .ks-library-view .ks-meeting-card:hover { background: var(--ks-surface); border-color: var(--ks-line-strong); }
+.ks-app .ks-library-view .ks-meeting-card:focus-within { background: var(--ks-surface); }
+.ks-app .ks-library-view .ks-meeting-card-body { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; min-height: 0; padding: 0; border-radius: inherit; background: transparent; }
+.ks-app .ks-library-view .ks-meeting-card-body:hover,
+.ks-app .ks-library-view .ks-meeting-card-body[data-hovered],
+.ks-app .ks-library-view .ks-meeting-card-body[data-pressed] { background: transparent; transform: none; }
+.ks-app .ks-library-view .ks-meeting-card-body:focus-visible { outline: 2px solid var(--ks-accent-text); outline-offset: -3px; }
+.ks-app .ks-library-view .ks-meeting-card-header { grid-column: 1; display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 0; pointer-events: none; }
+.ks-app .ks-library-view .ks-row-icon { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 13px; color: var(--ks-accent-text); background: var(--ks-accent-faint); }
+.ks-app .ks-library-view .ks-row-icon svg { width: 19px; height: 19px; }
+.ks-app .ks-library-view .ks-row-copy h3 { margin: 0; color: var(--ks-text); font-size: 14px; font-weight: 600; line-height: 1.45; letter-spacing: -.02em; }
+.ks-app .ks-library-view .ks-row-copy p { margin: 3px 0 0; color: var(--ks-secondary); font-size: 11px; line-height: 1.5; }
+.ks-app .ks-library-view .ks-meeting-card-content { grid-column: 1; display: block; min-width: 0; padding: 0 0 0 52px; pointer-events: none; }
+.ks-app .ks-library-view .ks-meeting-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; margin: 0; color: var(--ks-secondary); font-size: 12px; line-height: 1.7; }
+.ks-app .ks-library-view .ks-meeting-preview.is-empty { color: var(--ks-secondary); }
+.ks-app .ks-library-view .ks-meeting-card-footer { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 10px; min-width: 0; max-width: 160px; margin: 0; padding: 0; pointer-events: none; }
+.ks-app .ks-library-view .ks-row-duration { display: inline-flex; align-items: center; gap: 5px; margin: 0; color: var(--ks-secondary); font-size: 11px; }
+.ks-app .ks-library-view .ks-row-duration svg { width: 13px; height: 13px; flex: none; }
+.ks-app .ks-meeting-folder { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; padding: 4px 8px; border-radius: 7px; background: var(--ks-raised); color: var(--ks-secondary); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ks-app .ks-meeting-folder svg { width: 12px; height: 12px; flex: none; color: var(--folder-color, var(--ks-secondary)); }
+.ks-app .ks-library-view .ks-card-trailing { top: 14px; right: 10px; z-index: 2; }
+.ks-app .ks-library-view .ks-card-more { opacity: 1; color: var(--ks-secondary); }
+.ks-app .ks-library-view .ks-meetings-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ks-app .ks-meetings-cards .ks-meeting-date-group { grid-column: 1 / -1; }
+.ks-app .ks-library-view .ks-meetings-cards .ks-meeting-card { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding: 20px; min-height: 224px; }
+.ks-app .ks-meetings-cards .ks-meeting-card-header { align-items: flex-start; padding-right: 26px; }
+.ks-app .ks-library-view .ks-meetings-cards .ks-row-copy h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+.ks-app .ks-meetings-cards .ks-meeting-card-content { flex: 1; padding: 0; }
+.ks-app .ks-meetings-cards .ks-meeting-preview { -webkit-line-clamp: 3; }
+.ks-app .ks-meetings-cards .ks-meeting-card-footer { flex-direction: row; align-items: center; justify-content: space-between; max-width: none; padding-top: 14px; border-top: 1px solid var(--ks-line); }
+@media (min-width: 1300px) {
+    .ks-app .ks-library-view .ks-meetings-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+    .ks-app .ks-library-view .ks-meetings-cards { grid-template-columns: minmax(0, 1fr); }
+    .ks-app .ks-library-view .ks-meeting-card { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px; padding-right: 48px; }
+    .ks-app .ks-library-view .ks-meeting-card-content { padding: 0; }
+    .ks-app .ks-library-view .ks-meeting-card-footer { grid-column: 1; grid-row: auto; flex-direction: row; align-items: center; justify-content: flex-start; max-width: none; }
+    .ks-app .ks-library-view .ks-meetings-cards .ks-meeting-card-header { padding-right: 28px; }
+    .ks-app .ks-library-view .ks-folder-title .ks-meeting-layout { margin-left: 54px; }
+    .ks-app .ks-library-view .ks-recent-heading h2 { flex-basis: 100%; }
+    .ks-app .ks-library-view .ks-recent-heading .ks-view-all { margin-left: auto; }
+}
+
+/* Sidebar collapse: the collapse and expand toggles must land on the same pixel so the control does not
+   jump. The toolbar's backdrop-filter makes it the containing block for position:fixed children, so the
+   expand toggle was measured from the toolbar (and from main's 8px margin) while the collapse toggle was
+   measured from the window. Pin both explicitly and centre them on the 48px header row, which is also the
+   row the native traffic lights sit on. */
+@media (min-width: 541px) {
+    .ks-app .ks-workspace.is-sidebar-collapsed.is-desktop .ks-main { margin-left: 0; }
+    .ks-app .ks-workspace.is-desktop .ks-sidebar-toggle { top: 8px; left: 84px; }
+    .ks-app .ks-workspace.is-desktop .ks-sidebar-toggle.ks-sidebar-expand { position: absolute; top: 8px; left: 84px; margin: 0; }
 }

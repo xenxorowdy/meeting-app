@@ -2,13 +2,14 @@ import { PricingView } from './PricingView';
 import { AccountSecurity } from './AccountSecurity';
 import { PlanBilling } from './PlanBilling';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanelLeftClose, PanelLeftOpen, ArrowUpRight, ChevronLeft, ChevronRight, CalendarDays, ExternalLink, FileText, Folder, Home, Library, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, Search, Settings, Sparkles, Star, Sun, UserRound, X } from 'lucide-react';
-import { LogoMark } from '@/components/brand/Logo';
+import { ArrowUp, ArrowUpRight, ChevronLeft, ChevronRight, CalendarDays, Clock3, ExternalLink, FileText, Folder, Home, LayoutGrid, Library, List, ListChecks, LogIn, LogOut, Mic, Monitor, MoreHorizontal, Moon, Plus, RefreshCw, Search, Settings, Sparkles, Star, Sun, Trash2, UserRound, X } from 'lucide-react';
+import { Button, Card, Dropdown, Header, Input, Label, Separator } from '@heroui/react';
 import { apiRequest } from '@/lib/backend';
 import { MeetingChatPanel } from '@/components/MeetingChatPanel';
 import { MemoryFilters } from '@/components/MemoryFilters';
 import { memoryScope } from '@/lib/chat';
 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AGENDA_HORIZON_DAYS, calendarEventLink, countdownLabel, eventFolderId, seriesFolderId } from '@/lib/calendarEvents';
 import { AgendaFolderPicker } from './AgendaFolderPicker';
@@ -18,7 +19,25 @@ import { durationLabel, FOLDER_COLORS, meetingCountLabel } from './designHelpers
 const AGENDA_PAGE_DAYS = 2;
 const FOLDER_COLOR_KEY = 'kesami.folder-colors';
 const SIDEBAR_COLLAPSED_KEY = 'kesami.sidebar-collapsed';
+const MEETING_LAYOUT_KEY = 'kesami.meeting-layout';
+const UNFILED_KEY = '__unfiled';
+const DELETE_KEY = '__delete';
 const EMPTY_FOLDER_RULES = { events: {}, series: {} };
+
+function SidebarIcon({ filled, ...props }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <defs>
+                <clipPath id="ks-sidebar-icon-clip">
+                    <rect x="3" y="3" width="18" height="18" rx="6" />
+                </clipPath>
+            </defs>
+            {filled && <rect x="3" y="3" width="6" height="18" fill="currentColor" stroke="none" clipPath="url(#ks-sidebar-icon-clip)" />}
+            <path d="M9 3v18" />
+            <rect x="3" y="3" width="18" height="18" rx="6" />
+        </svg>
+    );
+}
 
 function readFolderColors() {
     try {
@@ -28,61 +47,84 @@ function readFolderColors() {
     }
 }
 
-function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled }) {
-    const [menu, setMenu] = useState(false);
+function MeetingCard({ meeting, folders, onOpen, onMove, onDelete, disabled, portalContainer }) {
     const folder = folders.find(item => item.id === meeting.metadata?.collectionId);
     const participants = meeting.participants || [];
+    const current = meeting.metadata?.collectionId || UNFILED_KEY;
+    const title = meeting.title || 'Untitled meeting';
+    const titleId = React.useId();
+    const preview = (meeting.summaryMarkdown || '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/(^|\n)\s*(?:#{1,6}\s+|[-*+]\s+|>\s*)/g, '$1')
+        .replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 280);
 
     return (
-        <article className="ks-meeting-card">
-            <button className="ks-meeting-card-body" disabled={disabled} onClick={onOpen}>
+        <Card role="article" aria-labelledby={titleId} variant="default" className="ks-meeting-card" data-disabled={disabled || undefined}>
+            <Button type="button" variant="ghost" className="ks-meeting-card-body" aria-label={`Open ${title}`} isDisabled={disabled} onPress={onOpen} />
+            <Card.Header className="ks-meeting-card-header">
                 <span className="ks-row-icon" aria-hidden="true">{participants.length ? <UserRound /> : <FileText />}</span>
                 <div className="ks-row-copy">
-                    <h3>{meeting.title || 'Untitled meeting'}</h3>
-                    <p>{participants.length ? participants.join(', ') : 'You'}{folder ? ` · ${folder.name}` : ''}</p>
+                    <Card.Title id={titleId}>{title}</Card.Title>
+                    <Card.Description>{participants.length ? participants.join(', ') : 'No participants listed'}</Card.Description>
                 </div>
-                <time className="ks-row-duration">{durationLabel(meeting.durationSeconds)}</time>
-            </button>
+            </Card.Header>
+            <Card.Content className="ks-meeting-card-content">
+                <p className={`ks-meeting-preview${preview ? '' : ' is-empty'}`}>{preview || 'No summary yet'}</p>
+            </Card.Content>
+            <Card.Footer className="ks-meeting-card-footer">
+                <span className="ks-row-duration"><Clock3 aria-hidden="true" />{durationLabel(meeting.durationSeconds)}</span>
+                <span className="ks-meeting-folder" style={folder ? { '--folder-color': folder.color } : undefined}><Folder aria-hidden="true" />{folder?.name || 'Unfiled'}</span>
+            </Card.Footer>
             <div className="ks-card-trailing">
-                <button className="ks-card-more" aria-label={`Options for ${meeting.title}`} aria-expanded={menu} onClick={() => setMenu(!menu)}>
-                    <MoreHorizontal />
-                </button>
-            </div>
-            {menu && (
-                <>
-                    <button className="ks-menu-dismiss" aria-label="Close meeting menu" onClick={() => setMenu(false)} />
-                    <div className="ks-card-menu">
-                        <label>
-                            MOVE TO FOLDER
-                            <select
-                                aria-label={`Move ${meeting.title} to folder`}
-                                value={meeting.metadata?.collectionId || ''}
-                                onChange={event => {
-                                    onMove(meeting.id, event.target.value || null);
-                                    setMenu(false);
-                                }}
-                            >
-                                <option value="">Unfiled</option>
-                                {folders.map(item => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <button
-                            className="ks-delete-button"
-                            onClick={() => {
-                                setMenu(false);
-                                onDelete(meeting);
+                <Dropdown>
+                    <Button type="button" variant="ghost" isIconOnly className="ks-card-more" isDisabled={disabled} aria-label={`Options for ${title}`}>
+                        <MoreHorizontal />
+                    </Button>
+                    <Dropdown.Popover placement="bottom end" className="ks-card-popover" UNSTABLE_portalContainer={portalContainer}>
+                        <Dropdown.Menu
+                            aria-label={`Options for ${title}`}
+                            onAction={key => {
+                                if (key === DELETE_KEY) onDelete(meeting);
+                                else onMove(meeting.id, key === UNFILED_KEY ? null : String(key));
                             }}
                         >
-                            Delete meeting
-                        </button>
-                    </div>
-                </>
-            )}
-        </article>
+                            <Dropdown.Section selectionMode="single" selectedKeys={new Set([current])}>
+                                <Header>Add to folder</Header>
+                                <Dropdown.Item id={UNFILED_KEY} textValue="Unfiled">
+                                    <Folder className="ks-menu-folder" aria-hidden="true" />
+                                    <Label>Unfiled</Label>
+                                    <Dropdown.ItemIndicator />
+                                </Dropdown.Item>
+                                {folders.map(item => (
+                                    <Dropdown.Item key={item.id} id={item.id} textValue={item.name}>
+                                        <Folder className="ks-menu-folder" style={{ color: item.color }} aria-hidden="true" />
+                                        <Label>{item.name}</Label>
+                                        <Dropdown.ItemIndicator />
+                                    </Dropdown.Item>
+                                ))}
+                            </Dropdown.Section>
+                            <Separator />
+                            <Dropdown.Item id={DELETE_KEY} textValue="Delete meeting" variant="danger">
+                                <Trash2 className="ks-menu-folder" aria-hidden="true" />
+                                <Label>Delete meeting</Label>
+                            </Dropdown.Item>
+                        </Dropdown.Menu>
+                    </Dropdown.Popover>
+                </Dropdown>
+            </div>
+        </Card>
+    );
+}
+
+function MeetingLayoutControl({ layout, onChange }) {
+    return (
+        <div className="ks-meeting-layout" role="group" aria-label="Meeting layout">
+            {[['list', List, 'List'], ['cards', LayoutGrid, 'Cards']].map(([value, Icon, label]) => (
+                <Button key={value} type="button" variant="tertiary" aria-label={`${label} view`} aria-pressed={layout === value} onPress={() => onChange(value)}>
+                    <Icon aria-hidden="true" /><span>{label}</span>
+                </Button>
+            ))}
+        </div>
     );
 }
 
@@ -154,6 +196,13 @@ export function DesignWorkspace({
     const [toolsOpen, setToolsOpen] = useState(false);
     const [updatingNoise, setUpdatingNoise] = useState(false);
     const [savedColors, setSavedColors] = useState(readFolderColors);
+    const [meetingLayout, setMeetingLayout] = useState(() => {
+        try { return localStorage.getItem(MEETING_LAYOUT_KEY) === 'cards' ? 'cards' : 'list'; } catch { return 'list'; }
+    });
+    const changeMeetingLayout = value => {
+        setMeetingLayout(value);
+        try { localStorage.setItem(MEETING_LAYOUT_KEY, value); } catch { /* The layout still works for this window. */ }
+    };
     const [clock, setClock] = useState(() => Date.now());
     const isMeeting = ['live', 'notes', 'replay'].includes(activeTab);
     useEffect(() => {
@@ -305,7 +354,6 @@ export function DesignWorkspace({
         <div ref={bindWorkspace} className={`ks-workspace${isMeeting ? ' ks-workspace-meeting' : ''}${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}${isDesktop ? ' is-desktop' : ''}`}>
             <aside className="ks-sidebar" id="ks-sidebar" aria-label="Workspace navigation">
                 <div className={`ks-traffic drag-region${isDesktop ? ' ks-traffic-desktop' : ''}`}>
-                    <span className="ks-sidebar-brand"><LogoMark size={24} /> <span className="ks-nav-label">Kesami</span></span>
                     <button
                         type="button"
                         className="ks-sidebar-toggle no-drag"
@@ -315,7 +363,7 @@ export function DesignWorkspace({
                         title="Collapse sidebar"
                         onClick={toggleSidebar}
                     >
-                        <PanelLeftClose aria-hidden="true" />
+                        <SidebarIcon filled aria-hidden="true" />
                     </button>
                 </div>
                 <div className="ks-new-meeting">
@@ -448,7 +496,7 @@ export function DesignWorkspace({
                             title="Expand sidebar"
                             onClick={toggleSidebar}
                         >
-                            <PanelLeftOpen aria-hidden="true" />
+                            <SidebarIcon aria-hidden="true" />
                         </button>
                     )}
                     <label className="ks-global-search">
@@ -476,7 +524,7 @@ export function DesignWorkspace({
                 )}
                 {(activeTab === 'home' || activeTab === 'history') && (
                     <div className="ks-home-scroll" key={activeTab}>
-                        <div className={`ks-home${activeTab === 'home' ? ` ks-dashboard${showAgenda ? '' : ' ks-dashboard-no-agenda'}` : ''}`}>
+                        <div className={`ks-home ks-library-view${activeTab === 'home' ? ` ks-dashboard${showAgenda ? '' : ' ks-dashboard-no-agenda'}` : ''}`}>
                             {activeTab === 'home' ? (
                                 <>
                                     <header className="ks-home-heading">
@@ -554,6 +602,7 @@ export function DesignWorkspace({
                                                                     folderId={eventFolderId(event, folderRules)}
                                                                     seriesFolderId={seriesFolderId(event, folderRules)}
                                                                     disabled={!isConnected}
+                                                                    portalContainer={portalContainer}
                                                                     onAssign={(folderId, applyToSeries) => assignEventFolder(event, folderId, applyToSeries)}
                                                                     onCreate={addFolder}
                                                                 />
@@ -584,6 +633,7 @@ export function DesignWorkspace({
                                     </section>}
                                     <div className="ks-section-label ks-recent-heading">
                                         <h2>Recent meetings</h2>
+                                        <MeetingLayoutControl layout={meetingLayout} onChange={changeMeetingLayout} />
                                         <button className="ks-view-all" onClick={() => openFolder('all')}>
                                             View all
                                         </button>
@@ -592,18 +642,19 @@ export function DesignWorkspace({
                             ) : (
                                 <>
                                     <header className="ks-folder-title">
-                                        {folder && <i style={{ background: folder.color }} />}
-                                        <h1>{folder?.name || 'All meetings'}</h1>
-                                        <span>{meetingCountLabel(visible.length)}</span>
+                                        <span className="ks-folder-heading-icon" style={folder ? { '--folder-color': folder.color } : undefined}><Folder aria-hidden="true" /></span>
+                                        <div className="ks-folder-heading-copy">
+                                            <h1>{folder?.name || 'All meetings'}</h1>
+                                            <p>{meetingCountLabel(visible.length)} · Your meeting library</p>
+                                        </div>
+                                        <MeetingLayoutControl layout={meetingLayout} onChange={changeMeetingLayout} />
+                                        <Button type="button" variant="outline" className="ks-button ks-library-refresh" onPress={history.reload} isDisabled={history.isLoading}>
+                                            <RefreshCw aria-hidden="true" />Refresh
+                                        </Button>
                                     </header>
-                                    <div className="ks-library-search">
-                                        <button className="ks-button" onClick={history.reload}>
-                                            Refresh
-                                        </button>
-                                    </div>
                                 </>
                             )}
-                            <div className="ks-meetings-list">
+                            <div className={`ks-meetings-list ks-meetings-${meetingLayout}`}>
                                 {list.map((item, index) => (
                                     <React.Fragment key={item.id}>
                                     {(index === 0 || new Date(list[index - 1].startedAt).toDateString() !== new Date(item.startedAt).toDateString()) && <h3 className="ks-meeting-date-group">{new Date(item.startedAt).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}</h3>}
@@ -612,6 +663,7 @@ export function DesignWorkspace({
                                         meeting={item}
                                         folders={coloredFolders}
                                         disabled={locked}
+                                        portalContainer={portalContainer}
                                         onOpen={() => onSelectMeeting(item)}
                                         onMove={move}
                                         onDelete={setDeleting}
@@ -620,17 +672,18 @@ export function DesignWorkspace({
                                 ))}
                             </div>
                             {activeTab === 'history' && <form className="ks-library-ask" onSubmit={event => { event.preventDefault(); askLibrary(libraryQuestion); }}>
-                                <input aria-label="Ask about your meetings" placeholder="Ask anything" value={libraryQuestion} onChange={event => setLibraryQuestion(event.target.value)} maxLength={4000} />
-                                <button type="button" disabled={!isConnected} onClick={() => askLibrary('List recent action items with their owners and deadlines, citing the meetings.')}><Sparkles />List recent todos</button>
+                                <Sparkles className="ks-library-ask-icon" aria-hidden="true" />
+                                <Input variant="secondary" aria-label="Ask about your meetings" placeholder={folder ? `Ask about ${folder.name}…` : 'Ask about your meetings…'} value={libraryQuestion} onChange={event => setLibraryQuestion(event.target.value)} maxLength={4000} disabled={!isConnected} />
+                                {libraryQuestion.trim() ? <Button type="submit" variant="primary" isIconOnly className="ks-library-ask-send" aria-label="Ask Kesami" isDisabled={!isConnected}><ArrowUp aria-hidden="true" /></Button> : <Button type="button" variant="tertiary" isDisabled={!isConnected} onPress={() => askLibrary('List recent action items with their owners and deadlines, citing the meetings.')}><ListChecks aria-hidden="true" />List recent todos</Button>}
                             </form>}
                             {!list.length && (
-                                <div className="ks-empty-card">
+                                <div className="ks-empty-card ks-library-empty">
                                     <Library className="ks-empty-icon" aria-hidden="true" />
                                     <h3>{history.isLoading ? 'Loading meetings…' : query ? 'No matching meetings' : folderId !== 'all' ? 'This folder is ready for meetings' : 'Your next conversation starts here'}</h3>
                                     <p>{query ? 'Try a different title or a phrase from your meeting notes.' : 'Record a conversation to build a searchable collection of notes, decisions, and next steps.'}</p>
-                                    {!history.isLoading && !query && <button type="button" className="ks-button ks-primary" disabled={!canRecord} onClick={() => session.onStart()}>
+                                    {!history.isLoading && !query && <Button type="button" variant="secondary" className="ks-button ks-primary" isDisabled={!canRecord} onPress={() => session.onStart()}>
                                         <Mic /> {history.meetings.length ? 'Record a meeting' : 'Record your first meeting'}
-                                    </button>}
+                                    </Button>}
                                 </div>
                             )}
                         </div>
@@ -663,7 +716,7 @@ export function DesignWorkspace({
                     />
                 )}
                 {activeTab === 'ask' && (
-                    <div className="ks-ask-view">
+                    <div className="ks-ask-view ks-ask-workspace">
                         <MeetingChatPanel
                             draft={libraryDraft}
                             onDraftConsumed={() => setLibraryDraft(current => current ? { ...current, text: '' } : null)}
@@ -672,17 +725,22 @@ export function DesignWorkspace({
                             scopeLabel="Answers from your conversations"
                             onUpgrade={() => setActiveTab('pricing')}
                             scopeControl={
-                                <label className="ks-chat-scope">
-                                    Search in
-                                    <select aria-label="AI search scope" value={scope} onChange={event => { setScope(event.target.value); setLibraryDraft(null); }}>
-                                        <option value="all">All meetings</option>
-                                        {folders.map(item => (
-                                            <option key={item.id} value={item.id}>
-                                                {item.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
+                                <div className="ks-chat-scope">
+                                    <span id="ks-chat-scope-label">Search in</span>
+                                    <Select value={scope} onValueChange={value => { setScope(value); setLibraryDraft(null); }}>
+                                        <SelectTrigger aria-labelledby="ks-chat-scope-label" className="ks-chat-scope-trigger">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent UNSTABLE_portalContainer={portalContainer}>
+                                            <SelectItem value="all">All meetings</SelectItem>
+                                            {folders.map(item => (
+                                                <SelectItem key={item.id} value={item.id}>
+                                                    {item.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             }
                             isConnected={isConnected}
                             onSelectMeeting={onSelectMeeting}

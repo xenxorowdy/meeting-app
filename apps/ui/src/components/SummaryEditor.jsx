@@ -402,10 +402,10 @@ export function SummaryEditor({ meeting, people = [], onUpdateMeeting, onRegener
                             className="ks-notes-action"
                             onClick={handleRegenerate}
                             disabled={saving}
-                            aria-label={isGenerating ? 'Stop summary generation' : 'Regenerate summary'}
+                            aria-label={isGenerating ? 'Stop summary generation' : originalSummary ? 'Regenerate summary' : 'Generate summary'}
                         >
                             {isGenerating ? <Square aria-hidden="true" /> : <RotateCw aria-hidden="true" />}
-                            {isGenerating ? 'Stop' : 'Regenerate'}
+                            {isGenerating ? 'Stop' : originalSummary ? 'Regenerate' : 'Generate'}
                         </button>
                     )}
                     <button type="button" className={cn('ks-notes-action', copied === 'all' && 'is-copied')} onClick={handleCopyAllNotes}>
