@@ -37,3 +37,6 @@ Thumbs.db
 # Desktop packaging output
 apps/desktop/release/
 apps/desktop/packaging/generated/
+
+# Generated render/brag output (thumbnail paths exceed the Windows path limit)
+brag-output*/

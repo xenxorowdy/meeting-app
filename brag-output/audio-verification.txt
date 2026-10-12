@@ -1,2 +1,0 @@
-[Parsed_volumedetect_0 @ 0x768d045980] mean_volume: -25.7 dB
-[Parsed_volumedetect_0 @ 0x768d045980] max_volume: -1.8 dB

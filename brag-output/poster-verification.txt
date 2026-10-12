@@ -1,2 +1,0 @@
-[Parsed_psnr_0 @ 0x7863020780] PSNR y:43.421914 u:48.771455 v:43.989343 average:44.069114 min:44.069114 max:44.069114
-Audio PCM SHA-256 matches before and after poster finishing.

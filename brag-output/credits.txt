@@ -1,7 +1,0 @@
-Product UI and logo: current Kesami meeting-app source; fictional demo meeting contents.
-Voice: Kokoro-82M, af_heart, generated locally through Hyperframes TTS.
-Music: Happy Beats / Business Moves Vol. 1 by ende.app, bundled with the brag plugin.
-SFX: Kenney interface/click_003.ogg and impact/impactSoft_medium_001.ogg; CC0 per the plugin audio reference.
-Fonts: Inter and DM Mono, copied from the Kesami source assets; accompanying license files are in composition/assets/fonts/.
-Animation: GSAP 3.14.2, stored locally in composition/assets/runtime/.
-Composition and render: Hyperframes 0.8.113, local Chrome and FFmpeg.

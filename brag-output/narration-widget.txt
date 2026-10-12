@@ -1,1 +1,0 @@
-Control recording and ask questions from the floating widget.

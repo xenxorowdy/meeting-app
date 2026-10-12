@@ -1,1 +1,0 @@
-{"private":true,"scripts":{"check":"npx --yes hyperframes@0.8.113 check","render":"npx --yes hyperframes@0.8.113 render --quality delivery --fps 30 --output ../brag.mp4"},"devDependencies":{"@hyperframes/core":"0.8.113"}}
